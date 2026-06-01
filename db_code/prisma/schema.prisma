@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model affinity {
+  user_id        BigInt
+  stock_id       BigInt
+  affinity_score Int    @default(0) @db.SmallInt
+  stocks         stocks @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
+  users          users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, stock_id])
+}
+
+model categories {
+  id     BigInt   @id @default(autoincrement())
+  name   String   @db.VarChar(100)
+  stocks stocks[]
+}
+
+model characters {
+  stock_id BigInt @id
+  img_url  String @db.VarChar(200)
+  stocks   stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model clothes {
+  id             BigInt           @id @default(autoincrement())
+  name           String           @unique @db.VarChar(100)
+  unlock_clothes unlock_clothes[]
+  wardrobe       wardrobe[]
+}
+
+model comments {
+  id            BigInt          @id @default(autoincrement())
+  post_id       BigInt
+  user_id       BigInt
+  content       String          @db.VarChar(150)
+  write_time    DateTime        @default(now()) @db.Timestamp(6)
+  posts         posts           @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users           @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  like_comments like_comments[]
+}
+
+model furnitures {
+  id               BigInt             @id @default(autoincrement())
+  name             String             @unique @db.VarChar(100)
+  placed           placed[]
+  storage          storage[]
+  unlock_furniture unlock_furniture[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model holdings {
+  user_id            BigInt
+  stock_id           BigInt
+  quantity           Int
+  mean_price_krw     BigInt
+  mean_price_foreign Decimal? @db.Decimal(15, 2)
+  stocks             stocks   @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
+  users              users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, stock_id])
+}
+
+model indices {
+  id              BigInt            @id @default(autoincrement())
+  name            String            @db.VarChar(100)
+  indices_history indices_history[]
+}
+
+model indices_history {
+  indices_id  BigInt
+  open_price  Decimal  @db.Decimal(10, 2)
+  close_price Decimal  @db.Decimal(10, 2)
+  low_price   Decimal  @db.Decimal(10, 2)
+  high_price  Decimal  @db.Decimal(10, 2)
+  write_date  DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  indices     indices  @relation(fields: [indices_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([indices_id, write_date])
+}
+
+model interest {
+  user_id     BigInt
+  stock_id    BigInt
+  select_time DateTime @default(now()) @db.Timestamp(6)
+  stocks      stocks   @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, stock_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inventory {
+  user_id  BigInt
+  item_id  BigInt
+  quantity Int
+  items    items  @relation(fields: [item_id], references: [id], onUpdate: NoAction)
+  users    users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, item_id])
+}
+
+model items {
+  id           BigInt      @id @default(autoincrement())
+  name         String      @unique @db.VarChar(100)
+  effect_value Int         @db.SmallInt
+  inventory    inventory[]
+}
+
+model like_comments {
+  user_id    BigInt
+  comment_id BigInt
+  comments   comments @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, comment_id])
+}
+
+model like_posts {
+  user_id BigInt
+  post_id BigInt
+  posts   posts  @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, post_id])
+}
+
+model placed {
+  id           BigInt     @id @default(autoincrement())
+  user_id      BigInt
+  furniture_id BigInt
+  position_x   Decimal    @db.Decimal(10, 5)
+  position_y   Decimal    @db.Decimal(10, 5)
+  furnitures   furnitures @relation(fields: [furniture_id], references: [id], onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, furniture_id])
+}
+
+model posts {
+  id         BigInt       @id @default(autoincrement())
+  user_id    BigInt?
+  title      String       @db.VarChar(50)
+  content    String       @db.VarChar(500)
+  write_time DateTime     @default(now()) @db.Timestamp(6)
+  comments   comments[]
+  like_posts like_posts[]
+  users      users?       @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_history {
+  stock_id    BigInt
+  record_date DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  open_price  BigInt
+  close_price BigInt
+  low_price   BigInt
+  high_price  BigInt
+  stocks      stocks   @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([stock_id, record_date])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stocks {
+  id                  BigInt                @id @default(autoincrement())
+  code                String                @db.VarChar(20)
+  exchange_code       String?               @db.VarChar(10)
+  category_id         BigInt
+  stock_type          String                @db.VarChar(10)
+  name                String                @db.VarChar(100)
+  market_cap          BigInt
+  ev                  BigInt
+  per                 Decimal               @db.Decimal(10, 2)
+  psr                 Decimal               @db.Decimal(10, 2)
+  pbr                 Decimal               @db.Decimal(10, 2)
+  eps                 Decimal               @db.Decimal(15, 2)
+  bps                 Decimal               @db.Decimal(15, 2)
+  roe                 Decimal               @db.Decimal(10, 2)
+  affinity            affinity[]
+  characters          characters?
+  holdings            holdings[]
+  interest            interest[]
+  stock_history       stock_history[]
+  categories          categories            @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  transaction_history transaction_history[]
+  unlock_clothes      unlock_clothes[]
+  unlock_furniture    unlock_furniture[]
+  users               users[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model storage {
+  user_id      BigInt
+  furniture_id BigInt
+  quantity     Int        @db.SmallInt
+  furnitures   furnitures @relation(fields: [furniture_id], references: [id], onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, furniture_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transaction_history {
+  id               BigInt    @id @default(autoincrement())
+  user_id          BigInt
+  stock_id         BigInt
+  trade_type       String    @db.VarChar(10)
+  quantity         Int
+  trade_price      BigInt
+  transaction_time DateTime? @default(now()) @db.Timestamp(6)
+  stocks           stocks    @relation(fields: [stock_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model unlock_clothes {
+  stock_id         BigInt
+  clothes_id       BigInt
+  score_constraint Int
+  clothes          clothes @relation(fields: [clothes_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stocks           stocks  @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
+
+  @@id([stock_id, clothes_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model unlock_furniture {
+  stock_id            BigInt
+  furniture_id        BigInt
+  affinity_constraint Int        @db.SmallInt
+  furnitures          furnitures @relation(fields: [furniture_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stocks              stocks     @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
+
+  @@id([stock_id, furniture_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                  BigInt                @id @default(autoincrement())
+  login_id            String                @unique @db.VarChar(100)
+  login_pw            String                @db.VarChar(255)
+  nickname            String                @unique @db.VarChar(15)
+  balance             BigInt                @default(100000000)
+  represent_stock_id  BigInt?
+  affinity            affinity[]
+  comments            comments[]
+  holdings            holdings[]
+  interest            interest[]
+  inventory           inventory[]
+  like_comments       like_comments[]
+  like_posts          like_posts[]
+  placed              placed[]
+  posts               posts[]
+  storage             storage[]
+  transaction_history transaction_history[]
+  stocks              stocks?               @relation(fields: [represent_stock_id], references: [id], onUpdate: NoAction)
+  voting              voting[]
+  wardrobe            wardrobe[]
+}
+
+model vote {
+  id           BigInt   @id @default(autoincrement())
+  subject      String   @db.VarChar(200)
+  state        Boolean
+  start_date   DateTime @db.Date
+  end_date     DateTime @db.Date
+  agree_result Decimal? @db.Decimal(5, 4)
+  voting       voting[]
+}
+
+model voting {
+  user_id BigInt
+  vote_id BigInt
+  agree   Boolean
+  users   users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  vote    vote    @relation(fields: [vote_id], references: [id], onUpdate: NoAction)
+
+  @@id([user_id, vote_id])
+}
+
+model wardrobe {
+  user_id    BigInt
+  clothes_id BigInt
+  clothes    clothes @relation(fields: [clothes_id], references: [id], onUpdate: NoAction)
+  users      users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, clothes_id])
+}
