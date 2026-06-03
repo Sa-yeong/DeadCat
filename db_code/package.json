@@ -1,5 +1,5 @@
 {
-  "name": "db_code",
+  "name": "project-db_code_re",
   "version": "0.0.1",
   "description": "",
   "author": "",
@@ -17,13 +17,19 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "seed": "ts-node -r dotenv/config src/database/seed/seed.ts"
   },
   "dependencies": {
+    "@nestjs-modules/ioredis": "^2.2.1",
     "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/mapped-types": "*",
     "@nestjs/platform-express": "^11.0.1",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "dotenv": "^17.4.2",
     "ioredis": "^5.11.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
@@ -35,6 +41,7 @@
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
+    "@types/ioredis": "^4.28.10",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",

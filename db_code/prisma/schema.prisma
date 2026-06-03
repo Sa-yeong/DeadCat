@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -55,7 +54,6 @@ model furnitures {
   unlock_furniture unlock_furniture[]
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model holdings {
   user_id            BigInt
   stock_id           BigInt
@@ -71,6 +69,8 @@ model holdings {
 model indices {
   id              BigInt            @id @default(autoincrement())
   name            String            @db.VarChar(100)
+  code            String            @db.VarChar(20)
+  name_en         String            @db.VarChar(100)
   indices_history indices_history[]
 }
 
@@ -96,7 +96,6 @@ model interest {
   @@id([user_id, stock_id])
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model inventory {
   user_id  BigInt
   item_id  BigInt
@@ -155,7 +154,6 @@ model posts {
   users      users?       @relation(fields: [user_id], references: [id], onUpdate: NoAction)
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model stock_history {
   stock_id    BigInt
   record_date DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
@@ -168,35 +166,34 @@ model stock_history {
   @@id([stock_id, record_date])
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model stocks {
   id                  BigInt                @id @default(autoincrement())
   code                String                @db.VarChar(20)
   exchange_code       String?               @db.VarChar(10)
-  category_id         BigInt
+  category_id         BigInt?
   stock_type          String                @db.VarChar(10)
   name                String                @db.VarChar(100)
   market_cap          BigInt
-  ev                  BigInt
   per                 Decimal               @db.Decimal(10, 2)
   psr                 Decimal               @db.Decimal(10, 2)
   pbr                 Decimal               @db.Decimal(10, 2)
   eps                 Decimal               @db.Decimal(15, 2)
   bps                 Decimal               @db.Decimal(15, 2)
   roe                 Decimal               @db.Decimal(10, 2)
+  ev                  BigInt
+  name_en             String?               @db.VarChar(100)
   affinity            affinity[]
   characters          characters?
   holdings            holdings[]
   interest            interest[]
   stock_history       stock_history[]
-  categories          categories            @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  categories          categories?           @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   transaction_history transaction_history[]
   unlock_clothes      unlock_clothes[]
   unlock_furniture    unlock_furniture[]
   users               users[]
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model storage {
   user_id      BigInt
   furniture_id BigInt
@@ -207,7 +204,6 @@ model storage {
   @@id([user_id, furniture_id])
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model transaction_history {
   id               BigInt    @id @default(autoincrement())
   user_id          BigInt
@@ -220,7 +216,6 @@ model transaction_history {
   users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model unlock_clothes {
   stock_id         BigInt
   clothes_id       BigInt
@@ -231,7 +226,6 @@ model unlock_clothes {
   @@id([stock_id, clothes_id])
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model unlock_furniture {
   stock_id            BigInt
   furniture_id        BigInt
@@ -242,7 +236,6 @@ model unlock_furniture {
   @@id([stock_id, furniture_id])
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model users {
   id                  BigInt                @id @default(autoincrement())
   login_id            String                @unique @db.VarChar(100)
