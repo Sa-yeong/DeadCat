@@ -9,11 +9,11 @@ export async function seedStocks() {
         //domestic
         {
             code: '005930',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: '삼성전자',
-            name_en: null,
+            name_en: 'SAMSUNG',
             market_cap: 23050249, // 보통주 시가 총액 // 단위: 억원
             ev: 9635452, // 단위: 억원
             per: 29.3, // 단위: 배
@@ -26,11 +26,11 @@ export async function seedStocks() {
 
         {
             code: '0000660',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: 'SK하이닉스',
-            name_en: null,
+            name_en: 'SK HYNIX',
             market_cap: 16563202, // 단위: 억원
             ev: 5426534, // 단위: 억원
             per: 22.4, // 단위 배
@@ -42,11 +42,11 @@ export async function seedStocks() {
         },
         {
             code: '034020',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: '두산에너빌리티',
-            name_en: null,
+            name_en: 'DOOSAN ENERBILITY',
             market_cap: 642482, // 단위: 억원
             ev: 626364, // 단위: 억원
             per: 416.2, // 단위 배
@@ -58,11 +58,11 @@ export async function seedStocks() {
         },
         {
             code: '006800',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: '미래에셋증권',
-            name_en: null,
+            name_en: 'MIRAE ASSET SECURITIES',
             market_cap: 345919, // 단위: 억원
             ev: 537785, // 단위: 억원
             per: 26.8, // 단위 배
@@ -74,11 +74,11 @@ export async function seedStocks() {
         },
         {
             code: '035420',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: 'NAVER',
-            name_en: null,
+            name_en: 'NAVER',
             market_cap: 429049, // 단위: 억원
             ev: 275175, // 단위: 억원
             per: 23.7, // 단위 배
@@ -90,11 +90,11 @@ export async function seedStocks() {
         },
         {
             code: '035720',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: '카카오',
-            name_en: null,
+            name_en: 'KAKAO',
             market_cap: 187055, // 단위: 억원
             ev: 137497, // 단위: 억원
             per: 38.1, // 단위 배
@@ -106,11 +106,11 @@ export async function seedStocks() {
         },
         {
             code: '005380',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: '현대차',
-            name_en: null,
+            name_en: 'HYUNDAI',
             market_cap: 1648915, // 단위: 억원
             ev: 2035911, // 단위: 억원
             per: 22.3, // 단위 배
@@ -122,11 +122,11 @@ export async function seedStocks() {
         },
         {
             code: '005935',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: '삼성전자우',
-            name_en: null,
+            name_en: 'SAMSUNG ELECTRONICS CO. PREF',
             market_cap: 23050249, // 단위: 억원
             ev: 9635452, // 단위: 억원
             per: 29.3, // 단위 배
@@ -138,11 +138,11 @@ export async function seedStocks() {
         },
         {
             code: '360750',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: 'TIGER 미국S&P500 ETF',
-            name_en: null,
+            name_en: 'TIGER US S&P ETF',
             market_cap: 190000, // 단위: 억원
             ev: 189000, // 단위: 억원
             per: 0, // 단위 배
@@ -154,11 +154,11 @@ export async function seedStocks() {
         },
         {
             code: '066570',
-            exchange_code: null,
+            exchange_code: 'KOSPI',
             category_id: null,
             stock_type: 'DOMESTIC',
             name: 'LG전자',
-            name_en: null,
+            name_en: 'LG ELECTRONICS',
             market_cap: 630971, // 단위: 억원
             ev: 233698, // 단위: 억원
             per: 69.2, // 단위 배
@@ -175,7 +175,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '애플',
-            name_en: null,
+            name_en: 'APPLE',
             market_cap: 69964947,
             ev: 55341350,
             per: 37.8,
@@ -191,7 +191,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '테슬라',
-            name_en: 'tesla',
+            name_en: 'TESLA',
             market_cap: 24051590,
             ev: 20573955,
             per: 412.1,
@@ -207,7 +207,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '엔비디아',
-            name_en: 'nvidia',
+            name_en: 'NVIDIA',
             market_cap: 81492983,
             ev: 73865046,
             per: 33.8,
@@ -223,7 +223,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '노키아',
-            name_en: 'nokia',
+            name_en: 'NOKIA',
             market_cap: 1424206,
             ev: 630768,
             per: 103.6,
@@ -239,7 +239,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '인텔',
-            name_en: 'intel',
+            name_en: 'INTEL',
             market_cap: 8198140,
             ev: 3446158,
             per: -170.9,
@@ -255,7 +255,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '버크셔 해서웨이 B',
-            name_en: 'berkshire hathaway class b',
+            name_en: 'BERKSHIRE HATHAWAY CLASS B',
             market_cap: 15369172,
             ev: 16707931,
             per: 14.0,
@@ -271,7 +271,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '마이크로소프트',
-            name_en: 'microsoft',
+            name_en: 'MICROSOFT',
             market_cap: 49544079,
             ev: 41976678,
             per: 26.2,
@@ -287,7 +287,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '비자',
-            name_en: 'Visa',
+            name_en: 'VISA',
             market_cap: 9035617,
             ev: 8870570,
             per: 26.9,
@@ -319,7 +319,7 @@ export async function seedStocks() {
             category_id: null,
             stock_type: 'FOREIGN',
             name: '코카콜라',
-            name_en: 'Coca-Cola',
+            name_en: 'COCA-COLA',
             market_cap: 5098486,
             ev: 5472002,
             per: 24.6,
