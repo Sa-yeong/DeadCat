@@ -14,10 +14,11 @@ Create Table categories(
 create table stocks(
 	id BIGINT generated always as identity,
 	code varchar(20) not null,
-	exchange_code varchar(10),
+	exchange_code varchar(10) not null,
 	category_id BIGINT not null,
 	stock_type varchar(10) NOT NULL check(stock_type in('DOMESTIC', 'FOREIGN')),
 	name varchar(100) not null,
+	name_en varchar(100) not null,
 	market_cap BIGINT not null,
 	ev BIGINT not null,
 	per Decimal(10, 2) not null,
@@ -29,6 +30,7 @@ create table stocks(
 	
 	primary key(id),
 	foreign key(category_id) References categories(id) on delete Restrict,
+	CONSTRAINT duplicate_row UNIQUE (code, exchange_code),
 	
 	constraint chk_foreign_exchange_code Check(
 		(stock_type = 'FOREIGN' And exchange_code is not null)
@@ -318,6 +320,8 @@ create table voting(
 create table indices(
 	id BIGINT generated always as identity,
 	name varchar(100) not null,
+	name_en varchar(100) not null,
+	code varchar(20) not null Unique,
 	primary key(id)
 );
 ```
