@@ -7,6 +7,7 @@ import configuration from './config/configuration';
 import { PrismaModule } from './providers/database/prisma.module';
 import { RedisModule } from './providers/redis/redis.module';
 import { PriceModule } from './price/price.module';
+import { FavoritesModule } from './modules/favorites/favorites.module';
 import { ExampleModule } from './modules/example/example.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
@@ -28,6 +29,7 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
         PrismaModule,
         RedisModule,
         PriceModule, // 시세 적재 스케줄러 + 조회 서비스
+        FavoritesModule, // 관심종목 등록/해제
         ExampleModule, // [예시] 도메인 모듈 추가 시 Phase 6에서 제거
     ],
     providers: [
