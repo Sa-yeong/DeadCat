@@ -27,6 +27,12 @@ const OVERSEAS_EXCD: Record<string, string> = {
     AMS: 'AMS',
 };
 
+// 해외 심볼 예외 매핑: 우리 DB code → KIS SYMB. (URL 안전한 code 유지, KIS에만 변환)
+// 예: 버크셔 해서웨이 B는 KIS가 'BRK/B'로만 받음(슬래시는 URL에 못 써 code는 'BRK.B').
+const KIS_SYMBOL: Record<string, string> = {
+    'BRK.B': 'BRK/B',
+};
+
 const TOKEN_CACHE_KEY = 'kis:access_token';
 
 // KIS 초당 호출 한도 보호용 연속 호출 간 최소 간격(ms).
@@ -154,6 +160,7 @@ export class KisProvider {
     }
 
     // 해외 단일 종목 현재가. 초당 한도 초과 시 재시도.
+    // symbol은 우리 DB code, KIS_SYMBOL에 예외가 있으면 그 형식으로 변환해 호출.
     async getOverseasPrice(
         symbol: string,
         exchange: string,
@@ -162,10 +169,11 @@ export class KisProvider {
             const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/price`;
             const headers = await this.authHeaders('HHDFS00000300');
             const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+            const symb = KIS_SYMBOL[symbol] ?? symbol;
             const { data } = await firstValueFrom(
                 this.http.get<KisOverseasResponse>(url, {
                     headers,
-                    params: { AUTH: '', EXCD: excd, SYMB: symbol },
+                    params: { AUTH: '', EXCD: excd, SYMB: symb },
                 }),
             );
             if (data.rt_cd !== '0') {
@@ -194,7 +202,7 @@ export class KisProvider {
         return result;
     }
 
-    // 여러 해외 종목. key = symbol. 호출 간 딜레이로 한도 보호.
+    // 여러 해외 종목. key = symbol(우리 DB code). 호출 간 딜레이로 한도 보호.
     async getOverseasPrices(
         items: { symbol: string; exchange: string }[],
     ): Promise<Map<string, StockPrice>> {
