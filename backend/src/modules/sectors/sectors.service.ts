@@ -40,7 +40,8 @@ export class SectorsService {
         return rows.map((r, i) => ({ rank: i + 1, ...r }));
     }
 
-    // GET /sectors/{code}/stocks: 섹터 내 종목 리스트. 형식은 stocks와 동일(buildStockRows 위임).
+    // GET /sectors/{code}/stocks: 섹터 내 종목 리스트(형식은 stocks와 동일).
+    // 섹터 내 정렬은 상승률(등락률) 내림차순.
     async getStocksBySector(
         sectorCode: string,
         userId?: bigint,
@@ -52,6 +53,9 @@ export class SectorsService {
             throw new NotFoundException(`존재하지 않는 섹터입니다: ${sectorCode}`);
         }
         const codes = await this.repo.findStockCodesBySector(categoryId);
-        return this.stocks.buildStockRows(codes, userId);
+        const rows = await this.stocks.buildStockRows(codes, userId);
+        // 상승률 내림차순으로 재정렬 + rank 재부여.
+        rows.sort((a, b) => b.change_rate - a.change_rate);
+        return rows.map((r, i) => ({ ...r, rank: i + 1 }));
     }
 }

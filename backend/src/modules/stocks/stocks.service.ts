@@ -5,7 +5,7 @@ import { StocksRepository } from './stocks.repository';
 import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
-const TOP_N = 100;
+const TOP_N = 20;
 
 // 전체 종목 리스트의 두뇌. Redis 순위 + DB 메타 + 관심여부를 결합해 가공한다.
 @Injectable()

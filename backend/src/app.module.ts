@@ -10,7 +10,6 @@ import { PriceModule } from './price/price.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { StocksModule } from './modules/stocks/stocks.module';
 import { SectorsModule } from './modules/sectors/sectors.module';
-import { ExampleModule } from './modules/example/example.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
@@ -34,7 +33,6 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
         FavoritesModule, // 관심종목 등록/해제
         StocksModule, // 거래대금 상위 종목 리스트
         SectorsModule, // 섹터 목록 + 섹터별 종목
-        ExampleModule, // [예시] 도메인 모듈 추가 시 Phase 6에서 제거
     ],
     providers: [
         // 전역 응답 래퍼 + 전역 예외 필터.
