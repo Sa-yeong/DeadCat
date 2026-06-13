@@ -6,4 +6,11 @@ export default () => ({
         secret: process.env.JWT_SECRET,
         expiresIn: process.env.JWT_EXPIRES_IN || '1d',
     },
+    kis: {
+        appKey: process.env.KIS_APP_KEY,
+        appSecret: process.env.KIS_APP_SECRET,
+        baseUrl:
+            process.env.KIS_BASE_URL ||
+            'https://openapi.koreainvestment.com:9443',
+    },
 });
