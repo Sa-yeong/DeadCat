@@ -9,15 +9,28 @@ import { firstValueFrom } from 'rxjs';
 import { RedisService } from '../redis/redis.service';
 
 // 모듈 간 공유 시세 타입(knowledge.md 규약): 가격/등락률/거래대금은 number.
-// current_price: 현재가, change_rate: 등락률(%), trading_value: 누적 거래대금(현지 통화 단위)
 export interface StockPrice {
     current_price: number;
     change_rate: number;
     trading_value: number;
 }
 
-// 해외 거래소 코드 매핑: 우리 DB(주문용 코드) → KIS 시세조회 EXCD.
-// KIS는 주문(NASD/NYSE/AMEX)과 시세조회(NAS/NYS/AMS)의 거래소 코드가 다르다.
+// 지수 그래프 1점(OHLC).
+export interface IndexHistoryPoint {
+    write_date: string;
+    open_price: number;
+    close_price: number;
+    low_price: number;
+    high_price: number;
+}
+
+// 지수 현재 등락률 + 기간 그래프.
+export interface IndexData {
+    change_rate: number;
+    graph: IndexHistoryPoint[];
+}
+
+// 해외 거래소 코드 매핑: 우리 DB(주문용) → KIS 시세조회 EXCD.
 const OVERSEAS_EXCD: Record<string, string> = {
     NASD: 'NAS',
     NYSE: 'NYS',
@@ -27,20 +40,16 @@ const OVERSEAS_EXCD: Record<string, string> = {
     AMS: 'AMS',
 };
 
-// 해외 심볼 예외 매핑: 우리 DB code → KIS SYMB. (URL 안전한 code 유지, KIS에만 변환)
-// 예: 버크셔 해서웨이 B는 KIS가 'BRK/B'로만 받음(슬래시는 URL에 못 써 code는 'BRK.B').
+// 해외 심볼 예외 매핑: 우리 DB code → KIS SYMB. (예: 버크셔 B는 'BRK/B')
 const KIS_SYMBOL: Record<string, string> = {
     'BRK.B': 'BRK/B',
 };
 
 const TOKEN_CACHE_KEY = 'kis:access_token';
 
-// KIS 초당 호출 한도 보호용 연속 호출 간 최소 간격(ms).
 const REQUEST_DELAY_MS = 500;
-// 초당 한도 초과(EGW00201) 시 재시도 횟수와 백오프(ms).
 const MAX_RETRY = 3;
 const RETRY_BACKOFF_MS = 1000;
-// KIS 초당 한도 초과 에러 코드.
 const RATE_LIMIT_CODE = 'EGW00201';
 
 interface KisTokenResponse {
@@ -54,9 +63,9 @@ interface KisDomesticResponse {
     msg_cd: string;
     msg1: string;
     output: {
-        stck_prpr: string; // 현재가
-        prdy_ctrt: string; // 전일 대비율(등락률 %)
-        acml_tr_pbmn: string; // 누적 거래대금
+        stck_prpr: string;
+        prdy_ctrt: string;
+        acml_tr_pbmn: string;
     };
 }
 
@@ -65,14 +74,41 @@ interface KisOverseasResponse {
     msg_cd: string;
     msg1: string;
     output: {
-        last: string; // 현재가
-        rate: string; // 등락률(%)
-        tamt: string; // 거래대금
+        last: string;
+        rate: string;
+        tamt: string;
     };
 }
 
+// 국내업종 기간별시세(그래프 전용).
+interface KisDomesticIndexChartResponse {
+    rt_cd: string;
+    msg_cd: string;
+    msg1: string;
+    output2: {
+        stck_bsop_date: string;
+        bstp_nmix_prpr: string;
+        bstp_nmix_oprc: string;
+        bstp_nmix_hgpr: string;
+        bstp_nmix_lwpr: string;
+    }[];
+}
+
+// 해외 지수 기간별시세(그래프 output2). 등락률은 그래프로 계산.
+interface KisOverseasIndexResponse {
+    rt_cd: string;
+    msg_cd: string;
+    msg1: string;
+    output2: {
+        stck_bsop_date: string;
+        ovrs_nmix_prpr: string;
+        ovrs_nmix_oprc: string;
+        ovrs_nmix_hgpr: string;
+        ovrs_nmix_lwpr: string;
+    }[];
+}
+
 // KIS Open API 클라이언트. "어떻게 연결/호출하나"만 담당(비즈니스 로직 없음).
-// 토큰 발급/캐시 + 국내·해외 시세 조회. 시세를 Redis에 적재하는 일은 price 계층이 한다.
 @Injectable()
 export class KisProvider {
     private readonly logger = new Logger(KisProvider.name);
@@ -91,7 +127,6 @@ export class KisProvider {
     }
 
     // 접근 토큰: Redis 캐시 우선. 없으면 발급 후 캐시(만료 60초 전까지 TTL).
-    // KIS는 토큰 발급에 분당 1회 제한이 있어 반드시 캐시해서 재사용한다.
     async getAccessToken(): Promise<string> {
         const cached = await this.redis.get(TOKEN_CACHE_KEY);
         if (cached) return cached;
@@ -120,7 +155,6 @@ export class KisProvider {
         }
     }
 
-    // 공통 인증 헤더.
     private async authHeaders(trId: string): Promise<Record<string, string>> {
         const token = await this.getAccessToken();
         return {
@@ -133,7 +167,7 @@ export class KisProvider {
         };
     }
 
-    // 국내 단일 종목 현재가. 초당 한도 초과 시 재시도.
+    // 국내 단일 종목 현재가.
     async getDomesticPrice(code: string): Promise<StockPrice> {
         return this.withRateLimitRetry(async () => {
             const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
@@ -159,8 +193,7 @@ export class KisProvider {
         });
     }
 
-    // 해외 단일 종목 현재가. 초당 한도 초과 시 재시도.
-    // symbol은 우리 DB code, KIS_SYMBOL에 예외가 있으면 그 형식으로 변환해 호출.
+    // 해외 단일 종목 현재가. symbol은 우리 DB code(KIS_SYMBOL 예외 변환).
     async getOverseasPrice(
         symbol: string,
         exchange: string,
@@ -188,7 +221,7 @@ export class KisProvider {
         });
     }
 
-    // 여러 국내 종목. 개별 실패는 건너뛰고 성공분만 Map으로. 호출 간 딜레이로 한도 보호.
+    // 여러 국내 종목.
     async getDomesticPrices(codes: string[]): Promise<Map<string, StockPrice>> {
         const result = new Map<string, StockPrice>();
         for (let i = 0; i < codes.length; i++) {
@@ -202,7 +235,7 @@ export class KisProvider {
         return result;
     }
 
-    // 여러 해외 종목. key = symbol(우리 DB code). 호출 간 딜레이로 한도 보호.
+    // 여러 해외 종목. key = symbol(우리 DB code).
     async getOverseasPrices(
         items: { symbol: string; exchange: string }[],
     ): Promise<Map<string, StockPrice>> {
@@ -220,6 +253,81 @@ export class KisProvider {
             }
         }
         return result;
+    }
+
+    // 국내 지수: 기간별시세(그래프) + 마지막 두 종가로 등락률 계산.
+    // 국내 현재지수/차트 output1은 휴장 시 등락률이 0으로 와서, 그래프 기반이 더 견고하다.
+    async getDomesticIndexChart(
+        iscd: string,
+        from: string,
+        to: string,
+    ): Promise<IndexData> {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice`;
+            const headers = await this.authHeaders('FHKUP03500100');
+            const { data } = await firstValueFrom(
+                this.http.get<KisDomesticIndexChartResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'U',
+                        FID_INPUT_ISCD: iscd,
+                        FID_INPUT_DATE_1: from,
+                        FID_INPUT_DATE_2: to,
+                        FID_PERIOD_DIV_CODE: 'D',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            const graph = data.output2
+                .map((p) => ({
+                    write_date: p.stck_bsop_date,
+                    open_price: Number(p.bstp_nmix_oprc),
+                    close_price: Number(p.bstp_nmix_prpr),
+                    low_price: Number(p.bstp_nmix_lwpr),
+                    high_price: Number(p.bstp_nmix_hgpr),
+                }))
+                .sort((a, b) => a.write_date.localeCompare(b.write_date));
+            return { change_rate: this.changeRateFromGraph(graph), graph };
+        });
+    }
+
+    // 해외 지수: 기간별시세(그래프) + 마지막 두 종가로 등락률 계산.
+    async getOverseasIndexChart(
+        iscd: string,
+        from: string,
+        to: string,
+    ): Promise<IndexData> {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-daily-chartprice`;
+            const headers = await this.authHeaders('FHKST03030100');
+            const { data } = await firstValueFrom(
+                this.http.get<KisOverseasIndexResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'N',
+                        FID_INPUT_ISCD: iscd,
+                        FID_INPUT_DATE_1: from,
+                        FID_INPUT_DATE_2: to,
+                        FID_PERIOD_DIV_CODE: 'D',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            const graph = data.output2
+                .map((p) => ({
+                    write_date: p.stck_bsop_date,
+                    open_price: Number(p.ovrs_nmix_oprc),
+                    close_price: Number(p.ovrs_nmix_prpr),
+                    low_price: Number(p.ovrs_nmix_lwpr),
+                    high_price: Number(p.ovrs_nmix_hgpr),
+                }))
+                .sort((a, b) => a.write_date.localeCompare(b.write_date));
+            return { change_rate: this.changeRateFromGraph(graph), graph };
+        });
     }
 
     // 초당 한도 초과면 백오프 후 재시도. 그 외 에러는 즉시 throw.
@@ -240,7 +348,6 @@ export class KisProvider {
         throw lastError;
     }
 
-    // 초당 한도 초과 판별. KIS는 이걸 (1) rt_cd!=0 본문 또는 (2) HTTP 에러 본문으로 준다.
     private isRateLimitError(e: unknown): boolean {
         if (e instanceof KisApiError) return e.code === RATE_LIMIT_CODE;
         const data = (e as { response?: { data?: { msg_cd?: string } } })
@@ -248,11 +355,20 @@ export class KisProvider {
         return data?.msg_cd === RATE_LIMIT_CODE;
     }
 
+    // 그래프 마지막 두 종가로 전일대비율(%) 계산.
+    // 장중=실시간 등락률과 동일, 휴장=마지막 세션 등락률(사이트 표시값).
+    private changeRateFromGraph(graph: { close_price: number }[]): number {
+        if (graph.length < 2) return 0;
+        const prev = graph[graph.length - 2].close_price;
+        const last = graph[graph.length - 1].close_price;
+        if (!prev) return 0;
+        return Math.round(((last - prev) / prev) * 10000) / 100;
+    }
+
     private sleep(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
-    // axios 에러면 KIS가 본문에 준 메시지를 노출.
     private errMsg(e: unknown): string {
         if (e instanceof KisApiError) return `[${e.code}] ${e.message}`;
         const ax = e as { response?: { data?: unknown }; message?: string };

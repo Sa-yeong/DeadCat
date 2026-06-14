@@ -10,15 +10,14 @@ import { PriceModule } from './price/price.module';
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { StocksModule } from './modules/stocks/stocks.module';
 import { SectorsModule } from './modules/sectors/sectors.module';
+import { IndicesModule } from './modules/indices/indices.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
 // 루트 모듈: 인프라(@Global) + 공통 전역(응답 래퍼, 예외 필터, JWT) + 도메인 모듈.
-// 새 도메인 모듈은 아래 imports 배열에 추가한다.
 @Module({
     imports: [
         ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
-        // JwtModule 전역 등록: 가드들이 어디서나 JwtService를 주입받게 함(검증 전용).
         JwtModule.registerAsync({
             global: true,
             inject: [ConfigService],
@@ -33,9 +32,9 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
         FavoritesModule, // 관심종목 등록/해제
         StocksModule, // 거래대금 상위 종목 리스트
         SectorsModule, // 섹터 목록 + 섹터별 종목
+        IndicesModule, // 상단 지수 슬라이드
     ],
     providers: [
-        // 전역 응답 래퍼 + 전역 예외 필터.
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
         { provide: APP_FILTER, useClass: PrismaExceptionFilter },
     ],
