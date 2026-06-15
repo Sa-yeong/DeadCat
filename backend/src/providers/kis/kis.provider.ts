@@ -27,6 +27,7 @@ export interface IndexHistoryPoint {
 // 지수 현재 등락률 + 기간 그래프.
 export interface IndexData {
     change_rate: number;
+    current_value: number; // 현재 지수값(그래프 마지막 종가)
     graph: IndexHistoryPoint[];
 }
 
@@ -297,7 +298,13 @@ export class KisProvider {
                     high_price: Number(p.bstp_nmix_hgpr),
                 }))
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
-            return { change_rate: this.changeRateFromGraph(graph), graph };
+            return {
+                change_rate: this.changeRateFromGraph(graph),
+                current_value: graph.length
+                    ? graph[graph.length - 1].close_price
+                    : 0,
+                graph,
+            };
         });
     }
 
@@ -334,7 +341,13 @@ export class KisProvider {
                     high_price: Number(p.ovrs_nmix_hgpr),
                 }))
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
-            return { change_rate: this.changeRateFromGraph(graph), graph };
+            return {
+                change_rate: this.changeRateFromGraph(graph),
+                current_value: graph.length
+                    ? graph[graph.length - 1].close_price
+                    : 0,
+                graph,
+            };
         });
     }
 

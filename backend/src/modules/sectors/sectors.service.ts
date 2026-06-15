@@ -30,6 +30,7 @@ export class SectorsService {
                     sector_code: String(s.id),
                     sector_name: s.name,
                     change_rate: Math.round(avg * 100) / 100,
+                    stock_count: codes.length,
                     num_of_incre_stocks: upCount,
                 };
             }),

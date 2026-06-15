@@ -4,5 +4,6 @@ export class SectorResponseDto {
     sector_code: string; // 카테고리 id
     sector_name: string;
     change_rate: number; // 섹터 내 종목 등락률 단순평균(%)
+    stock_count: number; // 섹터 내 전체 종목 수
     num_of_incre_stocks: number; // 등락률 > 0 종목 수
 }

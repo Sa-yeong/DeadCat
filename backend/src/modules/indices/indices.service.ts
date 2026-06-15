@@ -42,6 +42,7 @@ export class IndicesService {
             result.push({
                 index_code: def.indexCode,
                 index_name: def.name,
+                current_value: data.current_value,
                 change_rate: data.change_rate,
                 graph: data.graph,
             });

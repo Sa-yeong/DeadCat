@@ -4,6 +4,7 @@ import { IndexHistoryPoint } from '../../../providers/kis/kis.provider';
 export class IndexResponseDto {
     index_code: string;
     index_name: string;
+    current_value: number; // 현재 지수값
     change_rate: number; // 전일 대비율(%)
     graph: IndexHistoryPoint[]; // 일별 OHLC 시계열(오름차순)
 }
