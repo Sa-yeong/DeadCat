@@ -1,0 +1,33 @@
+{
+    "compilerOptions": {
+        "module": "CommonJS",
+        "moduleResolution": "node",
+        "resolvePackageJsonExports": false,
+        "esModuleInterop": true,
+        "isolatedModules": true,
+        "declaration": true,
+        "removeComments": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "allowSyntheticDefaultImports": true,
+        "target": "ES2023",
+        "types": ["jest"],
+        "sourceMap": true,
+        "outDir": "./dist",
+        "baseUrl": "./",
+        "paths": {
+            //  빌드된 파일들이 생성된 프리즈마 클라이언트를 절대 경로로 바로 찌를 수 있게 추가
+            "generated/*": ["./generated/*"]
+        },
+        "incremental": true,
+        "skipLibCheck": true,
+        "strictNullChecks": true,
+        "forceConsistentCasingInFileNames": true,
+        "noImplicitAny": false,
+        "strictBindCallApply": false,
+        "noFallthroughCasesInSwitch": false
+    },
+    // 여기에 generated 폴더 내부의 타입 파일들을 포함하라고 명시해야 ESLint가 인지
+    "include": ["src/**/*", "generated/**/*"],
+    "exclude": ["node_modules", "dist"]
+}
