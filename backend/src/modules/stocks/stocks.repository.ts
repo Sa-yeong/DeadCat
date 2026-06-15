@@ -7,6 +7,7 @@ export interface StockMeta {
     code: string;
     name: string;
     category_id: bigint;
+    stock_type: string; // DOMESTIC | FOREIGN
 }
 
 @Injectable()
@@ -18,7 +19,13 @@ export class StocksRepository {
         if (codes.length === 0) return [];
         return this.prisma.stocks.findMany({
             where: { code: { in: codes } },
-            select: { id: true, code: true, name: true, category_id: true },
+            select: {
+                id: true,
+                code: true,
+                name: true,
+                category_id: true,
+                stock_type: true,
+            },
         });
     }
 }

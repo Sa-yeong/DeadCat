@@ -7,6 +7,9 @@ import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
 const TOP_N = 20;
 
+// 시장 필터 값.
+export type MarketFilter = 'DOMESTIC' | 'FOREIGN';
+
 // 전체 종목 리스트의 두뇌. Redis 순위 + DB 메타 + 관심여부를 결합해 가공한다.
 @Injectable()
 export class StocksService {
@@ -16,10 +19,18 @@ export class StocksService {
         private readonly repo: StocksRepository,
     ) {}
 
-    // GET /stocks/ranking: 거래대금 상위 종목.
-    async getRanking(userId?: bigint): Promise<StockRankingResponseDto[]> {
+    // GET /stocks/ranking: 거래대금 상위 종목. market 지정 시 해당 시장만(rank 재부여).
+    async getRanking(
+        userId?: bigint,
+        market?: MarketFilter,
+    ): Promise<StockRankingResponseDto[]> {
         const codes = await this.price.readRankedCodes(TOP_N);
-        return this.buildStockRows(codes, userId);
+        const rows = await this.buildStockRows(codes, userId);
+        if (!market) return rows;
+        // 같은 시장끼리는 통화가 같아 정규화 순서가 그대로 유효 → 필터 후 rank만 재부여.
+        return rows
+            .filter((r) => r.market === market)
+            .map((r, i) => ({ ...r, rank: i + 1 }));
     }
 
     // 코드 목록(랭킹 순) → 메타+시세+관심여부 결합. sectors(API 4)가 빌려 씀 → export.
@@ -45,6 +56,7 @@ export class StocksService {
                 rank: rows.length + 1,
                 stock_code: code,
                 stock_name: meta.name,
+                market: meta.stock_type,
                 current_price: price.current_price,
                 change_rate: price.change_rate,
                 trading_value: price.trading_value,

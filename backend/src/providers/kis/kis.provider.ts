@@ -108,6 +108,14 @@ interface KisOverseasIndexResponse {
     }[];
 }
 
+// 환율(원/달러) 조회 응답. market=X, 코드 FX@KRW.
+interface KisFxResponse {
+    rt_cd: string;
+    msg_cd: string;
+    msg1: string;
+    output1: { ovrs_nmix_prpr: string };
+}
+
 // KIS Open API 클라이언트. "어떻게 연결/호출하나"만 담당(비즈니스 로직 없음).
 @Injectable()
 export class KisProvider {
@@ -327,6 +335,42 @@ export class KisProvider {
                 }))
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
             return { change_rate: this.changeRateFromGraph(graph), graph };
+        });
+    }
+
+    // USD/KRW 환율(원/달러). KIS 환율 코드 FX@KRW. Redis 1시간 캐시.
+    // 거래대금 통합 순위에서 해외(달러) 거래대금을 원화로 환산하는 데 쓴다.
+    async getUsdKrwRate(): Promise<number> {
+        const cached = await this.redis.get('kis:usdkrw');
+        if (cached) return Number(cached);
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-daily-chartprice`;
+            const headers = await this.authHeaders('FHKST03030100');
+            const today = new Date();
+            const fmt = (d: Date): string =>
+                d.toISOString().slice(0, 10).replace(/-/g, '');
+            const from = new Date(today);
+            from.setDate(from.getDate() - 7);
+            const { data } = await firstValueFrom(
+                this.http.get<KisFxResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'X',
+                        FID_INPUT_ISCD: 'FX@KRW',
+                        FID_INPUT_DATE_1: fmt(from),
+                        FID_INPUT_DATE_2: fmt(today),
+                        FID_PERIOD_DIV_CODE: 'D',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            const rate = Number(data.output1.ovrs_nmix_prpr);
+            if (rate > 0) {
+                await this.redis.set('kis:usdkrw', String(rate), 3600);
+            }
+            return rate;
         });
     }
 

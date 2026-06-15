@@ -3,6 +3,7 @@ export class StockRankingResponseDto {
     rank: number; // 거래대금 순위 (1부터)
     stock_code: string;
     stock_name: string;
+    market: string; // DOMESTIC(국내) | FOREIGN(해외)
     current_price: number;
     change_rate: number; // 등락률(%)
     trading_value: number; // 누적 거래대금(현지 통화)

@@ -1,20 +1,23 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
-import { StocksService } from './stocks.service';
+import { StocksService, MarketFilter } from './stocks.service';
 import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 
-// 거래대금 상위 종목 리스트. 선택 인증: 로그인 시 is_favorite 표시, 비로그인은 전부 false.
+// 거래대금 상위 종목 리스트. 선택 인증: 로그인 시 is_favorite 표시.
 @Controller('stocks')
 export class StocksController {
     constructor(private readonly stocksService: StocksService) {}
 
-    // GET /stocks/ranking
+    // GET /stocks/ranking?market=DOMESTIC|FOREIGN (생략 시 전체 통합)
     @Get('ranking')
     @UseGuards(OptionalJwtAuthGuard)
     async getRanking(
         @User() userId?: bigint,
+        @Query('market') market?: string,
     ): Promise<StockRankingResponseDto[]> {
-        return this.stocksService.getRanking(userId);
+        const filter: MarketFilter | undefined =
+            market === 'DOMESTIC' || market === 'FOREIGN' ? market : undefined;
+        return this.stocksService.getRanking(userId, filter);
     }
 }
