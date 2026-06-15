@@ -4,6 +4,7 @@ export class StockRankingResponseDto {
     stock_code: string;
     stock_name: string;
     market: string; // DOMESTIC(국내) | FOREIGN(해외)
+    character_img_url: string | null; // 캐릭터 썸네일(호버용). 없으면 null
     current_price: number;
     change_rate: number; // 등락률(%)
     trading_value: number; // 누적 거래대금(현지 통화)

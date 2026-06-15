@@ -8,6 +8,7 @@ export interface StockMeta {
     name: string;
     category_id: bigint;
     stock_type: string; // DOMESTIC | FOREIGN
+    character_img_url: string | null; // 캐릭터 썸네일 URL(없으면 null)
 }
 
 @Injectable()
@@ -17,7 +18,7 @@ export class StocksRepository {
     // 종목코드 목록 → 메타 일괄 조회(순서 보장 안 됨, 호출측에서 코드로 매핑).
     async findStocksByCodes(codes: string[]): Promise<StockMeta[]> {
         if (codes.length === 0) return [];
-        return this.prisma.stocks.findMany({
+        const rows = await this.prisma.stocks.findMany({
             where: { code: { in: codes } },
             select: {
                 id: true,
@@ -25,7 +26,16 @@ export class StocksRepository {
                 name: true,
                 category_id: true,
                 stock_type: true,
+                characters: { select: { img_url: true } },
             },
         });
+        return rows.map((r) => ({
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            category_id: r.category_id,
+            stock_type: r.stock_type,
+            character_img_url: r.characters?.img_url ?? null,
+        }));
     }
 }

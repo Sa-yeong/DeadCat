@@ -79,6 +79,18 @@ async function main() {
         });
     }
 
+    // 캐릭터 이미지(임시 placeholder). 실제 이미지는 캐릭터 담당이 교체.
+    for (const s of stocks) {
+        await prisma.characters.upsert({
+            where: { stock_id: s.id },
+            update: {},
+            create: {
+                stock_id: s.id,
+                img_url: `https://placehold.co/300x400?text=${s.code}`,
+            },
+        });
+    }
+
     // 테스트용 유저(favorites 검증용). 비밀번호는 임시(인증 발급은 다른 범위).
     await prisma.users.upsert({
         where: { login_id: 'testuser' },

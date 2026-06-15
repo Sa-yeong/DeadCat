@@ -57,6 +57,7 @@ export class StocksService {
                 stock_code: code,
                 stock_name: meta.name,
                 market: meta.stock_type,
+                character_img_url: meta.character_img_url,
                 current_price: price.current_price,
                 change_rate: price.change_rate,
                 trading_value: price.trading_value,
