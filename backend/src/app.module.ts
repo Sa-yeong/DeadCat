@@ -14,6 +14,8 @@ import { FavoritesModule } from './modules/favorites/favorites.module';
 import { StocksModule } from './modules/stocks/stocks.module';
 import { SectorsModule } from './modules/sectors/sectors.module';
 import { IndicesModule } from './modules/indices/indices.module';
+// 인증(도휘)
+import { AuthModule } from './modules/auth/auth.module';
 // 마이페이지(팀원)
 import { UserModule } from './modules/user/user.module';
 import { AssetModule } from './modules/asset/asset.module';
@@ -44,6 +46,7 @@ import { NicknameModule } from './modules/nickname/nickname.module';
         StocksModule,
         SectorsModule,
         IndicesModule,
+        AuthModule,
         // 마이페이지
         UserModule,
         AssetModule,
