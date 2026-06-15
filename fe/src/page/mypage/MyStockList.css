@@ -1,0 +1,10 @@
+.stock-row{
+    border-bottom: 1px solid black;
+    height: 50px;
+    width: 100%;
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr .5fr 1fr 1fr 1fr 1fr;
+    justify-items: center;
+    align-items: center;
+}

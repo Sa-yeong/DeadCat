@@ -1,0 +1,11 @@
+/* 테이블 헤더 */
+.stockListView .stockList .table-header svg{
+    visibility: hidden;
+}
+/* 테이블 리스트 */
+.stockListView .stockList .table-body span:has(svg){
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 20px;
+}

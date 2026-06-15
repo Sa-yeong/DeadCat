@@ -1,0 +1,8 @@
+.stockList .list-row{
+    border-bottom: 1px solid black;
+    height: 50px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr 3fr 3fr 2fr;
+    align-items: center;
+    justify-items: center;
+}

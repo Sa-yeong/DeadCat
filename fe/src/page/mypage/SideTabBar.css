@@ -1,0 +1,11 @@
+.sideBar a{
+    text-decoration: none;
+    color: black;
+    font-family: inherit;
+    cursor: pointer;
+    border: 1px solid black;
+    margin: 0px auto;
+    padding: 10px;
+    width: 220px;
+    /* background: #decbf446; */
+}

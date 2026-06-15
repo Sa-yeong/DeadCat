@@ -1,0 +1,28 @@
+.tab3{
+    border: 1px solid black;
+    flex: 1;
+    margin: 0px 5vw;
+    padding: 0.5vw 1.5vw;
+    display: grid;
+    grid-template-rows: repeat(3, 1fr);
+    gap: 1.5vw;
+    overflow-y: auto;
+}
+.tab3 .list-box{
+    display: flex;
+    flex-direction: column;
+}
+.tab3 .list-box .label{
+    display: flex;
+    justify-content: space-between;
+    height: 30px;
+}
+.tab3 .list-box .label svg{
+    cursor: pointer;
+    height: 80%;
+}
+.tab3 .list-box .rows{
+    border: 1px solid black;
+    flex: 1;
+    overflow-y: auto;
+}

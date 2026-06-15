@@ -1,0 +1,17 @@
+.activity-list-row{
+    border: 1px  solid black;
+    border-left: none;
+    border-right: none;
+    margin-top: -1px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: 50px;
+    align-items: center;
+}
+.activity-list-row .group-left{
+    padding-left: 20px;
+}
+.activity-list-row .group-right{
+    display: flex;
+    justify-content: space-around;
+}

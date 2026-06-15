@@ -1,0 +1,27 @@
+.cate-modal{
+    background: white;
+    width: 800px;
+    height: 850px;
+    border-radius: 8px;
+}
+.cate-modal .header{
+    height: 100px;
+    display: flex;
+    /* flex-direction: column; */
+    justify-content: space-between;
+    margin-top: 10px;
+    margin-left: 20px;
+}
+.cate-modal .header .left{
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+}
+.cate-modal .header .right{
+    margin-right: 10px;
+    cursor: pointer;
+}
+/* .cate-modal .header .list-row{
+    border: 1px solid black;
+    cursor: pointer;
+} */

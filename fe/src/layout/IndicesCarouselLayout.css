@@ -1,0 +1,28 @@
+.indices-layout{
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1.7fr 1fr ;
+    grid-template-rows: 1fr 1fr;
+    grid-template-areas: 
+    'graph name'
+    'graph up-down';
+}
+.indices-layout .name{
+    grid-area: name;
+    align-self: flex-end;
+    justify-self: center;
+    padding-bottom: 30px;
+    font-size: 23px;
+}
+.indices-layout .graph{
+    grid-area: graph;
+    justify-self: center;
+    align-self: center;
+}
+.indices-layout .up-down{
+    grid-area: up-down;
+    display: flex;
+    justify-content: space-evenly;
+    padding-top: 20px;
+    font-size: 20px;
+}

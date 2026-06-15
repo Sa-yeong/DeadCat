@@ -1,0 +1,11 @@
+.cate-rows{
+    border-bottom: 1px solid black;
+    height: 50px;
+    display: grid;
+    grid-template-columns: 0.5fr 2fr 1fr 1.5fr;
+    align-items: center;
+    justify-items: center;
+}
+.cate-rows .row{
+    cursor: pointer;
+}

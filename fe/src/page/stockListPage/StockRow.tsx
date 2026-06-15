@@ -1,0 +1,68 @@
+import './StockRow.css'
+import { useState } from 'react';
+import { IoHeartOutline, IoHeart } from 'react-icons/io5';
+import { LoginModal } from '../../modal/LoginModal';
+import Login from '../../common/Login';
+import axios from 'axios';
+
+
+export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_code}:any){
+    const [isLiked, setIsLiked] = useState(isLike);
+    const [open, setOpen] = useState(false);
+
+    const addFavorites = async (code:string, token:string) => {
+        try{
+            const response = await axios.post(`/favorites/${code}`, null,{
+                headers: {Authorization: `Bearer ${token}`}
+            });
+
+            console.log('관심 종목 등록 성공!', response.data.message);
+        }catch(e){
+            console.error('등록 실패: ', e); 
+            setIsLiked(false);
+        }
+    }
+
+    const deleteFavorites = async (code:string, token:string) =>{
+        try{
+            const response = await axios.delete(`/favorites/${code}`, {
+                headers: {Authorization: `Bearer ${token}`}
+            });
+
+            console.log(response.data);
+        } catch (e) {
+            console.error('관심 종목 해제 실패: ', e);
+            setIsLiked(true);
+        }
+    }
+
+    const toggleHeart = () => {
+        const token = localStorage.getItem('token');
+        // const isLoggedIn = token !== null; // 토큰 유무 -> 로그인 유무
+        const isLoggedIn = true; // 하트 토글이 잘 되는지 확인하기 위한 가짜 데이터
+
+        if(!isLoggedIn){ // 토큰이 없을때 로그인 되어 있지 않을 경우
+            setOpen(true);
+        }
+        else if(isLiked){ // 관심 종목 등록 해제 시
+            setIsLiked(!isLiked);
+            deleteFavorites(s_code, token as string);
+        }
+        else{ //관심 종목 등록
+            setIsLiked(!isLiked);
+            addFavorites(s_code, token as string);
+        }
+    }
+
+     return <div className='list-row'>
+        <span className='stock-order'>{order}</span>
+        <span onClick={toggleHeart}>
+            { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
+        </span>
+        <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
+        <span className='stock-name'>{s_name}</span>
+        <span className='current-price'>{c_price}</span>
+        <span className='rise-rate'>{rise_rate}</span>
+        <span className='trading-value'>{t_value}</span>
+    </div>;
+}
