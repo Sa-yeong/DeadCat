@@ -6,7 +6,7 @@ export interface StockMeta {
     id: bigint;
     code: string;
     name: string;
-    category_id: bigint;
+    category_id: bigint | null;
     stock_type: string; // DOMESTIC | FOREIGN
     character_img_url: string | null; // 캐릭터 썸네일 URL(없으면 null)
 }

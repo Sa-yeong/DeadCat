@@ -7,12 +7,22 @@ import configuration from './config/configuration';
 import { PrismaModule } from './providers/database/prisma.module';
 import { RedisModule } from './providers/redis/redis.module';
 import { PriceModule } from './price/price.module';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+// 전체 종목 리스트(도휘)
 import { FavoritesModule } from './modules/favorites/favorites.module';
 import { StocksModule } from './modules/stocks/stocks.module';
 import { SectorsModule } from './modules/sectors/sectors.module';
 import { IndicesModule } from './modules/indices/indices.module';
-import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+// 마이페이지(팀원)
+import { UserModule } from './modules/user/user.module';
+import { AssetModule } from './modules/asset/asset.module';
+import { HoldingModule } from './modules/holding/holding.module';
+import { TransactionModule } from './modules/transaction/transaction.module';
+import { PostModule } from './modules/post/post.module';
+import { CommentModule } from './modules/comment/comment-module';
+import { RepresentativeCharacterModule } from './modules/representative-character/representative-character.module';
+import { NicknameModule } from './modules/nickname/nickname.module';
 
 // 루트 모듈: 인프라(@Global) + 공통 전역(응답 래퍼, 예외 필터, JWT) + 도메인 모듈.
 @Module({
@@ -25,14 +35,24 @@ import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter'
                 secret: config.get<string>('jwt.secret'),
             }),
         }),
-        ScheduleModule.forRoot(), // @Cron 스케줄러 활성화
+        ScheduleModule.forRoot(),
         PrismaModule,
         RedisModule,
-        PriceModule, // 시세 적재 스케줄러 + 조회 서비스
-        FavoritesModule, // 관심종목 등록/해제
-        StocksModule, // 거래대금 상위 종목 리스트
-        SectorsModule, // 섹터 목록 + 섹터별 종목
-        IndicesModule, // 상단 지수 슬라이드
+        PriceModule,
+        // 전체 종목 리스트
+        FavoritesModule,
+        StocksModule,
+        SectorsModule,
+        IndicesModule,
+        // 마이페이지
+        UserModule,
+        AssetModule,
+        HoldingModule,
+        TransactionModule,
+        PostModule,
+        CommentModule,
+        RepresentativeCharacterModule,
+        NicknameModule,
     ],
     providers: [
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
