@@ -196,11 +196,16 @@ export class KisProvider {
                 throw new KisApiError(data.msg_cd, data.msg1);
             }
             const o = data.output;
-            return {
+            const price = {
                 current_price: Number(o.stck_prpr),
                 change_rate: Number(o.prdy_ctrt),
                 trading_value: Number(o.acml_tr_pbmn),
             };
+            // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우 → 적재 제외(0짜리 행 방지).
+            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+                throw new Error(`빈 시세 응답(${code})`);
+            }
+            return price;
         });
     }
 
@@ -224,11 +229,15 @@ export class KisProvider {
                 throw new KisApiError(data.msg_cd, data.msg1);
             }
             const o = data.output;
-            return {
+            const price = {
                 current_price: Number(o.last),
                 change_rate: Number(o.rate),
                 trading_value: Number(o.tamt),
             };
+            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+                throw new Error(`빈 시세 응답(${symbol})`);
+            }
+            return price;
         });
     }
 
