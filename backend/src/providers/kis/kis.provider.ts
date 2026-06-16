@@ -34,6 +34,7 @@ export interface IndexData {
 // 해외 거래소 코드 매핑: 우리 DB(주문용) → KIS 시세조회 EXCD.
 const OVERSEAS_EXCD: Record<string, string> = {
     NASD: 'NAS',
+    NASDAQ: 'NAS',
     NYSE: 'NYS',
     AMEX: 'AMS',
     NAS: 'NAS',
