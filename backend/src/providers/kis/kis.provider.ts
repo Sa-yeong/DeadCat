@@ -201,9 +201,12 @@ export class KisProvider {
                 change_rate: Number(o.prdy_ctrt),
                 trading_value: Number(o.acml_tr_pbmn),
             };
-            // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우 → 적재 제외(0짜리 행 방지).
+            // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우(주로 종목코드 오타/장전/거래정지).
+            // 적재는 그대로 하되(이상치가 화면에 0으로 드러나게) 경고 로그를 남긴다.
             if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
-                throw new Error(`빈 시세 응답(${code})`);
+                this.logger.warn(
+                    `국내 시세 0/빈값 (${code}) — 종목코드/거래상태 확인 필요`,
+                );
             }
             return price;
         });
@@ -235,7 +238,9 @@ export class KisProvider {
                 trading_value: Number(o.tamt),
             };
             if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
-                throw new Error(`빈 시세 응답(${symbol})`);
+                this.logger.warn(
+                    `해외 시세 0/빈값 (${symbol}) — 종목코드/거래상태 확인 필요`,
+                );
             }
             return price;
         });
