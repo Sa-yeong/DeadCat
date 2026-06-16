@@ -26,7 +26,8 @@ export interface IndexHistoryPoint {
 
 // 지수 현재 등락률 + 기간 그래프.
 export interface IndexData {
-    change_rate: number;
+    change_rate: number; // 전일 대비 등락률(%)
+    change_amount: number; // 전일 대비 포인트 차이
     current_value: number; // 현재 지수값(그래프 마지막 종가)
     graph: IndexHistoryPoint[];
 }
@@ -301,6 +302,7 @@ export class KisProvider {
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
             return {
                 change_rate: this.changeRateFromGraph(graph),
+                change_amount: this.changeAmountFromGraph(graph),
                 current_value: graph.length
                     ? graph[graph.length - 1].close_price
                     : 0,
@@ -344,6 +346,7 @@ export class KisProvider {
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
             return {
                 change_rate: this.changeRateFromGraph(graph),
+                change_amount: this.changeAmountFromGraph(graph),
                 current_value: graph.length
                     ? graph[graph.length - 1].close_price
                     : 0,
@@ -421,6 +424,14 @@ export class KisProvider {
         const last = graph[graph.length - 1].close_price;
         if (!prev) return 0;
         return Math.round(((last - prev) / prev) * 10000) / 100;
+    }
+
+    // 그래프 마지막 두 종가의 포인트 차이(전일 대비).
+    private changeAmountFromGraph(graph: { close_price: number }[]): number {
+        if (graph.length < 2) return 0;
+        const prev = graph[graph.length - 2].close_price;
+        const last = graph[graph.length - 1].close_price;
+        return Math.round((last - prev) * 100) / 100;
     }
 
     private sleep(ms: number): Promise<void> {
