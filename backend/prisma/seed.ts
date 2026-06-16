@@ -103,6 +103,14 @@ async function main() {
         },
     });
 
+    // 명시적 id로 시드하면 autoincrement 시퀀스가 안 올라가 → 이후 create 시 id 충돌(P2002).
+    // 시드 후 각 시퀀스를 현재 최대 id에 맞춘다(다음 create가 max+1을 받게).
+    for (const table of ['users', 'stocks', 'categories']) {
+        await prisma.$executeRawUnsafe(
+            `SELECT setval(pg_get_serial_sequence('${table}', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "${table}"))`,
+        );
+    }
+
     console.log(
         `시드 완료: categories ${categories.length}, stocks ${stocks.length}, user testuser(id=1)`,
     );
