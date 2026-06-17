@@ -10,13 +10,19 @@ export class CommentRepository {
             where: {
                 user_id: BigInt(userId),
             },
-            select: {
-                id: true,
-                post_id: true,
-                content: true,
+            include: {
+                posts: {
+                    include: {
+                        users: {
+                            select: {
+                                nickname: true,
+                            },
+                        },
+                    },
+                },
             },
             orderBy: {
-                write_time: 'desc', //가장 최근 댓글부터 조회
+                write_time: 'desc',
             },
         });
     }
