@@ -20,3 +20,18 @@
     align-items: center;
     text-align: center;
 }
+
+/* 보유주식 종목칸 캐릭터 썸네일 */
+.my-stock-list .stock-name{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.my-stock-list .stock-thumb{
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    border-radius: 6px;
+    flex-shrink: 0;
+}

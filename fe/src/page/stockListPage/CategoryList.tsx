@@ -1,6 +1,7 @@
 // import axios from 'axios';
 import './CategoryList.css'
 import { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { CategoryModal } from '../../modal/CategoryModal';
 import { api } from '../../api/axios';
 
@@ -21,6 +22,7 @@ interface Categories{
     rank: number,
     sector_code: string,
     sector_name: string,
+    sector_img_url: string,
     change_rate: number,
     stock_count: number,
     num_of_incre_stocks: number
@@ -29,7 +31,10 @@ interface Categories{
 export function CategoryList(){
     const [open,setOpen] = useState(false);
     const [selectCate, setSelectCate] = useState<Categories|null>(null);
-    
+
+    // 우측 썸네일 패널 제어(StockList와 동일하게 Outlet 컨텍스트 공유)
+    const {setActiveImg} = useOutletContext<{setActiveImg: (url: string|null) => void}>();
+
     const handleClick = (cate: Categories)  => {
         setSelectCate(cate);
         setOpen(true);
@@ -89,6 +94,7 @@ export function CategoryList(){
                     c_name={cateRow.sector_name} 
                     rate={cateRow.change_rate} 
                     amount={cateRow.stock_count + ' 개 중에 ' + cateRow.num_of_incre_stocks +' 개 상승'}
+                    mouseOver={() => setActiveImg(cateRow.sector_img_url)}
                     open={() => {handleClick(cateRow)}} />
             </>
             }
@@ -99,8 +105,8 @@ export function CategoryList(){
 }
 
 
-function CategoryRow({order, c_name, rate, amount, open}:any){
-    return <div className="cate-rows" onClick={open}>
+function CategoryRow({order, c_name, rate, amount, open, mouseOver}:any){
+    return <div className="cate-rows" onClick={open} onMouseOver={mouseOver}>
         <span>{order}</span>
         <span>{c_name}</span>
         <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}> 

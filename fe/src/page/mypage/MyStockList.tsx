@@ -5,6 +5,7 @@ import { api } from '../../api/axios';
 interface Holdings{
     stock_code: string;
     stock_name: string;
+    stock_img: string;
     current_price: number;
     purchase_price:number;
     quantity: number;
@@ -42,6 +43,7 @@ export function MyStockList() {
                 myHoldings.map((myStock) =>
                     <MyStock key={myStock.stock_code}
                         s_name={myStock.stock_name} 
+                        s_img={myStock.stock_img}
                         quantity={myStock.quantity} 
                         price={myStock.current_price}
                         mean_price={myStock.purchase_price}
@@ -55,7 +57,7 @@ export function MyStockList() {
     </div>;
 }
 
-function MyStock({s_name, quantity, price, mean_price, profit, rate, market}:any){
+function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, market}:any){
     const formatComma = (market:string,value: number|string) => {
         const num = Number(value);
 
@@ -68,7 +70,10 @@ function MyStock({s_name, quantity, price, mean_price, profit, rate, market}:any
     }
 
     return<div className='stock-row'>
-        <span className='stock-name'>{s_name}</span>
+        <span className='stock-name'>
+            {s_img && <img className='stock-thumb' src={s_img} alt='' />}
+            {s_name}
+        </span>
         <span className='quantity'>{quantity}</span>
         <span className='current-price'>
             {formatComma(market, price)}
