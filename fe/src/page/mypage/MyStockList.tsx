@@ -6,7 +6,7 @@ interface Holdings{
     stock_code: string,
     stock_name: string,
     current_price: number,
-    mean_price:number,
+    purchase_price:number,
     quantity: number,
     return_rate: number,
     valuation_profit: number
@@ -39,7 +39,7 @@ export function MyStockList() {
                     s_name={myStock.stock_name} 
                     quantity={myStock.quantity} 
                     price={myStock.current_price}
-                    mean_price={myStock.mean_price}
+                    mean_price={myStock.purchase_price}
                     profit={myStock.valuation_profit}
                     rate={myStock.return_rate} />
             )
@@ -53,7 +53,7 @@ function MyStock({s_name, quantity, price, mean_price, profit, rate}:any){
         <span className='quantity'>{quantity}</span>
         <span className='current-price'>{price}</span>
         <span className='unit-price'>{mean_price}</span>
-        <span className='return-amount' style={{color: (profit===0||(typeof profit =='string'))?'black':((profit>0) ?'red':'blue')}}>
+        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
             {profit}
         </span>
         <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>

@@ -52,6 +52,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+    margin-top: 20px;
 }
 .charac .nickname-change{
     display: flex;

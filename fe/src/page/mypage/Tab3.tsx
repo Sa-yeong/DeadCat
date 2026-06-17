@@ -15,11 +15,14 @@ interface Post{
 }
 interface Comment{
     comment_id: string;
+    contnet: string;
+    create_at: string;
     post_id: string;
-    content: string;
-    created_at: string;
     post_title: string;
-    post_author_nickname: string
+    post_author_nickname: string;
+    post_created_at: string;
+    post_like_count: number;
+    post_comment_count:number;
 }
 
 export function Tab3(){
@@ -101,9 +104,9 @@ export function Tab3(){
                         <ActivityListLayout key={`comment-${comment.post_id}`}
                         title={comment.post_title} 
                         writer={comment.post_author_nickname}
-                        comments={comment.comment_amount}
-                        likes={comment.like_amount} 
-                        date={comment.date} />
+                        comments={comment.post_comment_count}
+                        likes={comment.post_like_count} 
+                        date={comment.post_created_at} />
                     )
                 }
             </div>

@@ -6,7 +6,7 @@ import Login from '../../common/Login';
 import { api } from '../../api/axios';
 
 
-export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_code, mouseOver}:any){
+export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_code, market, mouseOver}:any){
     const [isLiked, setIsLiked] = useState(isLike);
     const [open, setOpen] = useState(false);
 
@@ -53,6 +53,26 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         }
     }
 
+    const formatToEok = (tradingValue: number|string) =>{
+        const num = Number(tradingValue);
+
+        if(isNaN(num)) return tradingValue;
+        const result = num / 100000000;
+
+        return `${result.toLocaleString('ko-KR', {maximumFractionDigits: 1})}억`;
+    }  
+
+    const formatComma = (market:string,value: number|string) => {
+        const num = Number(value);
+
+        if(isNaN(num)) return value;
+        if(market === 'DOMESTIC'){ // 국내 주식의 경우
+            return num.toLocaleString();
+        }else{ // 해외 주식일 경우 그냥 내보내기
+            return num;
+        }
+    }
+
      return <div className='list-row' onMouseOver={mouseOver}>
         <span className='stock-order'>{order}</span>
         <span onClick={toggleHeart}>
@@ -60,11 +80,11 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         </span>
         <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
         <span className='stock-name'>{s_name}</span>
-        <span className='current-price'>{c_price}</span>
+        <span className='current-price'>{formatComma(market, c_price)}</span>
         <span className='rise-rate' 
             style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'black':((rise_rate>0) ?'red':'blue')}}>
             {(typeof rise_rate =='string')?rise_rate:rise_rate + '%'}
         </span>
-        <span className='trading-value'>{t_value}</span>
+        <span className='trading-value'>{formatToEok(t_value)}</span>
     </div>;
 }

@@ -28,6 +28,7 @@ export function CategoryModal({isOpen, onClose, category, stocks}:any){
                         c_price={stock.current_price}
                         rise_rate={stock.change_rate}
                         t_value={stock.trading_value}
+                        market={stock.market}
                         key={stock.stock_code} />
                 )}
             </div>

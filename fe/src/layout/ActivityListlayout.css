@@ -1,8 +1,5 @@
 .activity-list-row{
-    border: 1px  solid black;
-    border-left: none;
-    border-right: none;
-    margin-top: -1px;
+    border-bottom: 1px solid black;
     display: grid;
     grid-template-columns: 1fr 1fr;
     height: 50px;
@@ -14,4 +11,14 @@
 .activity-list-row .group-right{
     display: flex;
     justify-content: space-around;
+    align-items: center;
+}
+.activity-list-row .group-right > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+.activity-list-row .group-right span svg{
+    height: 20px;
+    width: 20px;
 }

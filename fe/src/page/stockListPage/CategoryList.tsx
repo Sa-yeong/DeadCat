@@ -73,7 +73,8 @@ export function CategoryList(){
             </>
             }
         )}
-        <CategoryModal isOpen={open} onClose={() => setOpen(false)} category={selectCate} stocks={stocks} />
+        <CategoryModal isOpen={open} onClose={() => setOpen(false)} 
+        category={selectCate} stocks={stocks} />
     </div>;
 }
 

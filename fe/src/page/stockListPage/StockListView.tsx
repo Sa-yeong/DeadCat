@@ -57,14 +57,17 @@ function IndicesCarousel(){
         const fetchIndices = async  () => {
             try{
                 const response = await api.get('/indices');
-
                 setIndices(response.data.data);
-                console.log('지수 정보 조회 성공!');
-                console.log(response.data.data);
+
+                console.log('지수 정보 조회 성공!', response.data.data);
             } catch(e) {console.error('지수 정보 조회 실패: ', e);}
         };
 
         fetchIndices();
+
+        const interval = setInterval(fetchIndices, 15000);
+
+        return () => clearInterval(interval);
     }, []);
 
     return <div className='index'>

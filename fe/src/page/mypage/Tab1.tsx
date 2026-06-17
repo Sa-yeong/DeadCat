@@ -6,8 +6,9 @@ import { useState, useEffect } from 'react';
 import { api } from '../../api/axios';
 
 interface Me{
-    nickname:string,
-    representative_character_code: string
+    nickname:string;
+    representative_character_code: string;
+    representative_character_img: string;
 }
 
 interface Assets{
@@ -25,7 +26,8 @@ export function Tab1(){
         <span className='charac'> <Represent mydata={mydata} setMydata={setMydata} /> </span>
         <span className='assetInfo'> <AssetInfo /> </span>
         <div className='holdings'>
-            <Outlet context={{charac_code: mydata?.representative_character_code, setMydata}} />
+            <Outlet context={{charac_code: mydata?.representative_character_code, 
+                charac_img: mydata?.representative_character_img, setMydata}} />
             </div>
     </div>;
 }
@@ -51,7 +53,7 @@ function Represent({mydata, setMydata}:any){
                 console.log(response.data.data);
 
                 setMydata(response.data.data);
-                console.log('내 정보 조회 성공');
+                console.log('내 정보 조회 성공', response.data.data);
             } catch (e){
                 console.error('내 정보 조회 실패: ', e);
             };
@@ -63,7 +65,7 @@ function Represent({mydata, setMydata}:any){
 
     return<>
         <Link to='/mypage/assets/profile' className='represent-charac'> 
-            {/* {mydata.representative_character_code}  */}
+            <img src={mydata?.representative_character_img} alt='캐릭터 이미지' />
         </Link>
         
         <div className='nickname-change' onClick={() => setOpen(true)}>

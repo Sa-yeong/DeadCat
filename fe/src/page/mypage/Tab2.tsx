@@ -12,7 +12,7 @@ interface TransactionList{
     unit_price: number,
     profit: number,
     return_rate: number,
-    avg_parchase_price: number
+    avg_purchase_price: number
 }
 
 export function Tab2(){
@@ -31,14 +31,11 @@ export function Tab2(){
 
                 setTransac(response.data.data); // 거래내역 리스트 데이터 담기
 
-                console.log('거래내역 조회 성공!');
+                console.log('거래내역 조회 성공!', response.data.data);
             }catch(e){console.error('거래내역 조회 실패: ', e);}
         }
 
     useEffect(() => { fetchTransac(); },[type])
-
-    // 필터
-    // 거래내역 리스트
 
     return <div className="tab2">
         <div className='filter'><TransacFilter setType={setType} 
@@ -54,7 +51,7 @@ export function Tab2(){
                     s_name={tran.stock_name}
                     type={tran.type} quantity={tran.quantity}
                     price={tran.unit_price}
-                    mean_price={tran.avg_parchase_price}
+                    mean_price={tran.avg_purchase_price}
                     profit={tran.profit} rate={tran.return_rate}
                         />
                 )
@@ -108,7 +105,7 @@ function TransacList({date, s_name, type, quantity, price, mean_price, profit, r
         <span>{quantity}</span>
         <span>{price}</span>
         <span>{mean_price}</span>
-        <span style={{color: (profit===0||(typeof profit =='string'))?'black':((profit>0) ?'red':'blue')}}>
+        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
             {profit}
         </span>
         <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
