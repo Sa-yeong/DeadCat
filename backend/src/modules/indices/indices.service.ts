@@ -18,8 +18,8 @@ const INDEX_DEFS: IndexDef[] = [
     { indexCode: 'NASDAQ', name: '나스닥 종합', market: 'N', kisCode: 'COMP' },
     { indexCode: 'SP500', name: 'S&P500', market: 'N', kisCode: 'SPX' },
 ];
-// 지수 캐시 TTL(초). 지수는 5개뿐이고 그래프는 일 단위라 짧게 캐시해 KIS 호출을 줄인다.
-const CACHE_TTL = 60;
+// 지수 캐시 TTL(초). 스케줄러 폴링 주기(60초)보다 길게 잡아 만료 구간이 없게 한다.
+const CACHE_TTL = 180;
 // 그래프 조회 기간(일). 최근 N일.
 const GRAPH_DAYS = 30;
 
@@ -32,12 +32,14 @@ export class IndicesService {
         private readonly redis: RedisService,
     ) {}
 
-    // GET /indices: 지수별 등락률 + 그래프. 종목별로 Redis 캐시(없으면 KIS 조회).
+    // GET /indices: 지수별 등락률 + 그래프. Redis 캐시 우선, 없으면 KIS 조회(폴백).
+    // 평상시엔 스케줄러가 미리 데워둔 캐시를 읽어 항상 빠르게 응답한다.
     async getIndices(): Promise<IndexResponseDto[]> {
         const { from, to } = this.dateRange();
         const result: IndexResponseDto[] = [];
         for (const def of INDEX_DEFS) {
-            const data = await this.getCached(def, from, to);
+            let data = await this.readCache(def);
+            if (!data) data = await this.fetchAndCache(def, from, to); // 캐시 미스 폴백
             if (!data) continue; // 조회 실패한 지수는 제외
             result.push({
                 index_code: def.indexCode,
@@ -51,20 +53,38 @@ export class IndicesService {
         return result;
     }
 
-    private async getCached(
+    // 스케줄러용: 모든 지수를 KIS에서 받아 Redis에 미리 적재(프리워밍).
+    async warmCache(): Promise<number> {
+        const { from, to } = this.dateRange();
+        let ok = 0;
+        for (const def of INDEX_DEFS) {
+            const data = await this.fetchAndCache(def, from, to);
+            if (data) ok += 1;
+        }
+        return ok;
+    }
+
+    private async readCache(def: IndexDef): Promise<IndexData | null> {
+        const cached = await this.redis.get(`index:${def.indexCode}`);
+        return cached ? (JSON.parse(cached) as IndexData) : null;
+    }
+
+    // KIS 조회 후 Redis에 적재. 실패 시 null(해당 지수만 제외).
+    private async fetchAndCache(
         def: IndexDef,
         from: string,
         to: string,
     ): Promise<IndexData | null> {
-        const key = `index:${def.indexCode}`;
-        const cached = await this.redis.get(key);
-        if (cached) return JSON.parse(cached) as IndexData;
         try {
             const data =
                 def.market === 'U'
                     ? await this.kis.getDomesticIndexChart(def.kisCode, from, to)
                     : await this.kis.getOverseasIndexChart(def.kisCode, from, to);
-            await this.redis.set(key, JSON.stringify(data), CACHE_TTL);
+            await this.redis.set(
+                `index:${def.indexCode}`,
+                JSON.stringify(data),
+                CACHE_TTL,
+            );
             return data;
         } catch (e) {
             this.logger.warn(
