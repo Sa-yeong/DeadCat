@@ -1,4 +1,4 @@
-import { MyRecordsLayout } from "../../layout/MyRecordsLayout";
+import { MyRecordsLayout_P } from "../../layout/MyRecordsLayout";
 import { useState, useEffect } from "react";
 import { api } from "../../api/axios";
 
@@ -6,7 +6,7 @@ interface Post{
     post_id: string,
     title: string,
     author_nickname: string,
-    comment_amount: number,
+    comment_count: number,
     like_count: number,
     created_at: string
 }
@@ -30,6 +30,6 @@ export function MyPost(){
         fetchWrittenPosts();
     }, [])
     return <>
-        <MyRecordsLayout title="작성한 게시글" posts={writtenPosts} />
+        <MyRecordsLayout_P title="작성한 게시글" posts={writtenPosts} />
     </>;
 }

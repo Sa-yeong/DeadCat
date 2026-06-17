@@ -1,4 +1,4 @@
-import { MyRecordsLayout } from "../../layout/MyRecordsLayout";
+import { MyRecordsLayout_P } from "../../layout/MyRecordsLayout";
 import { useState, useEffect } from "react";
 import { api } from "../../api/axios";
 
@@ -32,6 +32,6 @@ export function LikePost(){
     },[])
 
     return <>
-        <MyRecordsLayout title="좋아요한 게시글" posts={likedPosts} />
+        <MyRecordsLayout_P title="좋아요한 게시글" posts={likedPosts} />
     </>;
 }

@@ -44,18 +44,20 @@ export function Tab2(){
             <TransacList date='거래 날짜' s_name='종목' type='유형'
                 quantity='수량' price='거래 단가' mean_price='평균 단가' 
                 profit='손익' rate='수익률'/>
-            {
+            <div className='list-content'>
+                {
                 transac.map((tran, index) => 
-                    <TransacList key={index}
-                    date={tran.trade_date}
-                    s_name={tran.stock_name}
-                    type={tran.type} quantity={tran.quantity}
-                    price={tran.unit_price}
-                    mean_price={tran.avg_purchase_price}
-                    profit={tran.profit} rate={tran.return_rate}
-                        />
-                )
-            }
+                        <TransacList key={index}
+                        date={tran.trade_date}
+                        s_name={tran.stock_name}
+                        type={tran.type} quantity={tran.quantity}
+                        price={tran.unit_price}
+                        mean_price={tran.avg_purchase_price}
+                        profit={tran.profit} rate={tran.return_rate}
+                            />
+                    )
+                }
+            </div>
         </div>
     </div>;
 }

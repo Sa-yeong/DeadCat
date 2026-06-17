@@ -17,7 +17,7 @@
 .tab2 .list{
     border: 1px solid black;
     margin-bottom: 2vh;
-    overflow: auto;
+    overflow: hidden;
 }
 
 /* 거래 필터 */
@@ -41,6 +41,9 @@
 }
 
 /* 거래 내역 리스트 */
+.tab2 .list .list-content{
+    overflow-y: auto;
+}
 .tab2 .list .list-row{
     display: grid;
     grid-template-columns: 1fr 1fr .5fr .5fr 1fr 1fr 1fr .7fr;

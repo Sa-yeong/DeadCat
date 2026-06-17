@@ -1,19 +1,22 @@
-import { MyRecordsLayout } from "../../layout/MyRecordsLayout";
+import { MyRecordsLayout_C } from "../../layout/MyRecordsLayout";
 import { useState, useEffect } from "react";
 import { api } from "../../api/axios";
 
-interface Post{
-    post_id: string,
-    title: string,
-    author_nickname: string,
-    comment_amount: number,
-    like_count: number,
-    created_at: string
+interface Comment{
+    comment_id: string;
+    contnet: string;
+    create_at: string;
+    post_id: string;
+    post_title: string;
+    post_author_nickname: string;
+    post_created_at: string;
+    post_like_count: number;
+    post_comment_count:number;
 }
 
 
 export function MyComment(){
-    const [writtenComments, setWrittenComments] = useState<Post[]>([]);
+    const [writtenComments, setWrittenComments] = useState<Comment[]>([]);
 
     useEffect(() => {
         const fetchWrittenComments = async () => {
@@ -32,6 +35,6 @@ export function MyComment(){
     }, [])
 
     return <>
-        <MyRecordsLayout title="작성한 댓글" posts={writtenComments} />
+        <MyRecordsLayout_C title="작성한 댓글" comments={writtenComments} />
     </>;
 }
