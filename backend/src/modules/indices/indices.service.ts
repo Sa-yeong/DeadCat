@@ -44,6 +44,7 @@ export class IndicesService {
                 index_name: def.name,
                 current_value: data.current_value,
                 change_rate: data.change_rate,
+                change_amount: data.change_amount,
                 graph: data.graph,
             });
         }

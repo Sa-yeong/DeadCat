@@ -1,27 +1,39 @@
 .cate-modal{
     background: white;
-    width: 800px;
+    width: 850px;
     height: 850px;
     border-radius: 8px;
 }
 .cate-modal .header{
-    height: 100px;
+    height: 250px;
     display: flex;
     /* flex-direction: column; */
     justify-content: space-between;
     margin-top: 10px;
-    margin-left: 20px;
+    margin-left: 30px;
+    font-size: 20px;
+}
+.cate-modal .header .name{
+    font-size: 30px;
+    margin-bottom: 50px;
+}
+.cate-modal .header .num{
+    display: flex;
+    flex-direction: column;
+    gap: 50px;
+    
 }
 .cate-modal .header .left{
     display: flex;
     flex-direction: column;
-    justify-content: space-around;
+    justify-content: space-evenly;
 }
 .cate-modal .header .right{
     margin-right: 10px;
     cursor: pointer;
 }
-/* .cate-modal .header .list-row{
-    border: 1px solid black;
-    cursor: pointer;
-} */
+.cate-modal .stockList{
+    border-top: none;
+    border-right: none;
+    border-left: none;
+}

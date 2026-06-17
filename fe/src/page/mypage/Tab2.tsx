@@ -1,6 +1,6 @@
 import './Tab2.css'
 import { useState, useEffect } from 'react';
-// import axios from 'axios';
+import { api } from '../../api/axios';
 import { DatePicker } from 'antd';
 import dayjs from 'dayjs';
 
@@ -19,50 +19,38 @@ export function Tab2(){
     const [type, setType] = useState<string|null>(null);
     const [startDate, setStartDate] = useState<string|null>(null);
     const [endDate, setEndDate] = useState<string|null>(dayjs().format('YYYY-MM-DD'));
-    const [transac, setTransac] = useState<TransactionList[]>([
-        {
-            stock_name:'종목1',
-            trade_date: '2003.12.02',
-            type: '매수',
-            quantity: 3,
-            unit_price: 16500,
-            profit: 2000,
-            return_rate: 3,
-            avg_parchase_price: 13500
+    const [transac, setTransac] = useState<TransactionList[]>([]);
+
+    const fetchTransac = async () => {
+            try{
+                const token = localStorage.getItem('token');
+                const response = await api.get('/transactions',{
+                    headers:{Authorization: `Bearer ${token}`},
+                    params: {type: type, start_date: startDate, end_date: endDate}
+                });
+
+                setTransac(response.data.data); // 거래내역 리스트 데이터 담기
+
+                console.log('거래내역 조회 성공!');
+            }catch(e){console.error('거래내역 조회 실패: ', e);}
         }
-    ]);
 
-    useEffect(() => {
-        // const fetchTransac = async () => {
-        //     try{
-        //         const token = localStorage.getItem('token');
-        //         const response = await axios.get('/transactions',{
-        //             headers:{Authorization: `Bearer ${token}`},
-        //             params: {type: type, start_date: startDate, end_date: endDate}
-        //         });
-
-        //         setTransac(response.data); // 거래내역 리스트 데이터 담기
-
-        //         console.log('거래내역 조회 성공!');
-        //     }catch(e){console.error('거래내역 조회 실패: ', e);}
-        // }
-
-        // fetchTransac();
-    },[type, startDate, endDate])
+    useEffect(() => { fetchTransac(); },[type])
 
     // 필터
     // 거래내역 리스트
 
     return <div className="tab2">
         <div className='filter'><TransacFilter setType={setType} 
-            setStartDate={setStartDate} setEndDate={setEndDate} /></div>
+            setStartDate={setStartDate} setEndDate={setEndDate} fetchTransac={fetchTransac} /></div>
         <div className='list'> 
             <TransacList date='거래 날짜' s_name='종목' type='유형'
                 quantity='수량' price='거래 단가' mean_price='평균 단가' 
                 profit='손익' rate='수익률'/>
             {
-                transac.map((tran) => 
-                    <TransacList date={tran.trade_date}
+                transac.map((tran, index) => 
+                    <TransacList key={index}
+                    date={tran.trade_date}
                     s_name={tran.stock_name}
                     type={tran.type} quantity={tran.quantity}
                     price={tran.unit_price}
@@ -75,7 +63,7 @@ export function Tab2(){
     </div>;
 }
 
-function TransacFilter({setType, setStartDate, setEndDate}:any){
+function TransacFilter({setType, setStartDate, setEndDate, fetchTransac}:any){
     // 달력 미래 날짜 비활성화 변수
     const disableFutureDate = (current: dayjs.Dayjs) => {
         return current && current > dayjs().endOf('day');
@@ -85,10 +73,10 @@ function TransacFilter({setType, setStartDate, setEndDate}:any){
         <div className='row'>
             <span className='label'>유형</span>
             <span className='middle-group'>
-                <button onClick={() => setType('전체')}>전체</button>
-                <button onClick={() => setType('매도')}>매도</button>
+                <button onClick={() => setType('ALL')}>전체</button>
+                <button onClick={() => setType('SELL')}>매도</button>
             </span>
-            <button className='last-btn' onClick={() => setType('매수')}>매수</button>
+            <button className='last-btn' onClick={() => setType('BUY')}>매수</button>
         </div>
         <div className='row'>
             <span className='label'>기간</span>
@@ -101,10 +89,11 @@ function TransacFilter({setType, setStartDate, setEndDate}:any){
                     } else { // x 버튼을 눌러 초기화시
                         setStartDate(null);
                         setEndDate(dayjs().format('YYYY-MM-DD'));
+                        fetchTransac();
                     }
                 }} />
             </span>
-            <button className='last-btn'>조회</button>
+            <button className='last-btn' onClick={fetchTransac}>조회</button>
         </div>
     </>;
 }
@@ -119,8 +108,12 @@ function TransacList({date, s_name, type, quantity, price, mean_price, profit, r
         <span>{quantity}</span>
         <span>{price}</span>
         <span>{mean_price}</span>
-        <span>{profit}</span>
-        <span>{rate}</span>
+        <span style={{color: (profit===0||(typeof profit =='string'))?'black':((profit>0) ?'red':'blue')}}>
+            {profit}
+        </span>
+        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
+            {(typeof rate =='string')?rate:rate + '%'}
+        </span>
     </div>;
 }
 

@@ -1,7 +1,8 @@
 import './StockList.css'
 import { useState, useEffect } from "react";
+import { useOutletContext } from 'react-router-dom';
 import { StockRow } from "./StockRow";
-import axios from 'axios';
+import { api } from '../../api/axios';
 
 interface StockItem{
     rank: number;
@@ -10,53 +11,37 @@ interface StockItem{
     current_price: number;
     change_rate: number;
     trading_value: number;
+    market: string,
+    character_img_url:string;
+    is_favorite: boolean;
 }
 
 export function StockList(){
-    const [stockRows, setStockRows] = useState<StockItem[]>([
-            {
-                rank:1,
-                stock_code:'1',
-                stock_name: '종목 1',
-                current_price: 324000,
-                change_rate: 5.1,
-                trading_value: 365466
-            },
-            {
-                rank:2,
-                stock_code:'2',
-                stock_name: '종목 2',
-                current_price: 12800,
-                change_rate: 0.1,
-                trading_value: 312856
-            }
-        ]);
-    const [like, setLike] = useState<string[]>(['1']);
+    const [stockRows, setStockRows] = useState<StockItem[]>([]);
+
+    const {setActiveImg} = useOutletContext<{setActiveImg: (url: string|null) => void}>();
     
         useEffect(() => {
-            // const fetchStocks = async () => {
-            //     try {
-            //         const response = await axios.get('/stocks/ranking')
-    
-            //         setStockRows(response.data);
-            //     } catch (e){console.error('종목 리스트 데이터 못 가져옴: ', e);}
-            // };
-            
-            // const fetchLikes = async () => {
-            //     try{
-            //         const reponse = await axios.get('/favorites')
+            const fetchStocks = async () => {
+                try {
+                    const response = await api.get('/stocks/ranking')
+                    setStockRows(response.data.data);
 
-            //         setLike(reponse.data);
-            //     } catch(e){console.error('관심 종목 조회 실패 : ', e);}
-            // }
+                    if(response.data.data.length > 0){
+                        setActiveImg(response.data.data[0].character_img_url);
+                    }
+                    console.log('종목 리스트 데이터 조회 성공', response.data.data);
+                } catch (e){console.error('종목 리스트 데이터 못 가져옴: ', e);}
+            };
     
-            // fetchStocks();
-            // fetchLikes();
+            fetchStocks();
         }, []);
 
-    return <>
+    return <div className='stock-table'>
         <div className='table-header'>
-            <StockRow order={'순위'} s_name={'종목 이름'} c_price={'현재 가'} rise_rate={'등락률'} t_value={'거래대금 순'} />
+            <StockRow order={'순위'} s_name={'종목 이름'} 
+            c_price={'현재 가'} rise_rate={'등락률'} 
+            t_value={'거래대금 순'} style={{color: 'black'}} />
         </div>
         <div className='table-body'>
             {
@@ -65,11 +50,11 @@ export function StockList(){
                 order={stock.rank} 
                 s_name={stock.stock_name} 
                 c_price={stock.current_price} 
-                rise_rate={stock.change_rate} 
+                rise_rate={stock.change_rate}
                 t_value={stock.trading_value}
-                isLike={like.includes(stock.stock_code)}
-                s_code= {stock.stock_code} />)
+                isLike={stock.is_favorite}
+                s_code= {stock.stock_code} mouseOver={() => setActiveImg(stock.character_img_url)} />)
             }
         </div>
-    </>;
+    </div>;
 }

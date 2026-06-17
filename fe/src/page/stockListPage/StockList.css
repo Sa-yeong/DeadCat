@@ -1,6 +1,20 @@
+/* 기본 레이아웃 */
+.stock-table{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
 /* 테이블 헤더 */
 .stockListView .stockList .table-header svg{
     visibility: hidden;
+}
+/* 테이블 body */
+.stock-table .table-body{
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
 }
 /* 테이블 리스트 */
 .stockListView .stockList .table-body span:has(svg){

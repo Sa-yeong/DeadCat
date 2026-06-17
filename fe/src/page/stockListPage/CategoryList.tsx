@@ -2,67 +2,78 @@
 import './CategoryList.css'
 import { useState, useEffect } from 'react';
 import { CategoryModal } from '../../modal/CategoryModal';
+import { api } from '../../api/axios';
+
+interface StockList{
+    rank: number,
+    stock_code: string,
+    stock_name: string,
+    current_price: number,
+    change_rate: number,
+    trading_value: number,
+    trading_value_krw: number;
+    market: string,
+    character_img_url: string,
+    is_favorite: boolean
+}
 
 interface Categories{
     rank: number,
     sector_code: string,
     sector_name: string,
     change_rate: number,
-    rise_amount: number
+    stock_count: number,
+    num_of_incre_stocks: number
 }
 
 export function CategoryList(){
     const [open,setOpen] = useState(false);
-    const [selectCode, setSelectCode] = useState<string|null>(null);
-
-    const handleClick = (code: string)  => {
-        setSelectCode(code);
+    const [selectCate, setSelectCate] = useState<Categories|null>(null);
+    
+    const handleClick = (cate: Categories)  => {
+        setSelectCate(cate);
         setOpen(true);
+        fetchStock(cate.sector_code);
     }
 
-    const [cateRows, setCateRows] = useState<Categories[]>([
-        {
-            rank: 1,
-            sector_code: 'dkf1',
-            sector_name: '카테고리 1',
-            change_rate: 15,
-            rise_amount:3
-        },
-        {
-            rank: 2,
-            sector_code: 'dkf2',
-            sector_name: '카테고리 2',
-            change_rate: 10,
-            rise_amount:1
-        }
-    ]);
+    const [stocks, setStocks] = useState<StockList[]>([]);
+
+    const fetchStock = async (cate_code: string) => {
+        try{
+            const response = await api.get(`/sectors/${cate_code}/stocks`);
+            setStocks(response.data.data);
+        } catch(e){console.error('카테고리별 종목 조회 실패: ', e);}
+    }
+
+    const [cateRows, setCateRows] = useState<Categories[]>([]);
 
     useEffect(() => {
-        // const fetchCate = async () =>{
-        //     try{
-        //         const response = await axios.get('/sectors');
+        const fetchCate = async () =>{
+            try{
+                const response = await api.get('/sectors');
 
-        //         setCateRows(response.data);
-        //     } catch(e){console.error('카테고리별 리스트 조회 실패 : ', e);}
-        // }
+                setCateRows(response.data.data);
+                console.log('카테고리별 리스트 조회 성공', response.data.data);
+            } catch(e){console.error('카테고리별 리스트 조회 실패 : ', e);}
+        }
 
-        // fetchCate();
+        fetchCate();
     }, [])
 
     return <div className="cate-list">
-        <CategoryRow order={'순위'} c_name={'카테고리 이름'} rate={'총 상승률'} amount={'상승 종목 갯수'} />
+        <CategoryRow order={'순위'} c_name={'카테고리 이름'} rate={'총 상승률'} amount={''} />
         {cateRows.map((cateRow) => {
             return <>
                 <CategoryRow key={cateRow.sector_code} 
                     order={cateRow.rank} 
                     c_name={cateRow.sector_name} 
                     rate={cateRow.change_rate} 
-                    amount={cateRow.rise_amount} 
-                    open={() => handleClick(cateRow.sector_code)} />
+                    amount={cateRow.stock_count + ' 개 중에 ' + cateRow.num_of_incre_stocks +' 개 상승'}
+                    open={() => {handleClick(cateRow)}} />
             </>
             }
         )}
-        <CategoryModal isOpen={open} onClose={() => setOpen(false)} categoryCode={selectCode} />
+        <CategoryModal isOpen={open} onClose={() => setOpen(false)} category={selectCate} stocks={stocks} />
     </div>;
 }
 
@@ -71,7 +82,11 @@ function CategoryRow({order, c_name, rate, amount, open}:any){
     return <div className="cate-rows" onClick={open}>
         <span>{order}</span>
         <span>{c_name}</span>
-        <span> {rate}</span>
-        <span>{amount}</span>
+        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}> 
+            {(typeof rate =='string')?rate:rate + '%'}
+        </span>
+        <span>
+            {amount}
+        </span>
     </div>;
 }

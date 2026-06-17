@@ -1,6 +1,7 @@
 import './ChangeNickModal.css'
 import { useState } from 'react';
-import axios from 'axios';
+import { api } from '../api/axios';
+import { IoClose } from "react-icons/io5";
 
 export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
     const [nickname, setNickname] = useState<string>(c_nickname)
@@ -12,12 +13,12 @@ export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
             if(!newName) return null; // 새로 입력한 닉네임이 비어있는 경우
 
             const token = localStorage.getItem('token');
-            const response = await axios.get('/nicknames/check',{
+            const response = await api.get('/nicknames/check',{
                 headers: {Authorization: `Bearer ${token}`},
                 params: {nickname: newName}
             });
 
-            if(response.data.is_available){ // 중복되지 않은 닉네임일 경우
+            if(response.data.data.is_available){ // 중복되지 않은 닉네임일 경우
                 setIsNameChecked(true);
             } else{ // 중복된 닉네임일 경우
                 alert('이미 존재하는 닉네임입니다.');
@@ -36,7 +37,7 @@ export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
             }
 
             const token = localStorage.getItem('token');
-            const response = await axios.patch('/users/me/nickname', {nickname: newName}, {
+            const response = await api.patch('/users/me/nickname', {nickname: newName}, {
                 headers: {Authorization: `Bearer ${token}`}
             });
 
@@ -54,7 +55,12 @@ export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
 
     return <div className='modal-overlay' onClick={onClose}>
         <div className='nick-change-modal' onClick={(e) => e.stopPropagation()}>
-            <div className='header'>닉네임을 입력해주세요!</div>
+            <div className='header'>
+                닉네임을 입력해주세요!
+                <button className="modal-close" onClick={onClose}>
+                    <IoClose />
+                </button>
+            </div>
             <div className='middle'>
                 <input type="text" placeholder={nickname} onChange={(e) => {
                     setNewName(e.target.value)

@@ -2,6 +2,7 @@ import './App.css'
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import Root from './layout/Root';
 import { LoginPage } from './page/LoginPage';
+import { SignUp } from './common/Signup';
 import { MyPageLayout } from './layout/MyPageLayout';
 import { StockListView } from './page/stockListPage/StockListView';
 import { StockList } from './page/stockListPage/StockList';
@@ -41,7 +42,8 @@ const router = createBrowserRouter([
       {path: 'mypage/community/likes', element: <LikePost />}
     ]
   },
-  {path: 'login', element: <LoginPage />}
+  {path: 'login', element: <LoginPage />},
+  {path: 'signup', element: <SignUp />}
 ])
 
 function App() {

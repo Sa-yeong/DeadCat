@@ -1,9 +1,9 @@
 import './Tab1.css'
-import { Outlet, Link } from 'react-router-dom';
+import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { ChangeNickModal } from '../../modal/ChangeNickModal';
 import { LuPencilLine } from 'react-icons/lu';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { api } from '../../api/axios';
 
 interface Me{
     nickname:string,
@@ -13,9 +13,9 @@ interface Me{
 interface Assets{
     available_cash: number,
     total_investment: number,
-    realized_profit: number,
-    dividend_income: number,
-    interest_income: number
+    total_evaluation_amount: number,
+    total_valuation_profit: number,
+    valuation_return_rate: number
 }
 
 export function Tab1(){
@@ -32,17 +32,25 @@ export function Tab1(){
 
 function Represent({mydata, setMydata}:any){
     const [open, setOpen] = useState(false);
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchMyData = async () => {
             try{
                 const token = localStorage.getItem('token');
+                
+                if(!token){
+                    navigate('/login', {replace:true});
+                    return null;
+                }
 
-                const response = await axios.get('/users/me', {
+                const response = await api.get('/users/me', {
                     headers: {Authorization: `Bearer ${token}`}
                 });
 
-                setMydata(response.data);
+                console.log(response.data.data);
+
+                setMydata(response.data.data);
                 console.log('내 정보 조회 성공');
             } catch (e){
                 console.error('내 정보 조회 실패: ', e);
@@ -54,13 +62,15 @@ function Represent({mydata, setMydata}:any){
     }, [])
 
     return<>
-        <Link to='/mypage/assets/profile' className='represent-charac'> img </Link>
-        {/* <div className='represent-charac'>img</div> */}
+        <Link to='/mypage/assets/profile' className='represent-charac'> 
+            {/* {mydata.representative_character_code}  */}
+        </Link>
+        
         <div className='nickname-change' onClick={() => setOpen(true)}>
             <LuPencilLine />
             {mydata?.nickname}
         </div>
-        <ChangeNickModal isOpen={open} onClose={() => setOpen(false)} nickname={mydata.nickname} />
+        <ChangeNickModal isOpen={open} onClose={() => setOpen(false)} nickname={mydata?.nickname} />
     </>;
 }
 
@@ -72,12 +82,12 @@ function AssetInfo(){
         const fetchAssets = async () => {
             try{
                 const token = localStorage.getItem('token');
-                const response = await axios.get('/assets', {
+                const response = await api.get('/assets', {
                     headers: {Authorization: `Bearer ${token}`}
                 })
 
-                setMyAsset(response.data);
-                console.log('자산 정보 조회 성공');
+                setMyAsset(response.data.data);
+                console.log('자산 정보 조회 성공', response.data.data);
             } catch(e){console.error('자산 정보 조회 실패: ', e);}
         }
 
@@ -85,29 +95,29 @@ function AssetInfo(){
     }, [])
 
     return <>
-        <div>
+        <div className='asset-row'>
             총 자산 :  
             <span>{myAsset?.total_investment}</span>
         </div>
-        <div>
+        <div className='asset-row'>
             잔액 : 
             <span>{myAsset?.available_cash}</span>
         </div>
-        <div>
+        <div className='asset-row'>
             매입 금액 : 
-             {/* <span>{myAsset.total_investment - myAsset.available_cash}</span> */}
+             <span>{myAsset?.total_investment}</span>
         </div>
-        <div>
+        <div className='asset-row'>
             평가 금액 : 
-            {/* <span>{myAsset?.total_investment}</span>  매임금액 + 평가손익?*/}
+            <span>{myAsset?.total_evaluation_amount}</span>
         </div>
-        <div>
+        <div className='asset-row'>
             평가 손익 : 
-            <span>{myAsset?.realized_profit}</span>
+            <span>{myAsset?.total_valuation_profit}</span>
         </div>
-        <div>
+        <div className='asset-row'>
             손익률 : 
-            {/* <span>{myAsset?.total_investment}</span> 계산 따로 해야함. */}
+            <span>{myAsset?.valuation_return_rate}</span>
         </div>
     </>;
 }

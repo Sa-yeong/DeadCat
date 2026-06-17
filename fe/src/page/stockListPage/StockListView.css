@@ -2,20 +2,26 @@
     flex: 1;
     display: grid;
     grid-template-columns: 3fr 1.3fr;
-    grid-template-rows: 1.5fr 4fr;
+    grid-template-rows: auto 1fr;
     grid-template-areas: 
     'index index'
     'stock img';
     gap: 10px;
     padding: 0px 11vw;
+    height: calc(100vh-107px);
+    min-height: 0;
 }
-.stockListView .index{
+.stockListView .index-carousel{
     grid-area: index;
     border: 1px solid black;
 }
 .stockListView .stockList{
     grid-area: stock;
     border: 1px solid black;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 .stockListView .thumbNail{
     grid-area: img;
@@ -32,7 +38,6 @@
     background-color: white;
     color: black; 
     height: 222px;
-    /* text-Align: center; */
     margin: 0 ;
 }
 .stockListView .index .slick-slider.slick-initialized button {
@@ -47,24 +52,3 @@
 .stockListView .index .slick-slider.slick-initialized .slick-dots.slick-dots-bottom .slick-active button{
     background: gray;
 }
-
-/* 주식 종목 리스트 행 */
-/* .stockListView .stockList .list-row{
-    border-bottom: 1px solid black;
-    height: 50px;
-    display: grid;
-    grid-template-columns: 1fr 1fr 2fr 3fr 3fr;
-    align-items: center;
-    justify-items: center;
-} */
-/* 테이블 헤더 */
-/* .stockListView .stockList .table-header svg{
-    visibility: hidden;
-} */
-/* 테이블 리스트 */
-/* .stockListView .stockList .table-body span:has(svg){
-    display: inline-flex;
-    align-items: center;
-    cursor: pointer;
-    font-size: 20px;
-} */

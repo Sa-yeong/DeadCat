@@ -1,63 +1,26 @@
 import './ChangeProlie.css'
 import { Link, useOutletContext } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../../api/axios';
 
 interface Holdings{
     stock_code: string,
     stock_name: string,
     current_price: number,
-    mean_price:number,
+    purchase_price:number,
     quantity: number,
     return_rate: number,
     valuation_profit: number
 }
 
 export function ChangeProfile(){
-    const [myHoldings, setMyHoldings] = useState<Holdings[]>([
-        {
-            stock_code:'dkfw1',
-            stock_name:'종목 1',
-            current_price: 102200,
-            mean_price: 5000,
-            quantity: 3,
-            return_rate: 12,
-            valuation_profit: 552000
-        },
-        {
-            stock_code:'dkfw2',
-            stock_name:'종목 2',
-            current_price: 302200,
-            mean_price: 42000,
-            quantity: 6,
-            return_rate: 20,
-            valuation_profit: 111500
-        },
-        {
-            stock_code:'dkfw1',
-            stock_name:'종목 1',
-            current_price: 102200,
-            mean_price: 5000,
-            quantity: 3,
-            return_rate: 12,
-            valuation_profit: 552000
-        },
-        {
-            stock_code:'dkfw2',
-            stock_name:'종목 2',
-            current_price: 302200,
-            mean_price: 42000,
-            quantity: 6,
-            return_rate: 20,
-            valuation_profit: 111500
-        }
-    ])
+    const [myHoldings, setMyHoldings] = useState<Holdings[]>([])
     const {charac_code, setMydata} = useOutletContext<any>();
     const  [selectedCode, setSelectedCode] = useState<string>(charac_code);
     const changeRepresent = async (new_code: string) => {
         try{
             const token = localStorage.getItem('token');
-            const response = await axios.patch('/users/me/representative-character', null,{
+            const response = await api.patch('/users/me/representative-character', null,{
                 headers: {Authorization: `Bearer ${token}`}
             });
 
@@ -88,19 +51,19 @@ export function ChangeProfile(){
     }
 
     useEffect( () => {
-        // const fetchProfiles = async () => {
-        //         try{
-        //             const token = localStorage.getItem('token');
-        //             const response = await axios.get('/holdings', {
-        //                 headers: {Authorization: `Bearer ${token}`}
-        //             })
+        const fetchProfiles = async () => {
+                try{
+                    const token = localStorage.getItem('token');
+                    const response = await api.get('/holdings', {
+                        headers: {Authorization: `Bearer ${token}`}
+                    })
 
-        //             setMyHoldings(response.data);
-        //             console.log('보유 종목 리스트 조회 성공!');
-        //         }catch(e){console.error('보유 종목 리스트 조회 실패: ', e)}
-        //     };
+                    setMyHoldings(response.data.data);
+                    console.log('보유 종목 리스트 조회 성공!');
+                }catch(e){console.error('보유 종목 리스트 조회 실패: ', e)}
+            };
 
-        //     fetchProfiles();   
+            fetchProfiles();   
         }, [])
 
     return <div className='profile-list'>

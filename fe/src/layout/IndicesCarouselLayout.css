@@ -1,7 +1,7 @@
 .indices-layout{
     height: 100%;
     display: grid;
-    grid-template-columns: 1.7fr 1fr ;
+    grid-template-columns: 2fr 1fr ;
     grid-template-rows: 1fr 1fr;
     grid-template-areas: 
     'graph name'
@@ -11,18 +11,20 @@
     grid-area: name;
     align-self: flex-end;
     justify-self: center;
+    /* padding-left: 150px; */
     padding-bottom: 30px;
-    font-size: 23px;
+    font-size: 30px;
 }
 .indices-layout .graph{
     grid-area: graph;
-    justify-self: center;
-    align-self: center;
+    margin: 5px 0 20px 20px;
 }
 .indices-layout .up-down{
     grid-area: up-down;
     display: flex;
-    justify-content: space-evenly;
+    justify-content: space-around;
+    /* padding-left: 30px;
+    gap: 80px; */
     padding-top: 20px;
-    font-size: 20px;
+    font-size: 25px;
 }

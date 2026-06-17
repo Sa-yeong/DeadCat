@@ -29,9 +29,10 @@
     border: 1px solid black;
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-evenly;
     background: white;
+    padding-left: 50px;
 }
 .tab1 .holdings{
     grid-area: list;
@@ -60,15 +61,8 @@
     cursor: pointer;
 }
 
-/* 보유 주식 리스트 항목 다른 파일로 옮김 -> 삭제 보류 */
-/* .tab1 .holdings .stock-row{
-    border-bottom: 1px solid black;
-    height: 50px;
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1fr .5fr 1fr 1fr 1fr 1fr;
-    justify-items: center;
-    align-items: center;
-} */
-
-/* 자산 정보 패널 */
+/* 총 자산 패널 */
+.tab1 .assetInfo .asset-row{
+    display: flex;
+    gap: 10px;
+}

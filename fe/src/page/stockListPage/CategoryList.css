@@ -1,3 +1,10 @@
+.cate-list{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    line-height: 0;
+}
+
 .cate-rows{
     border-bottom: 1px solid black;
     height: 50px;

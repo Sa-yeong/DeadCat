@@ -26,7 +26,8 @@ export interface IndexHistoryPoint {
 
 // 지수 현재 등락률 + 기간 그래프.
 export interface IndexData {
-    change_rate: number;
+    change_rate: number; // 전일 대비 등락률(%)
+    change_amount: number; // 전일 대비 포인트 차이
     current_value: number; // 현재 지수값(그래프 마지막 종가)
     graph: IndexHistoryPoint[];
 }
@@ -34,6 +35,7 @@ export interface IndexData {
 // 해외 거래소 코드 매핑: 우리 DB(주문용) → KIS 시세조회 EXCD.
 const OVERSEAS_EXCD: Record<string, string> = {
     NASD: 'NAS',
+    NASDAQ: 'NAS',
     NYSE: 'NYS',
     AMEX: 'AMS',
     NAS: 'NAS',
@@ -194,11 +196,19 @@ export class KisProvider {
                 throw new KisApiError(data.msg_cd, data.msg1);
             }
             const o = data.output;
-            return {
+            const price = {
                 current_price: Number(o.stck_prpr),
                 change_rate: Number(o.prdy_ctrt),
                 trading_value: Number(o.acml_tr_pbmn),
             };
+            // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우(주로 종목코드 오타/장전/거래정지).
+            // 적재는 그대로 하되(이상치가 화면에 0으로 드러나게) 경고 로그를 남긴다.
+            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+                this.logger.warn(
+                    `국내 시세 0/빈값 (${code}) — 종목코드/거래상태 확인 필요`,
+                );
+            }
+            return price;
         });
     }
 
@@ -222,11 +232,17 @@ export class KisProvider {
                 throw new KisApiError(data.msg_cd, data.msg1);
             }
             const o = data.output;
-            return {
+            const price = {
                 current_price: Number(o.last),
                 change_rate: Number(o.rate),
                 trading_value: Number(o.tamt),
             };
+            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+                this.logger.warn(
+                    `해외 시세 0/빈값 (${symbol}) — 종목코드/거래상태 확인 필요`,
+                );
+            }
+            return price;
         });
     }
 
@@ -300,6 +316,7 @@ export class KisProvider {
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
             return {
                 change_rate: this.changeRateFromGraph(graph),
+                change_amount: this.changeAmountFromGraph(graph),
                 current_value: graph.length
                     ? graph[graph.length - 1].close_price
                     : 0,
@@ -343,6 +360,7 @@ export class KisProvider {
                 .sort((a, b) => a.write_date.localeCompare(b.write_date));
             return {
                 change_rate: this.changeRateFromGraph(graph),
+                change_amount: this.changeAmountFromGraph(graph),
                 current_value: graph.length
                     ? graph[graph.length - 1].close_price
                     : 0,
@@ -420,6 +438,14 @@ export class KisProvider {
         const last = graph[graph.length - 1].close_price;
         if (!prev) return 0;
         return Math.round(((last - prev) / prev) * 10000) / 100;
+    }
+
+    // 그래프 마지막 두 종가의 포인트 차이(전일 대비).
+    private changeAmountFromGraph(graph: { close_price: number }[]): number {
+        if (graph.length < 2) return 0;
+        const prev = graph[graph.length - 2].close_price;
+        const last = graph[graph.length - 1].close_price;
+        return Math.round((last - prev) * 100) / 100;
     }
 
     private sleep(ms: number): Promise<void> {
