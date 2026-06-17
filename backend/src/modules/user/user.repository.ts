@@ -12,6 +12,16 @@ export class UserRepository {
                 id: true,
                 nickname: true,
                 represent_stock_id: true,
+
+                stocks: {
+                    select: {
+                        characters: {
+                            select: {
+                                img_url: true,
+                            },
+                        },
+                    },
+                },
             },
         });
     }

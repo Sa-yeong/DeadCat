@@ -13,7 +13,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
     app.enableCors(); // 프론트(React)에서 호출 허용
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(
+        new ValidationPipe({ transform: true, whitelist: true }),
+    );
     await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
