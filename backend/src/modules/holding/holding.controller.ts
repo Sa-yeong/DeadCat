@@ -11,13 +11,13 @@ interface AuthenticatedRequest extends Request {
 export class HoldingController {
     constructor(private readonly holdingService: HoldingService) {}
 
-    // @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard)
     @Get()
     async getMyHoldings(
         @Request() req: AuthenticatedRequest,
     ): Promise<HoldingItemDto[]> {
-        //const userId = String(req.user!.id);
-        const userId = '2';
+        const userId = String(req.user!.id);
+        //const userId = '2';
         return await this.holdingService.getMyHoldings(userId);
     }
 }
