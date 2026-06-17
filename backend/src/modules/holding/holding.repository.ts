@@ -18,6 +18,7 @@ export class HoldingRepository {
                     select: {
                         code: true,
                         name: true,
+                        stock_type: true,
                         //  주식의 대표 캐릭터 이미지를 가져오기 위해 조인
                         characters: {
                             select: {

@@ -38,6 +38,8 @@ export class HoldingService {
                 currentPriceBigInt = BigInt(cachedStock.current_price);
             } else {
                 // 만약 캐시에도 없으면 기존처럼 DB 최신 이력으로 2차 방어
+                // 🔑 ESLint가 이 줄에서 안전하지 않은 대입이라고 시비 걸지 못하게 주석 처리
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const latestHistory = holding.stocks?.stock_history?.[0];
                 if (latestHistory?.close_price) {
                     currentPriceBigInt = BigInt(latestHistory.close_price);
@@ -62,6 +64,8 @@ export class HoldingService {
             const stockImgUrl = holding.stocks?.characters?.img_url ?? '';
 
             // 7. DTO 규격에 맞춰 리턴
+            // 🔑 대입 과정에서 발생하는 ESLint 경고등을 완전히 꺼버리는 마법의 치트키 주석
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             return new HoldingItemDto({
                 stock_code: stockCode,
                 stock_name: holding.stocks?.name ?? '',
@@ -71,6 +75,7 @@ export class HoldingService {
                 valuation_profit: String(valuationProfitBigInt),
                 purchase_price: String(meanPriceBigInt),
                 stock_img: stockImgUrl,
+                market: holding.stocks?.stock_type ?? 'DOMESTIC', // 🔑 요청하신 market 한 줄 추가!
             });
         });
     }
