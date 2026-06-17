@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { LikePostRepository } from './like-post.repository';
-import { LikedPostItemDto } from './dto/liked-post-list.response.dto';
+import { LikedPostItemDto } from './dto/like-post-list.response.dto';
 
 @Injectable()
 export class LikePostService {
