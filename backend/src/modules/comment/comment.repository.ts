@@ -18,6 +18,13 @@ export class CommentRepository {
                                 nickname: true,
                             },
                         },
+
+                        _count: {
+                            select: {
+                                comments: true, // model posts의 comments comments[]
+                                like_posts: true, // model posts의 like_posts like_posts[]
+                            },
+                        },
                     },
                 },
             },
