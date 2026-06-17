@@ -17,6 +17,7 @@ export class AssetRepository {
                         mean_price_krw: true,
                         stocks: {
                             select: {
+                                code: true,
                                 stock_history: {
                                     orderBy: {
                                         record_date: 'desc', // 최신 날짜가 위로 오도록 정렬

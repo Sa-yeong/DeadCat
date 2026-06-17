@@ -6,7 +6,8 @@ export class HoldingItemDto {
     return_rate: number; // 수익률 (%)
     valuation_profit: string; // 평가손익
     purchase_price: string; // 평균단가
-    stock_img: string; //주식 대표 이미지
+    stock_img: string; // 주식 대표 이미지
+    market: string; // 국내/해외 구분 (DOMESTIC | FOREIGN)
 
     constructor(partial: {
         stock_code: string;
@@ -17,6 +18,7 @@ export class HoldingItemDto {
         valuation_profit: string;
         purchase_price: string;
         stock_img: string;
+        market: string;
     }) {
         this.stock_code = partial.stock_code;
         this.stock_name = partial.stock_name;
@@ -26,5 +28,6 @@ export class HoldingItemDto {
         this.valuation_profit = partial.valuation_profit;
         this.purchase_price = partial.purchase_price;
         this.stock_img = partial.stock_img;
+        this.market = partial.market; //
     }
 }
