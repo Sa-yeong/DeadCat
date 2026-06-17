@@ -61,8 +61,7 @@ export class StocksService {
                 current_price: price.current_price,
                 change_rate: price.change_rate,
                 trading_value: price.trading_value,
-                // trading_value_krw: price.trading_value_krw,
-                trading_value_krw: price.trading_value,
+                trading_value_krw: price.trading_value_krw,
                 is_favorite: favoriteSet.has(code),
             });
         }
