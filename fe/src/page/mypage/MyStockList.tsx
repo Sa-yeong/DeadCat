@@ -33,20 +33,25 @@ export function MyStockList() {
     }, [])
 
 
-    return <div>
-        <MyStock s_name='종목' quantity='수량' price='현재가' mean_price='평균단가' profit='손익' rate='수익률' />
-        {
-            myHoldings.map((myStock) =>
-                <MyStock key={myStock.stock_code}
-                    s_name={myStock.stock_name} 
-                    quantity={myStock.quantity} 
-                    price={myStock.current_price}
-                    mean_price={myStock.purchase_price}
-                    profit={myStock.valuation_profit}
-                    rate={myStock.return_rate}
-                    market={myStock.market} />
-            )
-        }
+    return <div className='my-stock-list'>
+        <div className='stock-list-header'>
+            <MyStock s_name='종목' quantity='수량' price='현재가' mean_price='평균단가' profit='손익' rate='수익률' />
+        </div>
+        <div className='stock-list-body'>
+            {
+                myHoldings.map((myStock) =>
+                    <MyStock key={myStock.stock_code}
+                        s_name={myStock.stock_name} 
+                        quantity={myStock.quantity} 
+                        price={myStock.current_price}
+                        mean_price={myStock.purchase_price}
+                        profit={myStock.valuation_profit}
+                        rate={myStock.return_rate}
+                        market={myStock.market} />
+                )
+            }
+        </div>
+        
     </div>;
 }
 

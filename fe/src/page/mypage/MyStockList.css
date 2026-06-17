@@ -1,4 +1,15 @@
-.stock-row{
+.my-stock-list{
+    height: 450px;
+    overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+}
+.my-stock-list .stock-list-body{
+    flex: 1;
+    overflow-y: auto;
+}
+.my-stock-list .stock-row{
     border-bottom: 1px solid black;
     height: 50px;
     width: 100%;
@@ -7,4 +18,5 @@
     grid-template-columns: 1fr .5fr 1fr 1fr 1fr 1fr;
     justify-items: center;
     align-items: center;
+    text-align: center;
 }
