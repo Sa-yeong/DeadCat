@@ -29,7 +29,7 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
                 headers: {Authorization: `Bearer ${token}`}
             });
 
-            console.log(response.data);
+            console.log('관심 종목 해제 성공',response.data);
         } catch (e) {
             console.error('관심 종목 해제 실패: ', e);
             setIsLiked(true);
@@ -75,9 +75,18 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
 
      return <div className='list-row' onMouseOver={mouseOver}>
         <span className='stock-order'>{order}</span>
-        <span onClick={toggleHeart}>
+        {(typeof isLiked==='string')?(
+            <span className='standard-date'>
+                {isLiked}
+            </span>
+        ):(
+            <span onClick={toggleHeart}>
             { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
-        </span>
+            </span>
+        )}
+        {/* <span onClick={toggleHeart}>
+            { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
+        </span> */}
         <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
         <span className='stock-name'>{s_name}</span>
         <span className='current-price'>{formatComma(market, c_price)}</span>

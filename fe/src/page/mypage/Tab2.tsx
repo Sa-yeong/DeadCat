@@ -105,10 +105,14 @@ function TransacList({date, s_name, type, quantity, price, mean_price, profit, r
         <span>{s_name}</span>
         <span>{type}</span>
         <span>{quantity}</span>
-        <span>{price}</span>
-        <span>{mean_price}</span>
+        <span>
+            {(isNaN(Number(price)))? price : Number(price).toLocaleString()}
+        </span>
+        <span>
+            {(isNaN(Number(mean_price)))? mean_price : Number(mean_price).toLocaleString()}
+        </span>
         <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
-            {profit}
+            {(isNaN(Number(profit)))? profit : Number(profit).toLocaleString()}
         </span>
         <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
             {(typeof rate =='string')?rate:rate + '%'}

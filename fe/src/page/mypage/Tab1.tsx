@@ -32,6 +32,7 @@ export function Tab1(){
     </div>;
 }
 
+// 대표 캐릭터 이미지
 function Represent({mydata, setMydata}:any){
     const [open, setOpen] = useState(false);
     const navigate = useNavigate();
@@ -76,6 +77,7 @@ function Represent({mydata, setMydata}:any){
     </>;
 }
 
+// 사용자 자산 정보
 function AssetInfo(){
     const [myAsset, setMyAsset] = useState<Assets|null>(null);
     // 필요한 정보: 주문 가능, 매입 금액, 평가 금액, 평가 손익, 손익률 
@@ -99,27 +101,33 @@ function AssetInfo(){
     return <>
         <div className='asset-row'>
             총 자산 :  
-            <span>{myAsset?.total_investment}</span>
+            <span>{Number(myAsset?.total_investment).toLocaleString()}</span>
         </div>
         <div className='asset-row'>
             잔액 : 
-            <span>{myAsset?.available_cash}</span>
+            <span>{Number(myAsset?.available_cash).toLocaleString()}</span>
         </div>
         <div className='asset-row'>
             매입 금액 : 
-             <span>{myAsset?.total_investment}</span>
+             <span>{Number(myAsset?.total_investment).toLocaleString()}</span>
         </div>
         <div className='asset-row'>
             평가 금액 : 
-            <span>{myAsset?.total_evaluation_amount}</span>
+            <span>{Number(myAsset?.total_evaluation_amount).toLocaleString()}</span>
         </div>
         <div className='asset-row'>
             평가 손익 : 
-            <span>{myAsset?.total_valuation_profit}</span>
+            <span style={{color: (myAsset?.valuation_return_rate===0||(typeof myAsset?.valuation_return_rate =='string'))?
+                'black':((myAsset?.valuation_return_rate>0) ?'red':'blue')}}>
+                {Number(myAsset?.total_valuation_profit).toLocaleString()}
+            </span>
         </div>
         <div className='asset-row'>
             손익률 : 
-            <span>{myAsset?.valuation_return_rate}</span>
+            <span style={{color: (myAsset?.valuation_return_rate===0||(typeof myAsset?.valuation_return_rate =='string'))?
+                'black':((myAsset?.valuation_return_rate>0) ?'red':'blue')}}>
+                {myAsset?.valuation_return_rate}
+            </span>
         </div>
     </>;
 }

@@ -42,7 +42,7 @@ export function StockListView(){
                 activeImg? (
                     <img src={activeImg} alt='캐릭터 썸네일' / >
                 ) : (
-                    "첫번째 종목의 이미지 고정하고 싶음"
+                    "첫번째 종목의 이미지"
                 )
             }
         </span>

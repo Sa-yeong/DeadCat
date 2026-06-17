@@ -38,19 +38,39 @@ export function CategoryList(){
 
     const [stocks, setStocks] = useState<StockList[]>([]);
 
-    const fetchStock = async (cate_code: string) => {
+    const fetchStock = async (cate_code: string) => { //섹터별 종목 리스트 조회
         try{
-            const response = await api.get(`/sectors/${cate_code}/stocks`);
+            const token = localStorage.getItem('token');
+            let response;
+
+            if(token){ // 로그인 시
+                response = await api.get(`/sectors/${cate_code}/stocks`,{
+                    headers: {Authorization: `Bearer ${token}`}
+                });
+            } else{ // 비로그인 시
+                response = await api.get(`/sectors/${cate_code}/stocks`);
+            }
+
             setStocks(response.data.data);
+            console.log(response.data.data)
         } catch(e){console.error('카테고리별 종목 조회 실패: ', e);}
     }
 
     const [cateRows, setCateRows] = useState<Categories[]>([]);
 
-    useEffect(() => {
+    useEffect(() => { // 섹터 목록 조회
         const fetchCate = async () =>{
             try{
-                const response = await api.get('/sectors');
+                const token = localStorage.getItem('token');
+                let response;
+
+                if(token){ // 로그인 시
+                    response = await api.get('/sectors', {
+                        headers: {Authorization: `Bearer ${token}`}
+                    });
+                } else { // 비로그인 시
+                    response = await api.get('/sectors');
+                }
 
                 setCateRows(response.data.data);
                 console.log('카테고리별 리스트 조회 성공', response.data.data);

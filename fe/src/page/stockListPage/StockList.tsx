@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useOutletContext } from 'react-router-dom';
 import { StockRow } from "./StockRow";
 import { api } from '../../api/axios';
+import dayjs, { Dayjs } from 'dayjs';
 
 interface StockItem{
     rank: number;
@@ -19,6 +20,7 @@ interface StockItem{
 
 export function StockList(){
     const [stockRows, setStockRows] = useState<StockItem[]>([]);
+    const [standardDate, setStandardDate] = useState<Dayjs>(dayjs());
 
     const {setActiveImg} = useOutletContext<{setActiveImg: (url: string|null) => void}>();
     
@@ -27,8 +29,20 @@ export function StockList(){
 
             const fetchStocks = async () => {
                 try {
-                    const response = await api.get('/stocks/ranking')
+                    const token = localStorage.getItem('token');
+                    let response;
+                    
+                    if(token){ // 로그인 된 상태
+                        response = await api.get('/stocks/ranking',{
+                            headers:{Authorization: `Bearer ${token}`}
+                        });
+                    } else { // 비로그인 상태
+                        response = await api.get('stocks/ranking');
+                    }
+
+                    
                     setStockRows(response.data.data);
+                    setStandardDate(dayjs());
 
                     if(isFirstFetch && response.data.data.length > 0){
                         setActiveImg(response.data.data[0].character_img_url);
@@ -45,11 +59,27 @@ export function StockList(){
             return ()=> clearInterval(interval);
         }, []);
 
+        const changeFormat = () => {
+            let standard;
+            if(standardDate.format('YYYY-MM-DD') === dayjs().format('YYYY-MM-DD')){ // 기준 날짜가 오늘일때
+                standard = '오늘 ' + standardDate.format('HH:mm') + ' 기준';
+            } else if(standardDate.format('YYYY-MM-DD') === dayjs().subtract(1,'day').format('YYYY-MM-DD')){
+                // 어제일 경우
+                standard = '어제 ' + standardDate.format('HH:mm')+ ' 기준';
+            } else { // 나머지의 경우
+                standard = standardDate.format('MM-DD HH:mm') + ' 기준';
+            }
+
+            return standard;
+        }
+
     return <div className='stock-table'>
-        <div className='table-header'>
-            <StockRow order={'순위'} s_name={'종목 이름'} 
-            c_price={'현재 가'} rise_rate={'등락률'} 
-            t_value={'거래대금 순'} style={{color: 'black'}} />
+        <div className='table-header'> 
+            <StockRow order={'순위'} 
+            isLike={changeFormat()}
+            s_name={'종목 이름'} c_price={'현재 가'} 
+            rise_rate={'등락률'} t_value={'거래대금 순'} 
+            style={{color: 'black'}} />
         </div>
         <div className='table-body'>
             {
@@ -67,4 +97,4 @@ export function StockList(){
             }
         </div>
     </div>;
-}
+} 
