@@ -34,7 +34,10 @@ export class HoldingService {
                 returnRate = Number(rateBonus) / 100;
             }
 
-            // 4. DTO 규격에 맞춰 리턴
+            //  4. 캐릭터 이미지 주소 추출
+            const stockImgUrl = holding.stocks?.characters?.img_url ?? '';
+
+            // 5. DTO 규격에 맞춰 리턴
             return new HoldingItemDto({
                 stock_code: holding.stocks?.code ?? '',
                 stock_name: holding.stocks?.name ?? '',
@@ -43,6 +46,7 @@ export class HoldingService {
                 return_rate: returnRate,
                 valuation_profit: String(valuationProfitBigInt),
                 purchase_price: String(meanPriceBigInt),
+                stock_img: stockImgUrl,
             });
         });
     }

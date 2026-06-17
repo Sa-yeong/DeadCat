@@ -3,7 +3,6 @@ import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { UserProfileResponseDto } from './dto/user-profile.response.dto';
 
-//  1. JWT 가드를 통과한 인증된 Request 타입을 간단하게 정의
 interface AuthenticatedRequest extends Request {
     user: {
         id: string;
