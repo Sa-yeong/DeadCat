@@ -8,12 +8,12 @@ import { SectorResponseDto } from './dto/sector.response.dto';
 // 섹터는 6개로 고정이라 DB 컬럼 대신 여기서 관리한다. key=sector_code(=카테고리 id).
 // 실제 일러스트가 준비되면 아래 URL만 교체하면 된다(응답 형식은 그대로).
 const SECTOR_IMG: Record<string, string> = {
-    '1': 'https://placehold.co/300x200?text=반도체',
-    '2': 'https://placehold.co/300x200?text=IT-플랫폼',
-    '3': 'https://placehold.co/300x200?text=자동차-에너지',
-    '4': 'https://placehold.co/300x200?text=금융',
-    '5': 'https://placehold.co/300x200?text=소비재',
-    '6': 'https://placehold.co/300x200?text=ETF',
+    '1': '/images/sector_1.svg',
+    '2': '/images/sector_2.svg',
+    '3': '/images/sector_3.svg',
+    '4': '/images/sector_4.svg',
+    '5': '/images/sector_5.svg',
+    '6': '/images/sector_6.svg',
 };
 
 // 섹터 도메인. 시세는 stocks 경유로만 접근(Redis 직접 접근 안 함).
