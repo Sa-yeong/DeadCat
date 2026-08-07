@@ -20,7 +20,7 @@ export class AssetRepository {
                                 code: true,
                                 stock_history: {
                                     orderBy: {
-                                        record_date: 'desc', // 최신 날짜가 위로 오도록 정렬
+                                        record_date: 'desc', // 최신 날짜가 위로 오도록
                                     },
                                     take: 1,
                                     select: {

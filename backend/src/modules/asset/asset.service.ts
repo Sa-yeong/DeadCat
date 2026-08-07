@@ -44,10 +44,10 @@ export class AssetService {
             let currentPrice = holding.mean_price_krw; // 기본 방어선은 평단가
 
             if (cachedStock && cachedStock.current_price) {
-                //  캐시에 싱싱한 주가가 있다면 그걸 사용
+                //  캐시에 최근 주가가 있다면 그걸 사용
                 currentPrice = BigInt(cachedStock.current_price);
             } else {
-                // 캐시에 없으면 DB 이력으로 2차 방어
+                // 캐시에 없으면 DB 이력으로 방어
                 const latestHistory = holding.stocks?.stock_history?.[0];
                 if (latestHistory?.close_price) {
                     currentPrice = BigInt(latestHistory.close_price);
@@ -77,7 +77,7 @@ export class AssetService {
             total_evaluation_amount: String(totalEvaluationBigInt),
             total_valuation_profit: String(totalValuationProfitBigInt),
             valuation_return_rate: valuationReturnRate,
-            realized_profit: '0',
+            selling_profit: '0',
         });
     }
 }

@@ -13,7 +13,7 @@ export class TransactionService {
         userId: string,
         query: TransactionQueryDto,
     ): Promise<TransactionItemDto[]> {
-        // 1. 거래 내역과 유저의 현재 보유 주식 평단가를 동시에 조회합니다.
+        // 1. 거래 내역과 유저의 현재 보유 주식 평단가를 동시에 조회
         const [histories, holdings] = await Promise.all([
             this.transactionRepository.findUserTransactions(userId, query),
             this.transactionRepository.findUserHoldings(userId),

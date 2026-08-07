@@ -38,4 +38,19 @@ export class StocksRepository {
             character_img_url: r.characters?.img_url ?? null,
         }));
     }
+
+    // stocks별 기본 정보 조회
+    async findStockByCode(code: string) {
+        return await this.prisma.stocks.findFirst({
+            where: { code },
+            select: {
+                code: true,
+                name: true,
+                stock_type: true,
+                characters: {
+                    select: { img_url: true },
+                },
+            },
+        });
+    }
 }

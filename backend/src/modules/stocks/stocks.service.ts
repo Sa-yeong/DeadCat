@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PriceService } from '../../price/price.service';
 import { FavoritesService } from '../favorites/favorites.service';
 import { StocksRepository } from './stocks.repository';
 import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
+import { StockDetailResponseDto } from './dto/stock-detail.response.dto';
 
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
 const TOP_N = 20;
@@ -76,5 +77,33 @@ export class StocksService {
             result.set(code, price.change_rate);
         }
         return result;
+    }
+
+    // GET /stock/{stock_code} 개별 종목 기본 정보 조회
+    async getStockDetail(
+        stockCode: string,
+        userId?: bigint,
+    ): Promise<StockDetailResponseDto> {
+        const meta = await this.repo.findStockByCode(stockCode);
+        if (!meta) throw new NotFoundException('종목을 찾을 수 없습니다.');
+
+        const prices = await this.price.readPrices([stockCode]);
+        const price = prices.get(stockCode);
+
+        const isFavorite = userId
+            ? (await this.favorites.findFavoriteStockCodes(userId)).has(
+                  stockCode,
+              )
+            : false;
+
+        return new StockDetailResponseDto({
+            stock_code: meta.code,
+            stock_name: meta.name,
+            logo_url: meta.characters?.img_url ?? null,
+            current_price: price?.current_price ?? 0,
+            change_rate: price?.change_rate ?? 0,
+            market: meta.stock_type,
+            is_favorite: isFavorite,
+        });
     }
 }
