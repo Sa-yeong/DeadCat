@@ -257,7 +257,6 @@ async function main() {
                 login_pw: 'test1234',
                 nickname: '테스트유저',
                 balance: 100000000,
-                represent_stock_id: null,
             },
             {
                 id: 2,
@@ -265,7 +264,6 @@ async function main() {
                 login_pw: '$2b$10$8lt7JK3722SRY7z/2jiq4eqoElppU8Jyfjz3.KDw6r/wSiRN1cfzq',
                 nickname: 'deadcat1',
                 balance: 100000000,
-                represent_stock_id: 2,
             },
         ],
         skipDuplicates: true, // 🌟 이미 동일한 id의 유저가 있다면 에러를 내지 않고 건너뜁니다.
@@ -325,12 +323,12 @@ async function main() {
     console.log('📝 4. posts 데이터 삽입 중...');
     await prisma.posts.createMany({
         data: [
-            { id: 1, user_id: 2, title: '오늘 삼전 주가 흐름 분석해봅니다', content: '차트가 살짝 횡보하는 느낌인데, 보유 주식 탭에서 제 평단가 보니까 슬슬 추매 타이밍 잡아야 할 것 같아요.', write_time: new Date('2026-06-16T04:20:00') },
-            { id: 2, user_id: 2, title: '케빈 워시의 첫 FOMC', content: '과거 3번의 연준의장 취임 후 첫 FOMC에서는 S&P500의 장중 평균 흐름이 약세를 보였다', write_time: new Date('2026-06-15T10:00:00') },
-            { id: 3, user_id: 2, title: '안녕하세요', content: '이번에 처음 들어오게 되었습니다.', write_time: new Date('2026-06-10T14:25:30') },
-            { id: 4, user_id: 2, title: '엔비디아 지금 자리에서 추매해도 괜찮을까요?', content: '액면분할 이후로 계속 횡보하는 느낌이라 진입 타이밍 보고 있는데... 전고점 뚫고 더 갈 수 있을지 의견 궁금합니다. 상단 매물대가 좀 무겁긴 하네요.', write_time: new Date('2026-06-17T11:15:30') },
-            { id: 5, user_id: 2, title: '오늘 국장 하락세는 기관 매도 폭탄 때문이네요 ㅡㅡ', content: '오전부터 외인들은 순매수 잡히길래 반등하나 기대했더니만 기관 애들이 물량 다 던지면서 지수 확 끌어내리네요. 언제쯤 삼전 현대차 제대로 가려나 한숨만 나옵니다.', write_time: new Date('2026-06-17T14:45:00') },
-            { id: 6, user_id: 2, title: '이번 미국 고용지표 발표가 향후 금리방향 가를듯', content: '지난번 연준 발표는 다소 매파적이었는데 이번 주말 고용지표가 둔화세로 나오면 다시 9월 인하론에 힘이 실릴 것 같습니다. 일단 달러 인덱스 추이 보면서 현금 비중 유지합니다.', write_time: new Date('2026-06-18T09:10:15') },
+            { id: 1, writer_id: 2, content: '차트가 살짝 횡보하는 느낌인데, 보유 주식 탭에서 제 평단가 보니까 슬슬 추매 타이밍 잡아야 할 것 같아요.', write_time: new Date('2026-06-16T04:20:00') },
+            { id: 2, writer_id: 2, content: '과거 3번의 연준의장 취임 후 첫 FOMC에서는 S&P500의 장중 평균 흐름이 약세를 보였다', write_time: new Date('2026-06-15T10:00:00') },
+            { id: 3, writer_id: 2, content: '이번에 처음 들어오게 되었습니다.', write_time: new Date('2026-06-10T14:25:30') },
+            { id: 4, writer_id: 2, content: '액면분할 이후로 계속 횡보하는 느낌이라 진입 타이밍 보고 있는데... 전고점 뚫고 더 갈 수 있을지 의견 궁금합니다. 상단 매물대가 좀 무겁긴 하네요.', write_time: new Date('2026-06-17T11:15:30') },
+            { id: 5, writer_id: 2, content: '오전부터 외인들은 순매수 잡히길래 반등하나 기대했더니만 기관 애들이 물량 다 던지면서 지수 확 끌어내리네요. 언제쯤 삼전 현대차 제대로 가려나 한숨만 나옵니다.', write_time: new Date('2026-06-17T14:45:00') },
+            { id: 6, writer_id: 2, content: '지난번 연준 발표는 다소 매파적이었는데 이번 주말 고용지표가 둔화세로 나오면 다시 9월 인하론에 힘이 실릴 것 같습니다. 일단 달러 인덱스 추이 보면서 현금 비중 유지합니다.', write_time: new Date('2026-06-18T09:10:15') },
         ],
         skipDuplicates: true,
     });
