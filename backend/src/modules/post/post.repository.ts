@@ -8,23 +8,23 @@ export class PostRepository {
     async findUserPosts(userId: string) {
         return await this.prisma.posts.findMany({
             where: {
-                user_id: BigInt(userId),
+                writer_id: BigInt(userId),
             },
             include: {
-                users: {
+                users_posts_writer_idTousers: {
                     select: {
                         nickname: true,
                     },
                 },
                 _count: {
                     select: {
-                        comments: true, // 댓글 개수 집계
-                        like_posts: true, // 좋아요 개수 집계
+                        comments: true,
+                        like_posts: true,
                     },
                 },
             },
             orderBy: {
-                write_time: 'desc', // 최신순 정렬
+                write_time: 'desc',
             },
         });
     }

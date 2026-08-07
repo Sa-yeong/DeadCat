@@ -154,6 +154,7 @@ model posts {
   stock_id                          BigInt?
   type                              String       @default("COMMUNITY") @db.VarChar(20)
   target_user_id                    BigInt?
+  title                             String?      @db.VarChar(200)
   comments                          comments[]
   like_posts                        like_posts[]
   stocks                            stocks?      @relation(fields: [stock_id], references: [id], onDelete: Cascade)

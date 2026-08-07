@@ -23,7 +23,6 @@ import { HoldingModule } from './modules/holding/holding.module';
 import { TransactionModule } from './modules/transaction/transaction.module';
 import { PostModule } from './modules/post/post.module';
 import { CommentModule } from './modules/comment/comment-module';
-import { RepresentativeCharacterModule } from './modules/representative-character/representative-character.module';
 import { NicknameModule } from './modules/nickname/nickname.module';
 import { LikePostModule } from './modules/like-post/like-post.module';
 
@@ -55,7 +54,6 @@ import { LikePostModule } from './modules/like-post/like-post.module';
         TransactionModule,
         PostModule,
         CommentModule,
-        RepresentativeCharacterModule,
         NicknameModule,
         LikePostModule,
     ],

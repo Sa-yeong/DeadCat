@@ -15,19 +15,20 @@ export class LikePostService {
                 const post = record.posts;
                 if (!post) return null;
 
-                // 5가지 항목 정밀 맵핑
                 const authorNickname =
-                    post.users?.nickname || '알 수 없는 사용자';
+                    post.users_posts_writer_idTousers?.nickname ||
+                    '알 수 없는 사용자';
+
                 const createdAtStr = post.write_time
                     ? post.write_time.toISOString().split('T')[0]
                     : '날짜 정보 없음';
 
                 return new LikedPostItemDto({
                     post_id: String(post.id),
-                    title: post.title,
+                    content: post.content ?? '내용 없음',
                     author_nickname: authorNickname,
-                    comment_count: post._count?.comments ?? 0, // 댓글 수 집계
-                    like_count: post._count?.like_posts ?? 0, // 좋아요 수 집계
+                    comment_count: post._count?.comments ?? 0,
+                    like_count: post._count?.like_posts ?? 0,
                     created_at: createdAtStr,
                 });
             })

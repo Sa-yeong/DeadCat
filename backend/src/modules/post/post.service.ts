@@ -10,18 +10,23 @@ export class PostService {
         const posts = await this.postRepository.findUserPosts(userId);
 
         return posts.map((post) => {
-            const authorNickname = post.users?.nickname || '알 수 없는 사용자';
+            const authorNickname =
+                post.users_posts_writer_idTousers?.nickname ||
+                '알 수 없는 사용자';
+
             const createdAtStr = post.write_time
                 ? post.write_time.toISOString().split('T')[0]
                 : '날짜 없음';
 
             return new MyPostItemDto({
                 post_id: String(post.id),
-                title: post.title,
+                // title 대신 content 전달 (null/undefined 대응)
+                content: post.content ?? '내용 없음',
                 author_nickname: authorNickname,
-                comment_count: post._count?.comments ?? 0, // 댓글 수 매핑
-                like_count: post._count?.like_posts ?? 0, // 좋아요 수 매핑
+                comment_count: post._count?.comments ?? 0,
+                like_count: post._count?.like_posts ?? 0,
                 created_at: createdAtStr,
+                source_type: 'COMMUNITY', // 필요 시 지정
             });
         });
     }
