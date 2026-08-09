@@ -4,6 +4,7 @@ import { User } from '../../common/decorators/user.decorator';
 import { StocksService, MarketFilter } from './stocks.service';
 import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 import { StockDetailResponseDto } from './dto/stock-detail.response.dto';
+import { VolumeSummaryResponseDto } from './dto/volume-summary.response.dto';
 
 // 거래대금 상위 종목 리스트. 선택 인증: 로그인 시 is_favorite 표시.
 @Controller('stocks')
@@ -30,5 +31,12 @@ export class StocksController {
         @User() userId?: bigint,
     ): Promise<StockDetailResponseDto> {
         return this.stocksService.getStockDetail(stockCode, userId);
+    }
+
+    @Get(':stock_code/volume-summary')
+    async getVolumeSummary(
+        @Param('stock_code') stockCode: string,
+    ): Promise<VolumeSummaryResponseDto> {
+        return this.stocksService.getVolumeSummary(stockCode);
     }
 }

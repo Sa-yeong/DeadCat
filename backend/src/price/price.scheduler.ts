@@ -11,6 +11,8 @@ const PRICE_TTL_SECONDS = 100;
 // 환율 조회 실패 시 폴백 환율(원/달러).
 const DEFAULT_USD_KRW = 1350;
 
+const VOLUME_SUMMARY_TTL_SECONDS = 300; //(5분) 거래대금 캐시 TTL
+
 // 시세 수집 스케줄러. KIS에서 받아 Redis에 적재한다(컨트롤러는 Redis만 읽음).
 @Injectable()
 export class PriceScheduler {
@@ -47,7 +49,10 @@ export class PriceScheduler {
                 .map((s) => s.code);
             const overseas = stocks
                 .filter((s) => s.stock_type === 'FOREIGN')
-                .map((s) => ({ symbol: s.code, exchange: s.exchange_code ?? '' }));
+                .map((s) => ({
+                    symbol: s.code,
+                    exchange: s.exchange_code ?? '',
+                }));
 
             const domPrices = await this.kis.getDomesticPrices(domesticCodes);
             const ovsPrices = await this.kis.getOverseasPrices(overseas);
@@ -58,7 +63,11 @@ export class PriceScheduler {
                 rankingScore: number;
             }[] = [];
             for (const [code, price] of domPrices) {
-                entries.push({ code, price, rankingScore: price.trading_value });
+                entries.push({
+                    code,
+                    price,
+                    rankingScore: price.trading_value,
+                });
             }
             for (const [code, price] of ovsPrices) {
                 entries.push({
@@ -69,6 +78,23 @@ export class PriceScheduler {
             }
 
             await this.price.writePrices(entries, PRICE_TTL_SECONDS);
+
+            // 국내 종목만 volume-summary 적재 (해외는 KIS TR ID 다름)
+            for (const code of domesticCodes) {
+                try {
+                    const summary = await this.kis.fetchVolumeSummary(code);
+                    await this.price.writeVolumeSummary(
+                        code,
+                        summary,
+                        VOLUME_SUMMARY_TTL_SECONDS, //
+                    );
+                    this.logger.log(`volume-summary 적재 완료: ${code}`);
+                } catch (e) {
+                    this.logger.warn(
+                        `volume-summary 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
+                    );
+                }
+            }
             this.logger.log(
                 `시세 적재 완료: ${entries.length}/${stocks.length}종목 (환율 ${usdKrw})`,
             );

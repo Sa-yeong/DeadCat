@@ -32,6 +32,29 @@ export interface IndexData {
     graph: IndexHistoryPoint[];
 }
 
+//거래대금
+export interface KisVolumeSummaryResponse {
+    rt_cd: string;
+    msg_cd: string;
+    msg1: string;
+    output1: {
+        acml_vol: string;
+        acml_tr_pbmn: string;
+    };
+    output2: Array<{
+        stck_cntg_hour: string;
+        cntg_vol: string;
+    }>;
+}
+
+//거래대금
+export interface StockVolumeSummaryData {
+    stock_code: string;
+    total_volume: number;
+    total_trading_value: number;
+    volume_graph: Array<{ write_time: string; volume: number }>;
+}
+
 // 해외 거래소 코드 매핑: 우리 DB(주문용) → KIS 시세조회 EXCD.
 const OVERSEAS_EXCD: Record<string, string> = {
     NASD: 'NAS',
@@ -203,7 +226,10 @@ export class KisProvider {
             };
             // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우(주로 종목코드 오타/장전/거래정지).
             // 적재는 그대로 하되(이상치가 화면에 0으로 드러나게) 경고 로그를 남긴다.
-            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+            if (
+                !Number.isFinite(price.current_price) ||
+                price.current_price <= 0
+            ) {
                 this.logger.warn(
                     `국내 시세 0/빈값 (${code}) — 종목코드/거래상태 확인 필요`,
                 );
@@ -237,7 +263,10 @@ export class KisProvider {
                 change_rate: Number(o.rate),
                 trading_value: Number(o.tamt),
             };
-            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+            if (
+                !Number.isFinite(price.current_price) ||
+                price.current_price <= 0
+            ) {
                 this.logger.warn(
                     `해외 시세 0/빈값 (${symbol}) — 종목코드/거래상태 확인 필요`,
                 );
@@ -254,7 +283,9 @@ export class KisProvider {
             try {
                 result.set(codes[i], await this.getDomesticPrice(codes[i]));
             } catch (e) {
-                this.logger.warn(`국내 시세 실패 ${codes[i]}: ${this.errMsg(e)}`);
+                this.logger.warn(
+                    `국내 시세 실패 ${codes[i]}: ${this.errMsg(e)}`,
+                );
             }
         }
         return result;
@@ -457,6 +488,53 @@ export class KisProvider {
         const ax = e as { response?: { data?: unknown }; message?: string };
         if (ax.response?.data) return JSON.stringify(ax.response.data);
         return ax.message ?? String(e);
+    }
+
+    // 누적 거래대금량 조회
+    async fetchVolumeSummary(
+        stockCode: string,
+    ): Promise<StockVolumeSummaryData> {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice`;
+            const headers = await this.authHeaders('FHKST01010200');
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisVolumeSummaryResponse>(url, {
+                    headers,
+                    params: {
+                        FID_ETC_CLS_CODE: '',
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                        FID_INPUT_HOUR_1: '160000',
+                        FID_PW_DATA_INCU_YN: 'N',
+                    },
+                }),
+            );
+
+            if (data.rt_cd !== '0')
+                throw new KisApiError(data.msg_cd, data.msg1);
+
+            const output2 = Array.isArray(data.output2) ? data.output2 : [];
+            const volumeGraph = output2
+                .map((item) => {
+                    const h = item.stck_cntg_hour ?? '';
+                    return {
+                        write_time:
+                            h.length >= 4
+                                ? `${h.slice(0, 2)}:${h.slice(2, 4)}`
+                                : h,
+                        volume: Number(item.cntg_vol ?? 0),
+                    };
+                })
+                .reverse();
+
+            return {
+                stock_code: stockCode,
+                total_volume: Number(data.output1?.acml_vol ?? 0),
+                total_trading_value: Number(data.output1?.acml_tr_pbmn ?? 0),
+                volume_graph: volumeGraph,
+            };
+        });
     }
 }
 

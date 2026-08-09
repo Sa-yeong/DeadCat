@@ -4,6 +4,7 @@ import { FavoritesService } from '../favorites/favorites.service';
 import { StocksRepository } from './stocks.repository';
 import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 import { StockDetailResponseDto } from './dto/stock-detail.response.dto';
+import { VolumeSummaryResponseDto } from './dto/volume-summary.response.dto';
 
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
 const TOP_N = 20;
@@ -105,5 +106,19 @@ export class StocksService {
             market: meta.stock_type,
             is_favorite: isFavorite,
         });
+    }
+
+    // GET  /stocks/{stock_code}/volume-summary 거래대금 조회
+    async getVolumeSummary(
+        stockCode: string,
+    ): Promise<VolumeSummaryResponseDto> {
+        const meta = await this.repo.findStockByCode(stockCode);
+        if (!meta) throw new NotFoundException('종목을 찾을 수 없습니다.');
+
+        const cached = await this.price.readVolumeSummary(stockCode);
+        if (!cached)
+            throw new NotFoundException('거래량 데이터가 아직 없습니다.');
+
+        return new VolumeSummaryResponseDto(cached);
     }
 }

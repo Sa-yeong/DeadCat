@@ -1,14 +1,28 @@
-import { Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
+import {
+    Controller,
+    Delete,
+    Get,
+    Param,
+    Post,
+    UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { User } from '../../common/decorators/user.decorator';
 import { FavoritesService } from './favorites.service';
 import { MessageResponseDto } from './dto/message.response.dto';
+import { FavoriteItemResponseDto } from './dto/favorite-item.response.dto';
 
 // 관심종목 등록/해제. 인증 필수(JwtAuthGuard가 userId를 request.user에 세팅).
 @Controller('favorites')
 @UseGuards(JwtAuthGuard)
 export class FavoritesController {
     constructor(private readonly favoritesService: FavoritesService) {}
+
+    // GET /favorites — 관심 종목 목록 조회
+    @Get()
+    async findAll(@User() userId: bigint): Promise<FavoriteItemResponseDto[]> {
+        return await this.favoritesService.findAll(userId);
+    }
 
     // POST /favorites/{code} — 관심 등록
     @Post(':code')

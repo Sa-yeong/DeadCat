@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { RedisService } from '../providers/redis/redis.service';
-import { StockPrice } from '../providers/kis/kis.provider';
+import {
+    StockPrice,
+    StockVolumeSummaryData,
+} from '../providers/kis/kis.provider';
 
 // 거래대금 순위 Sorted Set 키.
 const RANKING_KEY = 'price:ranking';
 // 종목별 시세 캐시 키.
 const priceKey = (code: string): string => `price:${code}`;
+
+// priceKey 바로 아래에 추가 (클래스 밖)
+const volumeSummaryKey = (code: string): string =>
+    `price:volume-summary:${code}`;
 
 // 캐시에 저장/조회되는 시세. native 거래대금(trading_value) + 원화 환산(trading_value_krw).
 export interface CachedPrice extends StockPrice {
@@ -56,5 +63,25 @@ export class PriceService {
             if (raw) result.set(code, JSON.parse(raw) as CachedPrice);
         });
         return result;
+    }
+
+    // 거래대금 쓰기
+    async writeVolumeSummary(
+        code: string,
+        data: StockVolumeSummaryData,
+        ttlSeconds: number,
+    ): Promise<void> {
+        await this.redis.set(
+            volumeSummaryKey(code),
+            JSON.stringify(data),
+            ttlSeconds,
+        );
+    }
+    //거래 대금 읽어들이기
+    async readVolumeSummary(
+        code: string,
+    ): Promise<StockVolumeSummaryData | null> {
+        const raw = await this.redis.get(volumeSummaryKey(code));
+        return raw ? (JSON.parse(raw) as StockVolumeSummaryData) : null;
     }
 }
