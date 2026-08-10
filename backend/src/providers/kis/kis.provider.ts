@@ -37,11 +37,13 @@ export interface KisVolumeSummaryResponse {
     rt_cd: string;
     msg_cd: string;
     msg1: string;
-    output1: {
+    output?: {
+        // 현재가 조회 응답
         acml_vol: string;
         acml_tr_pbmn: string;
     };
-    output2: Array<{
+    output2?: Array<{
+        // 분봉 시계열 응답
         stck_cntg_hour: string;
         cntg_vol: string;
     }>;
@@ -495,26 +497,47 @@ export class KisProvider {
         stockCode: string,
     ): Promise<StockVolumeSummaryData> {
         return this.withRateLimitRetry(async () => {
-            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice`;
-            const headers = await this.authHeaders('FHKST01010200');
+            // 누적 거래량/거래대금: 현재가 조회 API
+            const priceUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
+            const chartUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice`;
+            const priceHeaders = await this.authHeaders('FHKST01010100');
+            const chartHeaders = await this.authHeaders('FHKST01010200');
 
-            const { data } = await firstValueFrom(
-                this.http.get<KisVolumeSummaryResponse>(url, {
-                    headers,
+            const now = new Date();
+            const currentTime = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
+            // 누적 거래량/거래대금 조회
+            const { data: priceData } = await firstValueFrom(
+                this.http.get<KisVolumeSummaryResponse>(priceUrl, {
+                    headers: priceHeaders,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                    },
+                }),
+            );
+            if (priceData.rt_cd !== '0')
+                throw new KisApiError(priceData.msg_cd, priceData.msg1);
+
+            // 분봉 시계열 조회
+            const { data: chartData } = await firstValueFrom(
+                this.http.get<KisVolumeSummaryResponse>(chartUrl, {
+                    headers: chartHeaders,
                     params: {
                         FID_ETC_CLS_CODE: '',
                         FID_COND_MRKT_DIV_CODE: 'J',
                         FID_INPUT_ISCD: stockCode,
-                        FID_INPUT_HOUR_1: '160000',
+                        FID_INPUT_HOUR_1: currentTime,
                         FID_PW_DATA_INCU_YN: 'N',
                     },
                 }),
             );
+            if (chartData.rt_cd !== '0')
+                throw new KisApiError(chartData.msg_cd, chartData.msg1);
 
-            if (data.rt_cd !== '0')
-                throw new KisApiError(data.msg_cd, data.msg1);
-
-            const output2 = Array.isArray(data.output2) ? data.output2 : [];
+            const output2 = Array.isArray(chartData.output2)
+                ? chartData.output2
+                : [];
             const volumeGraph = output2
                 .map((item) => {
                     const h = item.stck_cntg_hour ?? '';
@@ -530,8 +553,10 @@ export class KisProvider {
 
             return {
                 stock_code: stockCode,
-                total_volume: Number(data.output1?.acml_vol ?? 0),
-                total_trading_value: Number(data.output1?.acml_tr_pbmn ?? 0),
+                total_volume: Number(priceData.output?.acml_vol ?? 0),
+                total_trading_value: Number(
+                    priceData.output?.acml_tr_pbmn ?? 0,
+                ),
                 volume_graph: volumeGraph,
             };
         });

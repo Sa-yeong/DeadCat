@@ -5,6 +5,7 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 export class UserRepository {
     constructor(private readonly prisma: PrismaService) {}
 
+    //사용자 정보 조회
     async findMyProfile(userIdStr: string) {
         const userId = BigInt(userIdStr);
 
@@ -35,5 +36,20 @@ export class UserRepository {
             follower_num,
             followee_num,
         };
+    }
+
+    //거실 공유 여부 설정
+    async updateShareOption(userIdStr: string, shareOption: boolean) {
+        const userId = BigInt(userIdStr);
+
+        try {
+            return await this.prisma.users.update({
+                where: { id: userId },
+                data: { share_option: shareOption },
+                select: { share_option: true },
+            });
+        } catch {
+            return null;
+        }
     }
 }
