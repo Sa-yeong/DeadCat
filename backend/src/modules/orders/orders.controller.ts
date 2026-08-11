@@ -15,6 +15,7 @@ export class OrdersController {
         @Body() dto: CreateOrderDto,
     ): Promise<CreateOrderResponseDto> {
         const userId = req.user.id;
+
         return await this.ordersService.createOrder(userId, dto);
     }
 }

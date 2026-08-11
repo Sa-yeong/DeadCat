@@ -19,7 +19,6 @@ export class OrdersService {
         userId: bigint,
         dto: CreateOrderDto,
     ): Promise<CreateOrderResponseDto> {
-        // 지정가/예약 주문 시 가격 입력 필수 체크
         if (
             (dto.order_type === OrderType.LIMIT ||
                 dto.order_type === OrderType.RESERVED) &&
@@ -30,7 +29,6 @@ export class OrdersService {
             );
         }
 
-        // 종목 존재 여부 확인
         const stock = await this.ordersRepository.findStockByCode(
             dto.stock_code,
         );
@@ -38,17 +36,20 @@ export class OrdersService {
             throw new NotFoundException('존재하지 않는 종목 코드입니다.');
         }
 
-        // 시장가(MARKET) 주문인 경우 현재가 조회하여 단가 설정
         let executionPrice = dto.price ?? null;
         if (dto.order_type === OrderType.MARKET) {
             const prices = await this.priceService.readPrices([dto.stock_code]);
             const currentPriceData = prices.get(dto.stock_code);
             executionPrice = currentPriceData?.current_price ?? null;
+            if (!executionPrice) {
+                throw new BadRequestException('현재가 조회에 실패했습니다.');
+            }
         }
 
-        const initialStatus = 'PENDING';
+        // MARKET은 즉시 체결, LIMIT/RESERVED는 일단 PENDING (체결 엔진은 추후 구현)
+        const isImmediate = dto.order_type === OrderType.MARKET;
+        const initialStatus = isImmediate ? 'COMPLETED' : 'PENDING';
 
-        // DB에 주문 저장 (기본 상태 PENDING)
         const newOrder = await this.ordersRepository.createOrder({
             userId,
             stockId: stock.id,
@@ -58,6 +59,16 @@ export class OrdersService {
             price: executionPrice,
             status: initialStatus,
         });
+
+        if (isImmediate) {
+            await this.ordersRepository.executeTrade({
+                userId,
+                stockId: stock.id,
+                side: dto.order_side,
+                quantity: dto.quantity,
+                tradePrice: BigInt(executionPrice!),
+            });
+        }
 
         return new CreateOrderResponseDto({
             code: 'SUCCESS',

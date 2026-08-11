@@ -191,6 +191,7 @@ model stocks {
   roe                 Decimal               @db.Decimal(10, 2)
   ev                  BigInt
   name_en             String?               @db.VarChar(100)
+  is_event            Boolean               @default(false)
   affinity            affinity[]
   alarms              alarms[]
   char_reactions      char_reactions[]
@@ -219,15 +220,17 @@ model storage {
 }
 
 model transaction_history {
-  id               BigInt    @id @default(autoincrement())
-  user_id          BigInt
-  stock_id         BigInt
-  trade_type       String    @db.VarChar(10)
-  quantity         Int
-  trade_price      BigInt
-  transaction_time DateTime? @default(now()) @db.Timestamp(6)
-  stocks           stocks    @relation(fields: [stock_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                BigInt    @id @default(autoincrement())
+  user_id           BigInt
+  stock_id          BigInt
+  trade_type        String    @db.VarChar(10)
+  quantity          Int
+  trade_price       BigInt
+  transaction_time  DateTime? @default(now()) @db.Timestamp(6)
+  avg_cost_at_trade BigInt?
+  realized_profit   BigInt?
+  stocks            stocks    @relation(fields: [stock_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users             users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model users {
@@ -401,7 +404,10 @@ model orders {
   stock_id  BigInt
   type      String   @db.VarChar(10)
   quantity  Int      @db.SmallInt
-  create_at DateTime @db.Timestamp(6)
+  create_at DateTime @default(now()) @db.Timestamp(6)
+  side      String?
+  price     BigInt?
+  status    String?  @default("PENDING") @db.VarChar(15)
   stocks    stocks   @relation(fields: [stock_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }

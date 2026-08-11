@@ -25,11 +25,11 @@ export class RedisService {
     // Sorted Set에 (score, member) 다건 추가/갱신. 거래대금 순위 적재용.
     async zadd(key: string, scoreMembers: [number, string][]): Promise<void> {
         if (scoreMembers.length === 0) return;
-        const args: (string | number)[] = [];
-        for (const [score, member] of scoreMembers) {
-            args.push(score, member);
-        }
-        await this.redisClient.zadd(key, ...args);
+        const flatArgs: (string | number)[] = scoreMembers.flatMap(
+            ([score, member]) => [score, member],
+        );
+        // ioredis의 zadd 타입 시그니처 맞춤
+        await this.redisClient.zadd(key, ...(flatArgs as [number, string]));
     }
 
     // score 내림차순 member 조회(상위 N). 거래대금 상위 종목 조회용.

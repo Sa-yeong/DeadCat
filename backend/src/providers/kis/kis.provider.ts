@@ -144,6 +144,15 @@ interface KisFxResponse {
     output1: { ovrs_nmix_prpr: string };
 }
 
+export interface KisDailyChartItem {
+    stck_bsop_date: string; // 영업일자 (YYYYMMDD)
+    stck_oprc: string; // 시가
+    stck_clpr: string; // 종가
+    stck_hgpr: string; // 고가
+    stck_lwpr: string; // 저가
+    acml_vol: string; // 누적 거래량
+}
+
 // KIS Open API 클라이언트. "어떻게 연결/호출하나"만 담당(비즈니스 로직 없음).
 @Injectable()
 export class KisProvider {
@@ -560,6 +569,88 @@ export class KisProvider {
                 volume_graph: volumeGraph,
             };
         });
+    }
+
+    //일간 차트데이터
+    async getDailyChartHistory(
+        stockCode: string,
+        startDate: string,
+        endDate: string,
+    ): Promise<KisDailyChartItem[]> {
+        const headers = await this.authHeaders('FHKST03010100');
+        const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`;
+
+        const { data } = await firstValueFrom(
+            this.http.get<{ output2: KisDailyChartItem[] }>(url, {
+                headers,
+                params: {
+                    FID_COND_MRKT_DIV_CODE: 'J',
+                    FID_INPUT_ISCD: stockCode,
+                    FID_INPUT_DATE_1: startDate,
+                    FID_INPUT_DATE_2: endDate,
+                    FID_PERIOD_DIV_CODE: 'D',
+                    FID_ORG_ADJ_PRC: '0',
+                },
+            }),
+        );
+
+        return data?.output2 ?? [];
+    }
+
+    // 호가 조회
+    // 호가 조회
+    async getOrderbook(stockCode: string) {
+        const headers = await this.authHeaders('FHKST01010200');
+        const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn`;
+
+        const { data } = await firstValueFrom(
+            this.http.get<{ output1: Record<string, string> }>(url, {
+                headers,
+                params: {
+                    FID_COND_MRKT_DIV_CODE: 'J',
+                    FID_INPUT_ISCD: stockCode,
+                },
+            }),
+        );
+
+        const output1 = data?.output1;
+        if (!output1) {
+            return { asks: [], bids: [] };
+        }
+
+        // 매도호가 (askp1 ~ askp3, askp_rsqn1 ~ askp_rsqn3) -> 오름차순
+        const asks = [
+            {
+                price: Number(output1.askp1),
+                quantity: Number(output1.askp_rsqn1),
+            },
+            {
+                price: Number(output1.askp2),
+                quantity: Number(output1.askp_rsqn2),
+            },
+            {
+                price: Number(output1.askp3),
+                quantity: Number(output1.askp_rsqn3),
+            },
+        ].filter((item) => item.price > 0);
+
+        // 매수호가 (bidp1 ~ bidp3, bidp_rsqn1 ~ bidp_rsqn3) -> 내림차순
+        const bids = [
+            {
+                price: Number(output1.bidp1),
+                quantity: Number(output1.bidp_rsqn1),
+            },
+            {
+                price: Number(output1.bidp2),
+                quantity: Number(output1.bidp_rsqn2),
+            },
+            {
+                price: Number(output1.bidp3),
+                quantity: Number(output1.bidp_rsqn3),
+            },
+        ].filter((item) => item.price > 0);
+
+        return { asks, bids };
     }
 }
 

@@ -5,6 +5,9 @@ import { StocksRepository } from './stocks.repository';
 import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 import { StockDetailResponseDto } from './dto/stock-detail.response.dto';
 import { VolumeSummaryResponseDto } from './dto/volume-summary.response.dto';
+import { StockChartResponseDto } from './dto/stock-chart-dto';
+import { OrderbookResponseDto } from './dto/orderbook.response.dto';
+import { KisProvider } from 'src/providers/kis/kis.provider';
 
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
 const TOP_N = 20;
@@ -19,6 +22,7 @@ export class StocksService {
         private readonly price: PriceService,
         private readonly favorites: FavoritesService,
         private readonly repo: StocksRepository,
+        private readonly kisProvider: KisProvider,
     ) {}
 
     // GET /stocks/ranking: 거래대금 상위 종목. market 지정 시 해당 시장만(rank 재부여).
@@ -105,6 +109,7 @@ export class StocksService {
             change_rate: price?.change_rate ?? 0,
             market: meta.stock_type,
             is_favorite: isFavorite,
+            is_event: meta.is_event,
         });
     }
 
@@ -120,5 +125,63 @@ export class StocksService {
             throw new NotFoundException('거래량 데이터가 아직 없습니다.');
 
         return new VolumeSummaryResponseDto(cached);
+    }
+
+    //GET stock/{stock_code}/chart
+    async getStockChart(
+        stockCode: string,
+        timeframe: string = 'DAY',
+    ): Promise<StockChartResponseDto[]> {
+        const meta = await this.repo.findStockByCode(stockCode);
+        if (!meta) throw new NotFoundException('종목을 찾을 수 없습니다.');
+
+        // 1. 1분봉(1M) 등 실시간성이 강한 캔들은 PriceService(Redis/KIS)에서 처리
+        if (timeframe === '1M') {
+            const chartData = await this.price.readStockChart(
+                stockCode,
+                timeframe,
+            );
+            return chartData.map((item) => new StockChartResponseDto(item));
+        }
+
+        // 2. 일/주/월(DAY/WEEK/MONTH) 데이터는 DB(stock_history)에서 조회
+        const history = await this.repo.findStockHistory(meta.id, timeframe);
+
+        return history.map(
+            (h) =>
+                new StockChartResponseDto({
+                    write_time: h.record_date.toISOString(),
+                    open_price: Number(h.open_price),
+                    close_price: Number(h.close_price),
+                    low_price: Number(h.low_price),
+                    high_price: Number(h.high_price),
+                }),
+        );
+    }
+
+    // GET /stocks/{stock_code}/orderbook 실시간 호가창 조회
+    async getOrderbook(stockCode: string): Promise<OrderbookResponseDto> {
+        // 1. Redis 캐시 확인
+        let orderbook: {
+            asks: { price: number; quantity: number }[];
+            bids: { price: number; quantity: number }[];
+        } | null = await this.price.readOrderbook(stockCode);
+
+        // 2. Redis 캐시가 없으면 KIS API 즉시 호출 후 Redis 적재
+        if (!orderbook) {
+            orderbook = await this.kisProvider.getOrderbook(stockCode);
+            if (
+                orderbook &&
+                (orderbook.asks.length > 0 || orderbook.bids.length > 0)
+            ) {
+                await this.price.writeOrderbook(stockCode, orderbook, 30);
+            }
+        }
+
+        return new OrderbookResponseDto(
+            stockCode,
+            orderbook?.asks || [],
+            orderbook?.bids || [],
+        );
     }
 }

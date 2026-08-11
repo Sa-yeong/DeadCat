@@ -7,6 +7,7 @@ export class StockDetailResponseDto {
     change_rate: number;
     market: string;
     is_favorite: boolean;
+    is_event: boolean;
 
     constructor(data: {
         stock_code: string;
@@ -16,6 +17,7 @@ export class StockDetailResponseDto {
         change_rate: number;
         market: string;
         is_favorite: boolean;
+        is_event: boolean;
     }) {
         this.stock_code = data.stock_code;
         this.stock_name = data.stock_name;
@@ -24,5 +26,6 @@ export class StockDetailResponseDto {
         this.change_rate = data.change_rate;
         this.market = data.market;
         this.is_favorite = data.is_favorite;
+        this.is_event = data.is_event;
     }
 }

@@ -13,13 +13,12 @@ export class TransactionService {
         userId: string,
         query: TransactionQueryDto,
     ): Promise<TransactionItemDto[]> {
-        // 1. 거래 내역과 유저의 현재 보유 주식 평단가를 동시에 조회
         const [histories, holdings] = await Promise.all([
             this.transactionRepository.findUserTransactions(userId, query),
             this.transactionRepository.findUserHoldings(userId),
         ]);
 
-        // 빠른 조회를 위해 [stock_id -> 평단가] 맵을 생성
+        // BUY 거래용 fallback: 현재 보유 평단가 맵
         const holdingMap = new Map<string, string>();
         holdings.forEach((h) => {
             holdingMap.set(String(h.stock_id), String(h.mean_price_krw));
@@ -31,16 +30,35 @@ export class TransactionService {
                 ? history.transaction_time.toISOString().split('T')[0]
                 : '날짜 정보 없음';
 
-            // 명세서 상 표시용 타입 변환 ('BUY' -> '매수', 'SELL' -> '매도')
-            const displayType = history.trade_type === 'BUY' ? '매수' : '매도';
+            const isSell = history.trade_type === 'SELL';
+            const displayType = isSell ? '매도' : '매수';
 
-            // 맵에서 해당 주식의 평균 매수단가를 찾고, 없으면 '0'
-            const avgPurchasePrice =
-                holdingMap.get(String(history.stock_id)) || '0';
+            let profit = '0';
+            let returnRate = 0;
+            let avgPurchasePrice = '0';
 
-            // 명세서에 계산 요청된 손익 & 수익률 초기값 설정
-            const profit = '0';
-            const returnRate = 0;
+            if (isSell) {
+                // SELL: 체결 시점에 저장된 정확한 원가/손익 사용
+                const avgCost = history.avg_cost_at_trade;
+                const realizedProfit = history.realized_profit;
+
+                avgPurchasePrice = avgCost !== null ? String(avgCost) : '0';
+                profit = realizedProfit !== null ? String(realizedProfit) : '0';
+
+                if (avgCost && avgCost > BigInt(0) && history.quantity > 0) {
+                    const totalCost = avgCost * BigInt(history.quantity);
+                    const rateBonus =
+                        ((realizedProfit ?? BigInt(0)) * BigInt(10000)) /
+                        totalCost;
+                    returnRate = Number(rateBonus) / 100;
+                }
+            } else {
+                // BUY: 실현손익 개념 없음, 참고용으로 현재 보유 평단가만 표시
+                avgPurchasePrice =
+                    holdingMap.get(String(history.stock_id)) || '0';
+                profit = '0';
+                returnRate = 0;
+            }
 
             return new TransactionItemDto({
                 stock_name: stockName,
