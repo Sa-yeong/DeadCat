@@ -151,6 +151,12 @@
  .individual-view .header .left button svg {
    margin-right: 5px;
  }
+ .individual-view .header .left .event {
+   border: none;
+   background: rgb(255, 47, 0);
+   color: white;
+   padding: 0px 10px;
+ }
 .individual-view .header .navi-button {
     border: 1px solid gray;
     border-radius: 9px;

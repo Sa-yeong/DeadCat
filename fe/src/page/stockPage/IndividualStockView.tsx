@@ -2,6 +2,7 @@ import './IndividualStockView.css'
 import { useEffect, useState,  } from "react";
 import { IoHeartOutline, IoHeart } from 'react-icons/io5';
 import { IoIosGitCompare } from "react-icons/io";
+import { RiAlarmWarningLine } from "react-icons/ri";
 import { BsDot } from "react-icons/bs";
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom';
 import { api } from '../../api/axios';
@@ -167,9 +168,10 @@ export function IndividualStockView(){
                         <IoIosGitCompare /> 
                         차트 비교
                     </button>
-                    {/* <button>
+                    <button className='event'>
+                        <RiAlarmWarningLine />
                         광장 입장
-                    </button> */}
+                    </button>
                 </span>
                 <div className='navi-button'>
                     <NavLink to='chart' onClick={() => setCurrentTab('chart')}
