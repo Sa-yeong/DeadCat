@@ -1,8 +1,7 @@
 import './StockListView.css'
 import { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, NavLink } from 'react-router-dom';
 import { api } from '../../api/axios';
-import { ListTab } from '../../common/ListTab';
 import { IndicesCarouselLayout } from '../../layout/IndicesCarouselLayout';
 import { Carousel } from 'antd';
 
@@ -33,7 +32,7 @@ export function StockListView(){
         
         <span className='stockList'>
             <div className='tab'>
-                <ListTab list={[['종목 리스트', '/stocks/basic-list'], ['카테고리 별 분류', '/stocks/category']]} />
+                <ListTab list={[['전체 종목', '/stocks/basic-list'], ['카테고리 별 분류', '/stocks/category']]} />
             </div>
             <Outlet context={{setActiveImg}} />
         </span>
@@ -84,4 +83,13 @@ function IndicesCarousel(){
             }
             </Carousel>
         </div>;
+}
+
+// 탭 리스트
+function ListTab({list=[]}:{list:[string, string][]}){
+    return <div className="tab">
+        {list.map(([content, link], index) => (
+            <NavLink key={index} to={link} className={({isActive}) => isActive ? 'active-tab': 'inactive-tab'} >{content}</NavLink>
+        ))}
+    </div>;
 }

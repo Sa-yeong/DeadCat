@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" width="600" height="800">
+  <rect x="0" y="0" width="600" height="800" rx="28" fill="#EEF1F5"/>
+  <g fill="#A9B0BE" stroke="#EEF1F5" stroke-width="10">
+    <path d="M190 560 L190 360 C190 300 238 288 300 288 C362 288 410 300 410 360 L410 560 Z"/>
+    <circle cx="300" cy="210" r="94"/>
+  </g>
+  <g fill="#BEC4D0" stroke="#EEF1F5" stroke-width="10">
+    <path d="M78 612 L78 440 C78 392 113 378 156 378 C199 378 234 392 234 440 L234 612 Z"/>
+    <circle cx="156" cy="330" r="66"/>
+  </g>
+  <g fill="#BEC4D0" stroke="#EEF1F5" stroke-width="10">
+    <path d="M366 612 L366 440 C366 392 401 378 444 378 C487 378 522 392 522 440 L522 612 Z"/>
+    <circle cx="444" cy="330" r="66"/>
+  </g>
+  <g font-family="'Malgun Gothic','맑은 고딕','Noto Sans KR','Noto Sans CJK KR','Apple SD Gothic Neo',sans-serif" font-weight="700" fill="#39404F">
+    <rect x="230" y="576" width="139" height="51" rx="14" fill="#DBE0EA"/><text x="300" y="614" text-anchor="middle" font-size="34">TIGER</text>
+    
+    
+  </g>
+</svg>

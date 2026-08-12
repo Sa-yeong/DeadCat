@@ -32,6 +32,31 @@ export interface IndexData {
     graph: IndexHistoryPoint[];
 }
 
+//거래대금
+export interface KisVolumeSummaryResponse {
+    rt_cd: string;
+    msg_cd: string;
+    msg1: string;
+    output?: {
+        // 현재가 조회 응답
+        acml_vol: string;
+        acml_tr_pbmn: string;
+    };
+    output2?: Array<{
+        // 분봉 시계열 응답
+        stck_cntg_hour: string;
+        cntg_vol: string;
+    }>;
+}
+
+//거래대금
+export interface StockVolumeSummaryData {
+    stock_code: string;
+    total_volume: number;
+    total_trading_value: number;
+    volume_graph: Array<{ write_time: string; volume: number }>;
+}
+
 // 해외 거래소 코드 매핑: 우리 DB(주문용) → KIS 시세조회 EXCD.
 const OVERSEAS_EXCD: Record<string, string> = {
     NASD: 'NAS',
@@ -119,6 +144,15 @@ interface KisFxResponse {
     output1: { ovrs_nmix_prpr: string };
 }
 
+export interface KisDailyChartItem {
+    stck_bsop_date: string; // 영업일자 (YYYYMMDD)
+    stck_oprc: string; // 시가
+    stck_clpr: string; // 종가
+    stck_hgpr: string; // 고가
+    stck_lwpr: string; // 저가
+    acml_vol: string; // 누적 거래량
+}
+
 // KIS Open API 클라이언트. "어떻게 연결/호출하나"만 담당(비즈니스 로직 없음).
 @Injectable()
 export class KisProvider {
@@ -203,7 +237,10 @@ export class KisProvider {
             };
             // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우(주로 종목코드 오타/장전/거래정지).
             // 적재는 그대로 하되(이상치가 화면에 0으로 드러나게) 경고 로그를 남긴다.
-            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+            if (
+                !Number.isFinite(price.current_price) ||
+                price.current_price <= 0
+            ) {
                 this.logger.warn(
                     `국내 시세 0/빈값 (${code}) — 종목코드/거래상태 확인 필요`,
                 );
@@ -237,7 +274,10 @@ export class KisProvider {
                 change_rate: Number(o.rate),
                 trading_value: Number(o.tamt),
             };
-            if (!Number.isFinite(price.current_price) || price.current_price <= 0) {
+            if (
+                !Number.isFinite(price.current_price) ||
+                price.current_price <= 0
+            ) {
                 this.logger.warn(
                     `해외 시세 0/빈값 (${symbol}) — 종목코드/거래상태 확인 필요`,
                 );
@@ -254,7 +294,9 @@ export class KisProvider {
             try {
                 result.set(codes[i], await this.getDomesticPrice(codes[i]));
             } catch (e) {
-                this.logger.warn(`국내 시세 실패 ${codes[i]}: ${this.errMsg(e)}`);
+                this.logger.warn(
+                    `국내 시세 실패 ${codes[i]}: ${this.errMsg(e)}`,
+                );
             }
         }
         return result;
@@ -457,6 +499,158 @@ export class KisProvider {
         const ax = e as { response?: { data?: unknown }; message?: string };
         if (ax.response?.data) return JSON.stringify(ax.response.data);
         return ax.message ?? String(e);
+    }
+
+    // 누적 거래대금량 조회
+    async fetchVolumeSummary(
+        stockCode: string,
+    ): Promise<StockVolumeSummaryData> {
+        return this.withRateLimitRetry(async () => {
+            // 누적 거래량/거래대금: 현재가 조회 API
+            const priceUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
+            const chartUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice`;
+            const priceHeaders = await this.authHeaders('FHKST01010100');
+            const chartHeaders = await this.authHeaders('FHKST01010200');
+
+            const now = new Date();
+            const currentTime = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
+            // 누적 거래량/거래대금 조회
+            const { data: priceData } = await firstValueFrom(
+                this.http.get<KisVolumeSummaryResponse>(priceUrl, {
+                    headers: priceHeaders,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                    },
+                }),
+            );
+            if (priceData.rt_cd !== '0')
+                throw new KisApiError(priceData.msg_cd, priceData.msg1);
+
+            // 분봉 시계열 조회
+            const { data: chartData } = await firstValueFrom(
+                this.http.get<KisVolumeSummaryResponse>(chartUrl, {
+                    headers: chartHeaders,
+                    params: {
+                        FID_ETC_CLS_CODE: '',
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                        FID_INPUT_HOUR_1: currentTime,
+                        FID_PW_DATA_INCU_YN: 'N',
+                    },
+                }),
+            );
+            if (chartData.rt_cd !== '0')
+                throw new KisApiError(chartData.msg_cd, chartData.msg1);
+
+            const output2 = Array.isArray(chartData.output2)
+                ? chartData.output2
+                : [];
+            const volumeGraph = output2
+                .map((item) => {
+                    const h = item.stck_cntg_hour ?? '';
+                    return {
+                        write_time:
+                            h.length >= 4
+                                ? `${h.slice(0, 2)}:${h.slice(2, 4)}`
+                                : h,
+                        volume: Number(item.cntg_vol ?? 0),
+                    };
+                })
+                .reverse();
+
+            return {
+                stock_code: stockCode,
+                total_volume: Number(priceData.output?.acml_vol ?? 0),
+                total_trading_value: Number(
+                    priceData.output?.acml_tr_pbmn ?? 0,
+                ),
+                volume_graph: volumeGraph,
+            };
+        });
+    }
+
+    //일간 차트데이터
+    async getDailyChartHistory(
+        stockCode: string,
+        startDate: string,
+        endDate: string,
+    ): Promise<KisDailyChartItem[]> {
+        const headers = await this.authHeaders('FHKST03010100');
+        const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`;
+
+        const { data } = await firstValueFrom(
+            this.http.get<{ output2: KisDailyChartItem[] }>(url, {
+                headers,
+                params: {
+                    FID_COND_MRKT_DIV_CODE: 'J',
+                    FID_INPUT_ISCD: stockCode,
+                    FID_INPUT_DATE_1: startDate,
+                    FID_INPUT_DATE_2: endDate,
+                    FID_PERIOD_DIV_CODE: 'D',
+                    FID_ORG_ADJ_PRC: '0',
+                },
+            }),
+        );
+
+        return data?.output2 ?? [];
+    }
+
+    // 호가 조회
+    // 호가 조회
+    async getOrderbook(stockCode: string) {
+        const headers = await this.authHeaders('FHKST01010200');
+        const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn`;
+
+        const { data } = await firstValueFrom(
+            this.http.get<{ output1: Record<string, string> }>(url, {
+                headers,
+                params: {
+                    FID_COND_MRKT_DIV_CODE: 'J',
+                    FID_INPUT_ISCD: stockCode,
+                },
+            }),
+        );
+
+        const output1 = data?.output1;
+        if (!output1) {
+            return { asks: [], bids: [] };
+        }
+
+        // 매도호가 (askp1 ~ askp3, askp_rsqn1 ~ askp_rsqn3) -> 오름차순
+        const asks = [
+            {
+                price: Number(output1.askp1),
+                quantity: Number(output1.askp_rsqn1),
+            },
+            {
+                price: Number(output1.askp2),
+                quantity: Number(output1.askp_rsqn2),
+            },
+            {
+                price: Number(output1.askp3),
+                quantity: Number(output1.askp_rsqn3),
+            },
+        ].filter((item) => item.price > 0);
+
+        // 매수호가 (bidp1 ~ bidp3, bidp_rsqn1 ~ bidp_rsqn3) -> 내림차순
+        const bids = [
+            {
+                price: Number(output1.bidp1),
+                quantity: Number(output1.bidp_rsqn1),
+            },
+            {
+                price: Number(output1.bidp2),
+                quantity: Number(output1.bidp_rsqn2),
+            },
+            {
+                price: Number(output1.bidp3),
+                quantity: Number(output1.bidp_rsqn3),
+            },
+        ].filter((item) => item.price > 0);
+
+        return { asks, bids };
     }
 }
 

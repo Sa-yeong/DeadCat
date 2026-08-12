@@ -1,70 +1,173 @@
-.tab1{
+.tab1 {
     flex: 1;
-    border: 1px solid black;
-    margin: 0px auto;
-    min-width: 700px;
-    max-width: 750px;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: auto 1fr;
-    grid-template-areas: 
-    "img info"
-    "list list";
-    gap: 1.5vh;
-    padding: 1.2vh;
-    border: 1px solid black;
-}
-.tab1 .charac{
-    grid-area: img;
-    border:1px solid black;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    background: white;
-    height: 330px;
-}
-.tab1 .assetInfo{
-    grid-area: info;
-    border: 1px solid black;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: space-evenly;
-    background: white;
-    padding-left: 50px;
-}
-.tab1 .holdings{
-    grid-area: list;
-    border: 1px solid black;
-    /* overflow-y: auto; */
-    width: 100%;
-    /* display: flex;
-    align-items: start; */
-    height: 50vh;
-    background: white;
-}
-
-/* 대표 캐릭터 패널 */
-.charac .represent-charac{
-    flex: 1;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
+    max-width: 1050px;
+    min-height: calc(100vh - 100px);
     margin-top: 20px;
-}
-.charac .nickname-change{
-    display: flex;
-    margin-bottom: 10px;
     gap: 10px;
+    color: gray;
+}
+/* 자산 정보 관련 데이터 */
+.tab1 .label {
+    font-size: 15px;
+    font-weight: bold;
+}
+.tab1 .assetInfo {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+.tab1 .assetInfo .asset-row {
+    flex: 1;
+    border: 1px solid darkgray;
+    border-radius: 10px;
+    background: #171d27;
+    display: flex;
+    flex-direction: column;
+    max-width: 500px;
+    min-height: 80px;
+    padding-left: 15px;
+    font-weight: bold;
+    justify-content: center;
+}
+.tab1 .assetInfo .asset-row .label {
+    font-size: 13px;
+    font-weight: normal;
+}
+/* 사용자 정보 */
+.tab1 .userInfo{
+    display: flex;
+    background: #171d27;
     align-items: center;
+    justify-content: space-between;
+    padding: 0px 20px;
+    border: 1px solid gray;
+    border-radius: 10px;
+    min-height: 130px;
+    margin: 20px auto;
+}
+.tab1 .userInfo .left{
+    display: flex;
+    gap: 20px;
+}
+.tab1 .userInfo .left img {
+    border: 1px solid gray;
+    border-radius: 50%;
+    height: 80px;
+}
+.tab1 .userInfo .left .content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 10px;
+}
+.tab1 .userInfo .left .content .nickname {
+    display: flex;
+    gap: 10px;
+}
+.tab1 .userInfo .left .content .nickname span {
+    font-weight: bold;
+}
+.tab1 .userInfo .left .content .nickname button {
+    padding:4px 15px;
+    border-radius: 6px;
+    background: rgb(13, 17, 23);
+    color: gray;
+    border: 1px solid gray;
     cursor: pointer;
 }
-
-/* 총 자산 패널 */
-.tab1 .assetInfo .asset-row{
+.tab1 .userInfo .left .content .nickname button:hover {
+    color: white;
+    background: #171d27;
+}
+.tab1 .userInfo .left .content .follow {
+    display: flex;
+    font-size: 15px;
+    font-weight: 200;
+    text-decoration: none;
+    color: gray;
+    gap: 10px;
+    cursor: pointer;
+}
+.tab1 .userInfo .left .content .follow:hover:not(.num){
+    color: white;
+}
+.tab1 .userInfo .left .content .follow .num{
+    font-weight: bold;
+    color: white;
+}
+.tab1 .userInfo .right {
     display: flex;
     gap: 10px;
+    font-size: 15px;
+    font-weight: lighter;
+}
+
+/* 보유 주식 리스트 헤더 */
+.tab1 .holdings{
+    flex: 1;
+    border: 1px solid gray; 
+    border-radius: 10px;
+    background: #171d27;
+    color: gray;
+    overflow-y: auto;
+}
+.tab1 .holdings .table-header {
+    display: flex;
+    /* justify-content: space-between; */
+    align-items: center;
+    padding-right: 10px;
+    padding-left: 10px;
+    border-bottom: 1px solid gray;
+    height: 40px;
+    gap: 30px;
+}
+.tab1 .holdings .table-header>*:not(.right) {
+    width: 250px;
+}
+.tab1 .holdings .table-header .right {
+    flex: 1;
+    display: flex;
+}
+.tab1 .holdings .table-header .right span {
+    /* border: 1px solid tomato; */
+    flex:1;
+    text-align: right;
+}
+
+/* 테이블 행 */
+.tab1 .holdings .table-row {
+    border-bottom: 1px solid gray;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    padding-left: 5px;
+    padding-right: 10px;
+    text-decoration: none;
+    color: gray;
+}
+.tab1 .holdings .table-row:hover {
+    background: #1a212c;
+    color: white;
+}
+.tab1 .holdings .table-row img {
+    width: 40px;
+    height: 40px;
+    margin-right: 5px;
+    border: 1px solid black;
+    border-radius: 50%;
+}
+.tab1 .holdings .table-row > *:not(.right, img){
+    width: 250px;
+}
+.tab1 .holdings .table-row .right {
+    flex: 1;
+    display: flex;
+    justify-content: space-around;
+}
+.tab1 .holdings .table-row .right span {
+    width: 100%;
+    text-align: right;
+    padding-right: 5px;
 }

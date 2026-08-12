@@ -11,7 +11,7 @@
     grid-area: name;
     align-self: flex-end;
     justify-self: center;
-    /* padding-left: 150px; */
+    color: gray;
     padding-bottom: 30px;
     font-size: 30px;
 }

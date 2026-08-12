@@ -1,0 +1,47 @@
+.follow-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.follow-container .follow-list {
+    border: 1px solid gray;
+    border-radius: 10px;
+    width: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #1a1c1e;
+    gap: 15px;
+    padding-bottom: 10px;
+}
+.follow-container .follow-list .follow-list-header{
+    width: 100%;
+    display: flex;
+    padding-top: 20px;
+}
+.follow-container .follow-list .follow-list-header span {
+    display: inline-block;
+    width: 200px;
+    text-align: center;
+}
+.follow-container .follow-list .follow-list-header .active-tab {
+    color: white;
+    font-weight: bold;
+    border-bottom: 2px solid white;
+    padding-bottom: 10px;
+}
+.follow-container .follow-list input {
+    background: #131415;
+    border: 1px solid gray;
+    border-radius: 10px;
+    height: 30px;
+    width: 300px;
+    /* margin-left: 10px; */
+}

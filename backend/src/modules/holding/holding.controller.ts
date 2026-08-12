@@ -17,7 +17,7 @@ export class HoldingController {
         @Request() req: AuthenticatedRequest,
     ): Promise<HoldingItemDto[]> {
         const userId = String(req.user!.id);
-        //const userId = '2';
+        
         return await this.holdingService.getMyHoldings(userId);
     }
 }

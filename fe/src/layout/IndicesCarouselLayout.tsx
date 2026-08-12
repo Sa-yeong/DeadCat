@@ -19,7 +19,7 @@ export function IndicesCarouselLayout({i_name, price, up_down, rate, graphData, 
     return <div className='indices-layout'>
         <span className='name'>{i_name}</span>
         <span className='up-down' >
-            <span>{price}</span>
+            <span style={{color: 'gray'}}>{price}</span>
             <span style={{color: (isPositive===0)?'black':(isPositive ?'red':'blue')}}>{up_down}</span>
             <span style={{color: (isPositive===0)?'black':(isPositive ?'red':'blue')}}>{rate}%</span>
         </span>

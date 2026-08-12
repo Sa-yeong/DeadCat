@@ -103,7 +103,7 @@ function CategoryRow({order, c_name, rate, amount, open}:any){
     return <div className="cate-rows" onClick={open}>
         <span>{order}</span>
         <span>{c_name}</span>
-        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}> 
+        <span style={{color: (rate===0||(typeof rate =='string'))?'gray':((rate>0) ?'tomato':'lightblue')}}> 
             {(typeof rate =='string')?rate:rate + '%'}
         </span>
         <span>

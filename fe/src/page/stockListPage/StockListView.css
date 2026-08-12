@@ -8,7 +8,7 @@
     'stock img';
     gap: 10px;
     padding: 0px 11vw;
-    height: calc(100vh-107px);
+    height: calc(100vh - 107px);
     min-height: 0;
 }
 .stockListView .index-carousel{
@@ -24,6 +24,8 @@
     overflow: hidden;
 }
 .stockListView .thumbNail{
+    min-height: 0;
+    overflow: hidden;
     grid-area: img;
     border: 1px solid black;
     display: flex;
@@ -35,10 +37,10 @@
 .stockListView .index .slick-list,
 .stockListView .index .slick-list .slick-track,
 .stockListView .index .slick-list .slick-track .carousel-slide{
-    background-color: white;
     color: black; 
     height: 222px;
     margin: 0 ;
+    background: #141921;
 }
 .stockListView .index .slick-slider.slick-initialized button {
     color: rgb(148, 147, 147);
@@ -50,5 +52,30 @@
     background: rgb(148, 147, 147);
 }
 .stockListView .index .slick-slider.slick-initialized .slick-dots.slick-dots-bottom .slick-active button{
-    background: gray;
+    background: lightgray;
+}
+
+/* 리스트 탭 */
+.tab {
+    display: flex;
+    height: 40px;
+}
+
+.tab a{
+    text-decoration: none;
+    color: gray;
+    border:0px;
+    height: 100%;
+    padding: 0px 1vw;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+.tab a:hover{
+    color: white;
+}
+.tab .active-tab{
+    color: white;
+    font-weight: bold;
+    border-bottom: 2px solid rgb(0, 140, 255);
 }

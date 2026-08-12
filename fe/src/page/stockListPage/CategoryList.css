@@ -1,17 +1,25 @@
 .cate-list{
     display: flex;
     flex-direction: column;
-    height: 100%;
+    justify-content: start;
+    /* height: 100%; */
+    margin-top: 2px;
     line-height: 0;
+    background: #141921;
 }
 
 .cate-rows{
     border-bottom: 1px solid black;
+    color: gray;
     height: 50px;
     display: grid;
     grid-template-columns: 0.5fr 2fr 1fr 1.5fr;
     align-items: center;
     justify-items: center;
+}
+.cate-rows:hover{
+    color: white;
+    background: #1a212c;
 }
 .cate-rows .row{
     cursor: pointer;

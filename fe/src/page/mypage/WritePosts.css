@@ -1,0 +1,8 @@
+.post-list {
+    border: 1px solid gray;
+    border-radius: 10px;
+    min-height: calc(100vh - 450px);
+    max-height: calc(100vh - 220px);
+    margin-top: 20px;
+    background: #141921;
+}

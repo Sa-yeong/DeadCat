@@ -1,0 +1,162 @@
+.chart-container {
+    /* border: 1px solid tomato; */
+    flex: 1;
+    margin-top: 20px;
+    margin-right: 200px;
+    display: flex;
+    gap: 20px;
+
+}
+.chart-container .chart {
+    border: 1px solid #2a2d34;
+    border-radius: 10px;
+    flex: 1;
+    height: fit-content;
+}
+.chart-container .rightside-bar {
+    /* border: 1px solid skyblue; */
+    width: 300px;
+}
+
+/* 위젯 바 형식 */
+.chart-container .rightside-bar .widgetBox-container {
+    border: 1px solid #2a2d34;
+    border-radius: 5px;
+    color: gray;
+    margin-bottom: 10px;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-header {
+    border-bottom: 1px solid #2a2d34;
+    height: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-left: 10px;
+    padding-right: 10px;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-header .title {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    font-size: 13px;
+    color: white;
+    font-weight: bold;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-header .title svg {
+    color: gray;
+    cursor: grab;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-header svg {
+    cursor: pointer;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-content {
+    background: #141921;
+    padding: 0px 10px 10px 10px;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) .tab-header {
+    display: flex;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) .tab-header span {
+    width: 150px;
+    text-align: center;
+    padding: 5px;
+    font-size: 15px;
+    font-weight: bold;
+}
+.chart-container .rightside-bar .buy-tab .tab-header .active-button {
+    color: tomato;
+    border-bottom: 2px solid tomato;
+}
+.chart-container .rightside-bar .sell-tab .tab-header .active-button {
+    color: lightskyblue;
+    border-bottom: 2px solid lightskyblue;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) .option {
+    display: flex;
+    gap: 5px;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) .option span {
+    border-radius: 5px;
+    font-size: 12px;
+    padding: 0px 9px;
+    background: transparent;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) .option .active-option {
+    background: #222b3a;
+    color: white;
+}
+.chart-container .rightside-bar :where(.sell-tab, .buy-tab) input {
+    height: 30px;
+    background: transparent;
+    border: 1px solid #2a2d34;
+    border-radius: 5px;
+    color: gray;
+}
+.chart-container .rightside-bar .buy-tab button {
+    height: 30px;
+    background: tomato;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+}
+.chart-container .rightside-bar .sell-tab button {
+    height: 30px;
+    background: skyblue;
+    border: none;
+    border-radius: 5px;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* 위젯바 - 거래량 */
+.chart-container .rightside-bar .widgetBox-container .widget-content .graph {
+    /* border: 1px solid tomato; */
+    padding-top: 10px;
+    margin-bottom: 10px;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-content .footer {
+    display: flex;
+    justify-content: space-between;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-content .footer span {
+    /* border: 1px solid tomato; */
+    font-size: 11px;
+    font-weight: lighter;
+    display: flex;
+    gap: 5px;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-content .footer span .volume-value {
+    color: white;
+}
+
+/* 호가창 */
+.chart-container .rightside-bar .widgetBox-container .widget-content .order-books {
+    display: flex;
+    flex-direction: column;
+    padding-top: 5px;
+}
+.chart-container .rightside-bar .widgetBox-container .widget-content .order-books .row {
+    /* border: 1px solid tomato; */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    height: 30px;
+}
+/* .chart-container .rightside-bar .widgetBox-container .widget-content .order-books .bids {
+    
+} */
+ .chart-container .rightside-bar .widgetBox-container .widget-content .order-books .middle-row {
+    border-top: 1px solid white;
+    border-bottom: 1px solid white;
+    background: #0f1217;
+
+ }

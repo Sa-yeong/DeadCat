@@ -1,35 +1,28 @@
-.tab3{
-    border: 1px solid black;
+.tab3 {
     flex: 1;
-    margin: 0px 5vw;
-    padding: 0.5vw 1.5vw;
-    height: calc(100vh - 107px);
-    display: grid;
-    grid-template-rows: repeat(3, 1fr);
-    gap: 1.5vw;
-    overflow: hidden;
-    box-sizing: border-box;
+    min-height: calc(100vh - 100px);
+    margin-top: 20px;
 }
-.tab3 .list-box{
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    height: 100%;
-}
-.tab3 .list-box .label{
+.tab3 .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    height: 35px;
-    flex-shrink: 0;
 }
-.tab3 .list-box .label svg{
-    cursor: pointer;
-    height: 80%;
+.tab3 .header .nav-button {
+    display: flex;
+    border: 1px solid gray;
+    border-radius: 7px;
+    padding: 3px;
 }
-.tab3 .list-box .rows{
-    border: 1px solid black;
-    flex: 1;
-    overflow: hidden;
-    min-height: 0;
+.tab3 .header .nav-button > * {
+    font-size: 14px;
+    text-decoration: none;
+    color: gray;
+    border-radius: 7px;
+    padding: 3px 13px;
+}
+.tab3 .header .nav-button .active-button{
+    font-weight: bold;
+    background: #222b3a;
+    color: white;
 }

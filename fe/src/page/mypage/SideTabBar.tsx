@@ -1,10 +1,13 @@
 import './SideTabBar.css'
-import { Link } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
 export function SideTabBar(){
     return <>
-        <Link to='/mypage/assets'> 탭 1 : 자산 </Link>
-        <Link to='/mypage/history'> 탭 2 : 거래 내역 </Link>
-        <Link to='/mypage/community'> 탭 3 : 작성 글 / 댓글 조회</Link>
+        <NavLink to='/mypage/assets' 
+            className={({isActive}) => isActive? 'active-sidebar':'inactive-sidebar'}> 내 정보 </NavLink>
+        <NavLink to='/mypage/history' 
+            className={({isActive}) => isActive? 'active-sidebar':'inactive-sidebar'}> 거래 내역 </NavLink>
+        <NavLink to='/mypage/community' 
+            className={({isActive}) => isActive? 'active-sidebar':'inactive-sidebar'}> 작성 글 ∙ 댓글</NavLink>
     </>;
 }

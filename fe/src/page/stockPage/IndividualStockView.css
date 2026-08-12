@@ -1,0 +1,179 @@
+.individual-view {
+    flex: 1;
+    display: flex;
+    gap: 20px;
+}
+.individual-view .body{
+   flex: 1;
+   display: flex;
+   flex-direction: column;
+}
+
+/* 사이드 탭 */
+.individual-view .side-bar {
+    border: 1px solid gray;
+    border-radius: 10px;
+    width: 265px;
+    height: 500px;
+    margin-left: 200px;
+    margin-top: 20px;
+    background: #141921;
+    color: gray;
+    overflow: hidden;
+}
+.individual-view .side-bar button {
+    border: 1px solid transparent;
+    border-bottom: 1px solid #222b3a;
+    width: 120px;
+    height: 40px;
+    background: transparent;
+    color: gray;
+    font-size: 14px;
+}
+.individual-view .side-bar .active {
+    background: #222b3a;
+    color: white;
+    font-weight: bold;
+}
+.individual-view .side-bar .list{
+   height: 500px;
+   overflow-y: scroll;
+   scrollbar-width: thin;
+   scrollbar-color: #444 #1a1c1e;
+}
+ .individual-view .side-bar .list .row {
+    border-bottom: 1px solid gray;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-left: 5px;
+    text-decoration: none;
+    color: gray;
+    line-height: 1;
+ }
+ .individual-view .side-bar .list .row:hover {
+   color: white;
+   background: #1a212c;
+ }
+ .individual-view .side-bar .list .row span svg {
+    display: flex;
+    height: 20px;
+    width: 20px;
+ }
+ .individual-view .side-bar .list .row img {
+    height: 30px;
+    width: 30px;
+    border-radius: 50%;
+ }
+ .individual-view .side-bar .list .row .content {
+    flex: 1;
+    font-size: 14px;
+    font-weight: lighter;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-right: 10px;
+ }
+ .individual-view .side-bar .list .row .content .name {
+   display: flex;
+   line-height: 1.2;
+   align-items: center;
+   text-align: left;
+ }
+ .individual-view .side-bar .list .row .content .name span {
+   display: inline;
+ }
+ .individual-view .side-bar .list .row .content .name svg {
+   animation: event-stock 2s infinite;
+   display: inline;
+   width: 20px;
+   height: 20px;
+   vertical-align: middle;
+   margin-left: -5px;
+ }
+ @keyframes event-stock {
+    0%, 100% {
+        opacity: 0.3;
+        color: red;
+    }
+    50% {
+        opacity: 1;
+        color: red;
+    }
+ }
+
+ /* 헤더 */
+ .individual-view .header {
+    margin-top: 20px;
+    height: 70px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-right: 200px;
+ }
+ .individual-view .header .left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+ }
+ .individual-view .header .left img {
+    height: 60px;
+    width: 60px;
+    border-radius: 50%;
+ }
+ .individual-view .header .left .content {
+    /* border: 1px solid tomato; */
+    display: flex;
+    flex-direction: column;
+ }
+ .individual-view .header .left .content .up{
+    display: flex;
+    gap: 5px;
+    align-items: center;
+ }
+ .individual-view .header .left .content .up span:has(svg) {
+   display: flex;
+ }
+ .individual-view .header .left .content .down {
+    display: flex;
+    gap: 7px;
+ }
+ .individual-view .header .left button {
+    margin-left: 10px;
+    height: 30px;
+    background: transparent;
+    color: gray;
+    border: 1px solid gray;
+    border-radius: 5px;
+    cursor: pointer;
+ }
+ .individual-view .header .left button svg {
+   margin-right: 5px;
+ }
+.individual-view .header .navi-button {
+    border: 1px solid gray;
+    border-radius: 9px;
+    /* height: 40px; */
+    display: flex;
+    padding: 2px;
+    align-items: center;
+
+}
+.individual-view .header .navi-button > * {
+    /* border: 1px solid skyblue; */
+    border-radius: 8px;
+    color: gray;
+    text-decoration: none;
+    font-size: 13px;
+    padding: 3px 10px;
+    display: flex;
+    align-items: center;
+}
+.individual-view .header .navi-button > *:hover {
+   background: #171d27;
+}
+.individual-view .header .navi-button .active-button {
+   background: #222b3a;
+   color: white;
+}

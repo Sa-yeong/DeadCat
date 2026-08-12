@@ -36,9 +36,12 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         }
     }
 
-    const toggleHeart = () => {
+    const toggleHeart = (e) => {
         const token = localStorage.getItem('token');
         const isLoggedIn = token !== null; // 토큰 유무 -> 로그인 유무
+
+        e.stopPropagation();
+        e.preventDefault();
 
         if(!isLoggedIn){ // 토큰이 없을때 로그인 되어 있지 않을 경우
             setOpen(true);
@@ -89,9 +92,12 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         </span> */}
         <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
         <span className='stock-name'>{s_name}</span>
-        <span className='current-price'>{formatComma(market, c_price)}</span>
+        <span className='current-price'>
+            {(market != 'DOMESTIC' && market != 'FOREIGN')? c_price:
+            (market == 'DOMESTIC')?formatComma(market, c_price)+' ￦':formatComma(market, c_price)+' $'}
+        </span>
         <span className='rise-rate' 
-            style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'black':((rise_rate>0) ?'red':'blue')}}>
+            style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'gray':((rise_rate>0) ?'tomato':'lightskyblue')}}>
             {(typeof rise_rate =='string')?rise_rate:rise_rate + '%'}
         </span>
         <span className='trading-value'>{formatToEok(t_value)}</span>

@@ -1,59 +1,82 @@
-.tab2{
-    border: 1px solid black;
+.tab2 {
     flex: 1;
     display: flex;
     flex-direction: column;
-    margin: 0px 1.5vw;
-    padding:0px 8.5vw;
-    height: 85vh;
-    gap: 50px;
+    margin-top: 20px;
+    min-height: calc(100vh - 100px);
 }
-.tab2 .filter{
-    border: 1px solid black;
-    height: 239px;
-    margin-top: 2vh;
+/* 필터 */
+.tab2 .filter {
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-.tab2 .list{
-    flex: 1;
-    border: 1px solid black;
-    margin-bottom: 2vh;
-    overflow: hidden;
-}
-
-/* 거래 필터 */
-.tab2 .filter .row{
-    display: flex;
+    gap: 10px;
+    height: 50px;
     align-items: center;
-    padding: 25px 60px;
 }
-.tab2 .filter .label{
-    font-size: 24px;
-    color: black;
+.tab2 .filter > *,
+.tab2 .filter select option {
+    background: rgb(13, 17, 23);
+    color: gray;
+    height: 30px;
+    padding: 3px 10px;
+    border: 1px solid gray;
+    border-radius: 6px;
+    cursor: pointer;
 }
-.tab2 .filter .middle-group{
-    width: 400px;
-    display: flex;
-    justify-content: space-evenly;
+.tab2 .filter input::placeholder {
+    color: gray;
+    opacity: 1;
 }
-.tab2 .filter button{
-    padding: 5px 20px;
-    font-size: 17px;
+.tab2 .filter svg {
+    fill: gray;
 }
 
 /* 거래 내역 리스트 */
-.tab2 .list .list-content{
-    overflow-y: auto;
-    height: 100%;
+.tab2 .list{
+    /* flex: 1; */
+    color: gray;
+    background: #11161e;
+    border: 1px solid gray;
+    border-radius: 10px;
+    margin-top: 10px;
 }
-.tab2 .list .list-row{
+.tab2 .list .table-header {
     display: grid;
-    grid-template-columns: 1fr 1fr .5fr .5fr 1fr 1fr 1fr .7fr;
-    justify-items: center;
+    grid-template-columns: 1.5fr 0.5fr 1fr 1fr 1fr 1fr;
+    border-bottom: 1px solid gray;
+    padding-right: 10px;
+    padding-left: 10px;
+}
+.tab2 .list .table-header span{
+    /* border: 1px solid tomato; */
+    height: 40px;
+    display: flex;
     align-items: center;
+    font-size: 14px;
+}
+.tab2 .list .table-header span:not(.first-col){
+    justify-content: right;
+}
+.tab2 .list .list-content .list-row {
+    /* border: 1px solid tomato; */
+    border-top: 1px solid gray;
     height: 50px;
-    border-bottom: 1px solid black;
-    text-align: center;
+    display: grid;
+    grid-template-columns: 1.5fr 0.5fr 1fr 1fr 1fr 1fr;
+    padding-left: 10px;
+    padding-right: 10px;
+    align-items: center;
+}
+.tab2 .list .list-content .list-row .left {
+    display: flex;
+    flex-direction: column;
+}
+.tab2 .list .list-content .list-row .left .top {
+    color: white;
+}
+.tab2 .list .list-content .list-row .left .bottom {
+    font-size: 11px;
+    line-height: 1;
+}
+.tab2 .list .list-content .list-row > *:not(.left) {
+    text-align: right;
 }

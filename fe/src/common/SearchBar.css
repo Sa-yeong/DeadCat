@@ -1,0 +1,8 @@
+.search-bar {
+    display: flex;
+    gap: 10px;
+    color: gray;
+}
+.search-bar input {
+    height: 15px;
+}

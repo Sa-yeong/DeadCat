@@ -4,14 +4,14 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.7);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 .nick-change-modal{
     position: relative;
-    background: white;
+    background: #171d27;
     border-radius: 8px;
     height: 300px;
     width: 500px;
@@ -22,14 +22,13 @@
 }
 .nick-change-modal .modal-close{
     position: absolute;
-    width: 1.5vw;
-    height: 1.5vw;
     right: 5px;
     top: 5px;
     display: flex;
     align-items: center;
     justify-content: center;
-    /* font-size: 15px; */
+    font-size: 30px;
+    cursor: pointer;
 }
 .nick-change-modal .middle{
     align-self: flex-end;
@@ -37,7 +36,16 @@
     display: flex;
     gap: 30px;
 }
-.nick-change-modal .footer{
-    align-self: flex-end;
-    margin-right: 70px;
+.nick-change-modal .middle input {
+    background: transparent;
+    border: 1px solid gray;
+    border-radius: 8px;
+    color: gray;
+}
+.nick-change-modal .footer:disabled{
+    background: #171d27 !important;
+    opacity: 0.3;
+}
+.nick-change-modal .footer:disabled:hover{
+    color: gray !important;
 }

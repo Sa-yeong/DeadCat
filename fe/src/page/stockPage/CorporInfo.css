@@ -1,0 +1,60 @@
+.corpor-info-container {
+    margin-top: 20px;
+    margin-right: 200px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.corpor-info-container .money {
+    /* border: 1px solid skyblue; */
+    height: 90px;
+    display: flex;
+    justify-content: space-between;
+}
+.corpor-info-container .middle {
+    display: flex;
+    height: 315px;
+    gap: 20px;
+}
+
+/* 회사 관련 금액 */
+.corpor-info-container .money div {
+    border: 1px solid #202835;
+    border-radius: 10px;
+    width: 8.5vw;
+    background: #141921;
+    color: gray;
+    font-size: 13px;
+    padding: 10px;
+    /* display: flex;
+    flex-direction: column; */
+}
+
+/* 연간 실적 */
+.corpor-info-container .middle .anual-earning {
+    flex: 1;
+    border: 1px solid #202835;
+    border-radius: 10px;
+    background: #141921;
+    padding: 20px;
+    color: gray;
+}
+
+/* 종목 능력치 */
+.corpor-info-container .middle .skill-chart {
+    border: 1px solid #202835;
+    border-radius: 10px;
+    background: #141921;
+    width: 300px;
+    padding: 20px;
+}
+
+/* 기업 개요 */
+.corpor-info-container .corpor-outline {
+    border: 1px solid #202835;
+    border-radius: 10px;
+    background: #141921;
+    height: 180px;
+    padding: 20px;
+}
