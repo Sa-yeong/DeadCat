@@ -192,6 +192,14 @@ model stocks {
   ev                  BigInt
   name_en             String?               @db.VarChar(100)
   is_event            Boolean               @default(false)
+  description         String?
+  dividend_per        Int?
+  dividend_cycle      String?               @db.VarChar(10)
+  ex_dividend_date    DateTime?             @db.Date
+  dividend_pay_date   DateTime?             @db.Date
+  dividend_yield      Decimal?              @db.Decimal(5, 2)
+  week52_high         BigInt?
+  week52_low          BigInt?
   affinity            affinity[]
   alarms              alarms[]
   char_reactions      char_reactions[]
@@ -202,7 +210,9 @@ model stocks {
   interest            interest[]
   orders              orders[]
   posts               posts[]
+  stock_financials    stock_financials[]
   stock_history       stock_history[]
+  stock_scores        stock_scores?
   categories          categories?           @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   transaction_history transaction_history[]
 
@@ -447,4 +457,27 @@ model vote_options {
   vote      vote   @relation(fields: [vote_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([vote_id, option_no])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stock_financials {
+  id               BigInt @id @default(autoincrement())
+  stock_id         BigInt
+  year             Int
+  revenue          BigInt @default(0)
+  operating_profit BigInt @default(0)
+  stocks           stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([stock_id, year])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model stock_scores {
+  stock_id      BigInt @id
+  growth        Int    @default(0) @db.SmallInt
+  profitability Int    @default(0) @db.SmallInt
+  stability     Int    @default(0) @db.SmallInt
+  dividend      Int    @default(0) @db.SmallInt
+  activity      Int    @default(0) @db.SmallInt
+  stocks        stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }

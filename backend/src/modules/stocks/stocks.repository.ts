@@ -10,6 +10,13 @@ export interface StockMeta {
     character_img_url: string | null;
 }
 
+export interface StockBasicSummary {
+    stock_code: string;
+    market_cap: bigint;
+    per: number;
+    pbr: number;
+}
+
 @Injectable()
 export class StocksRepository {
     constructor(private readonly prisma: PrismaService) {}
@@ -47,6 +54,7 @@ export class StocksRepository {
                 code: true,
                 name: true,
                 stock_type: true,
+                exchange_code: true,
                 is_event: true,
                 characters: {
                     select: { img_url: true },
@@ -56,7 +64,7 @@ export class StocksRepository {
     }
 
     // DB에 저장된 차트 히스토리 조회
-    async findStockHistory(stockId: bigint, timeframe: string) {
+    async findStockHistory(stockId: bigint, timeframe?: string) {
         return await this.prisma.stock_history.findMany({
             where: { stock_id: stockId },
             orderBy: { record_date: 'asc' }, // 시계열 오름차순
@@ -108,5 +116,29 @@ export class StocksRepository {
         );
 
         return await this.prisma.$transaction(operations);
+    }
+
+    // 기업정보 조화
+    async findBasicSummaryByCode(
+        code: string,
+    ): Promise<StockBasicSummary | null> {
+        const stock = await this.prisma.stocks.findFirst({
+            where: { code },
+            select: {
+                code: true,
+                market_cap: true,
+                per: true,
+                pbr: true,
+            },
+        });
+
+        if (!stock) return null;
+
+        return {
+            stock_code: stock.code,
+            market_cap: stock.market_cap,
+            per: Number(stock.per),
+            pbr: Number(stock.pbr),
+        };
     }
 }

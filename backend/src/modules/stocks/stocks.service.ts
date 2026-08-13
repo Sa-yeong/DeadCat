@@ -6,8 +6,12 @@ import { StockRankingResponseDto } from './dto/stock-ranking.response.dto';
 import { StockDetailResponseDto } from './dto/stock-detail.response.dto';
 import { VolumeSummaryResponseDto } from './dto/volume-summary.response.dto';
 import { StockChartResponseDto } from './dto/stock-chart-dto';
-import { OrderbookResponseDto } from './dto/orderbook.response.dto';
+import {
+    OrderbookItemDto,
+    OrderbookResponseDto,
+} from './dto/orderbook.response.dto';
 import { KisProvider } from 'src/providers/kis/kis.provider';
+import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
 
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
 const TOP_N = 20;
@@ -127,7 +131,7 @@ export class StocksService {
         return new VolumeSummaryResponseDto(cached);
     }
 
-    //GET stock/{stock_code}/chart
+    //GET stock/{stock_code}/chart 일봉 차트 조회
     async getStockChart(
         stockCode: string,
         timeframe: string = 'DAY',
@@ -135,7 +139,7 @@ export class StocksService {
         const meta = await this.repo.findStockByCode(stockCode);
         if (!meta) throw new NotFoundException('종목을 찾을 수 없습니다.');
 
-        // 1. 1분봉(1M) 등 실시간성이 강한 캔들은 PriceService(Redis/KIS)에서 처리
+        // 1. 1분봉(1M) 처리
         if (timeframe === '1M') {
             const chartData = await this.price.readStockChart(
                 stockCode,
@@ -144,7 +148,41 @@ export class StocksService {
             return chartData.map((item) => new StockChartResponseDto(item));
         }
 
-        // 2. 일/주/월(DAY/WEEK/MONTH) 데이터는 DB(stock_history)에서 조회
+        // 2. 해외주식 판단
+        const isOverseas =
+            meta.stock_type === 'FOREIGN' ||
+            meta.stock_type === 'OVERSEAS' ||
+            /^[A-Za-z]+$/.test(stockCode);
+
+        if (isOverseas) {
+            const endDate = new Date()
+                .toISOString()
+                .slice(0, 10)
+                .replace(/-/g, '');
+
+            // DB의 exchange_code 사용 (없을 때만 'NAS' Fallback)
+            const exchange = meta.exchange_code || 'NAS';
+
+            const overseasChart = await this.kisProvider.getOverseasDailyChart(
+                stockCode,
+                exchange,
+                '',
+                endDate,
+            );
+
+            return overseasChart.map(
+                (item) =>
+                    new StockChartResponseDto({
+                        write_time: item.stck_bsop_date,
+                        open_price: Number(item.stck_oprc),
+                        close_price: Number(item.stck_clpr),
+                        low_price: Number(item.stck_lwpr),
+                        high_price: Number(item.stck_hgpr),
+                    }),
+            );
+        }
+
+        // 3. 국내주식 일/주/월 데이터 DB 조회
         const history = await this.repo.findStockHistory(meta.id, timeframe);
 
         return history.map(
@@ -161,27 +199,87 @@ export class StocksService {
 
     // GET /stocks/{stock_code}/orderbook 실시간 호가창 조회
     async getOrderbook(stockCode: string): Promise<OrderbookResponseDto> {
-        // 1. Redis 캐시 확인
+        const meta = await this.repo.findStockByCode(stockCode);
+        if (!meta) {
+            throw new NotFoundException('종목을 찾을 수 없습니다.');
+        }
+
+        const isOverseas =
+            meta.stock_type === 'FOREIGN' ||
+            meta.stock_type === 'OVERSEAS' ||
+            /^[A-Za-z]+$/.test(stockCode);
+
         let orderbook: {
             asks: { price: number; quantity: number }[];
             bids: { price: number; quantity: number }[];
-        } | null = await this.price.readOrderbook(stockCode);
+        };
 
-        // 2. Redis 캐시가 없으면 KIS API 즉시 호출 후 Redis 적재
-        if (!orderbook) {
+        if (isOverseas) {
+            const exchange = meta.exchange_code || 'NAS';
+            orderbook = await this.kisProvider.getOverseasOrderbook(
+                stockCode,
+                exchange,
+            );
+        } else {
             orderbook = await this.kisProvider.getOrderbook(stockCode);
-            if (
-                orderbook &&
-                (orderbook.asks.length > 0 || orderbook.bids.length > 0)
-            ) {
-                await this.price.writeOrderbook(stockCode, orderbook, 30);
+        }
+
+        // DTO 객체 변환
+        const asks = orderbook.asks.map(
+            (item) => new OrderbookItemDto(item.price, item.quantity),
+        );
+        const bids = orderbook.bids.map(
+            (item) => new OrderbookItemDto(item.price, item.quantity),
+        );
+
+        return new OrderbookResponseDto(stockCode, asks, bids);
+    }
+
+    // GET /stocks/{stock_code}/company-info/summary 개별 종목 상단 지표 조회
+    async getCompanyInfoSummary(
+        stockCode: string,
+    ): Promise<CompanyInfoSummaryResponseDto> {
+        // 1. DB에서 basic 메타/지표 데이터(시가총액, PER, PBR) 조회
+        const basicInfo = await this.repo.findBasicSummaryByCode(stockCode);
+        if (!basicInfo) {
+            throw new NotFoundException('종목을 찾을 수 없습니다.');
+        }
+
+        // 2. Redis/PriceService 캐시에서 52주 최고/최저, 배당수익률 정보 확인
+        let dynamicInfo = await this.price.readCompanySummaryExtra(stockCode);
+
+        // 3. 캐시에 없으면 KIS API 호출 후 Redis 적재
+        if (!dynamicInfo) {
+            const kisData =
+                await this.kisProvider.getCompanySummaryExtra(stockCode);
+
+            if (kisData) {
+                dynamicInfo = kisData;
+                // KIS에서 받아온 추가 지표(52주 high/low, 배당수익률) 캐싱 (예: 12시간 TTL)
+                await this.price.writeCompanySummaryExtra(
+                    stockCode,
+                    kisData,
+                    43200,
+                );
+            } else {
+                // API 응답 실패 시 기본값 fallback
+                dynamicInfo = {
+                    dividend_yield: 0,
+                    week52_high: 0,
+                    week52_low: 0,
+                };
             }
         }
 
-        return new OrderbookResponseDto(
-            stockCode,
-            orderbook?.asks || [],
-            orderbook?.bids || [],
-        );
+        // 4. DB 데이터 + KIS/PriceService 데이터 결합
+        return new CompanyInfoSummaryResponseDto({
+            stock_code: stockCode,
+            market_cap: Number(basicInfo.market_cap),
+            per: basicInfo.per,
+            pbr: basicInfo.pbr,
+            dividend_yield: dynamicInfo.dividend_yield,
+            week52_high: dynamicInfo.week52_high,
+            week52_low: dynamicInfo.week52_low,
+        });
     }
 }
