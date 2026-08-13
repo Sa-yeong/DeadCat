@@ -207,7 +207,7 @@ export function StockChart(){
                                     top: 0,
                                     right: 0,
                                     height: '100%',
-                                    width: `${ask.quantity/maxQuantity*100}%`,
+                                    width: `${ask.quantity/maxQuantity*85}%`,
                                     background: 'rgba(255, 99, 71, 0.2)',
                                     zIndex: 0
                                 }} />
@@ -235,7 +235,7 @@ export function StockChart(){
                                     right: 0,
                                     zIndex: 0,
                                     height: '100%',
-                                    width: `${bid.quantity / maxQuantity * 100}%`
+                                    width: `${bid.quantity / maxQuantity * 85}%`
                                 }}/>
                                 <span style={{color:'skyblue'}}>{bid.price.toLocaleString()}</span>
                                 <span>{bid.quantity.toLocaleString()}</span>

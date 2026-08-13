@@ -17,7 +17,6 @@ interface Me{
 interface Assets{
     available_cash: number;
     total_investment: number;
-    total_evaluation_amount: number;
     total_valuation_profit: number;
     valuation_return_rate: number;
     selling_profit:number;
@@ -80,10 +79,6 @@ function AssetInfo(){
         <div className='asset-row'>
             <span className='label'>매입 금액</span>
             <span>{Number(myAsset?.total_investment).toLocaleString()}</span>
-        </div>
-        <div className='asset-row'>
-            <span className='label'>평가 금액</span>
-            <span>{Number(myAsset?.total_evaluation_amount).toLocaleString()}</span>
         </div>
         <div className='asset-row'>
             <span className='label'>판매 수익</span>

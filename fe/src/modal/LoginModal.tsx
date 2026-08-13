@@ -1,7 +1,14 @@
 import './LoginModal.css'
 import { IoClose } from "react-icons/io5";
+import Login from '../common/Login';
 
-export function LoginModal({isOpen, onClose, children}:any){
+// interface LoginModalProps {
+//     isOpen: boolean;
+//     onClose: () => void;
+//     current_page
+// }
+
+export function LoginModal({isOpen, onClose, current_page}:any){
     if(!isOpen){
         return null;
     }
@@ -11,7 +18,7 @@ export function LoginModal({isOpen, onClose, children}:any){
             <button className="modal-close" onClick={onClose}>
                 <IoClose />
             </button>
-            {children}
+            <Login current_page={current_page} onClose={onClose} />
         </div>
     </div>;
 }

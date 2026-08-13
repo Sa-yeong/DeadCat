@@ -11,21 +11,20 @@
 
 /* 테이블 헤더 */
 .stockListView .stockList .table-header{
-    color:gray;
+    border-bottom: 1px solid black;
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr 3fr 3fr 2fr;
+    align-items: center;
+    justify-items: center;
+    min-height: 50px;
+    line-height: 1.4;
+    text-align: center;
 }
-.stockListView .stockList .table-header svg{
-    display: none;
-}
-.stockListView .stockList .table-header .list-row .stock-order{
-    display:flex;
-    gap: 5px;
-}
-.stockListView .stockList .table-header .list-row .standard-date{
+.stockListView .stockList .table-header .standard-date {
     font-size: 10px;
-    /* padding: 0px; */
-    padding-bottom: 12px;
+    padding: 0;
     align-self: flex-end;
-
+    padding-bottom: 12px;
 }
 /* 테이블 body */
 .stock-table .table-body{

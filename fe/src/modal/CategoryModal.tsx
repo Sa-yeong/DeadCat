@@ -24,17 +24,15 @@ export function CategoryModal({isOpen, onClose, category, stocks}:any){
             </div>
             <div className='stockList'>
                 {stocks?.map((stock: any) => 
-                    <Link to={`../individual/${stock.stock_code}`}>
-                        <StockRow order={stock.rank}
-                            s_name={stock.stock_name}
-                            s_code={stock.stock_code}
-                            c_price={stock.current_price}
-                            rise_rate={stock.change_rate}
-                            t_value={stock.trading_value}
-                            isLike={stock.is_favorite}
-                            market={stock.market}
-                            key={stock.stock_code} />
-                    </Link>
+                    <StockRow order={stock.rank}
+                        s_name={stock.stock_name}
+                        s_code={stock.stock_code}
+                        c_price={stock.current_price}
+                        rise_rate={stock.change_rate}
+                        t_value={stock.trading_value}
+                        isLike={stock.is_favorite}
+                        market={stock.market}
+                        key={stock.stock_code} />
                     
                 )}
             </div>

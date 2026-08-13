@@ -1,8 +1,8 @@
 import './StockRow.css'
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { IoHeartOutline, IoHeart } from 'react-icons/io5';
 import { LoginModal } from '../../modal/LoginModal';
-import Login from '../../common/Login';
 import { api } from '../../api/axios';
 
 
@@ -76,30 +76,29 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         }
     }
 
-     return <div className='list-row' onMouseOver={mouseOver}>
-        <span className='stock-order'>{order}</span>
-        {(typeof isLiked==='string')?(
-            <span className='standard-date'>
-                {isLiked}
+     return<>
+        <Link to={`/stocks/individual/${s_code}`} className='list-row' onMouseOver={mouseOver}>
+            <span className='stock-order'>{order}</span>
+            {(typeof isLiked==='string')?(
+                <span className='standard-date'>
+                    {isLiked}
+                </span>
+            ):(
+                <span onClick={toggleHeart}>
+                { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
+                </span>
+            )}
+            <span className='stock-name'>{s_name}</span>
+            <span className='current-price'>
+                {(market != 'DOMESTIC' && market != 'FOREIGN')? c_price:
+                (market == 'DOMESTIC')?formatComma(market, c_price)+' ￦':formatComma(market, c_price)+' $'}
             </span>
-        ):(
-            <span onClick={toggleHeart}>
-            { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
+            <span className='rise-rate' 
+                style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'gray':((rise_rate>0) ?'tomato':'lightskyblue')}}>
+                {(typeof rise_rate =='string')?rise_rate:rise_rate + '%'}
             </span>
-        )}
-        {/* <span onClick={toggleHeart}>
-            { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
-        </span> */}
-        <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
-        <span className='stock-name'>{s_name}</span>
-        <span className='current-price'>
-            {(market != 'DOMESTIC' && market != 'FOREIGN')? c_price:
-            (market == 'DOMESTIC')?formatComma(market, c_price)+' ￦':formatComma(market, c_price)+' $'}
-        </span>
-        <span className='rise-rate' 
-            style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'gray':((rise_rate>0) ?'tomato':'lightskyblue')}}>
-            {(typeof rise_rate =='string')?rise_rate:rise_rate + '%'}
-        </span>
-        <span className='trading-value'>{formatToEok(t_value)}</span>
-    </div>;
+            <span className='trading-value'>{formatToEok(t_value)}</span>
+        </Link>
+        <LoginModal isOpen={open} onClose={() => setOpen(false)} current_page={window.location.pathname} />
+    </>
 }

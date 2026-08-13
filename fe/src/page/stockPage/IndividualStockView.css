@@ -24,7 +24,7 @@
 .individual-view .side-bar button {
     border: 1px solid transparent;
     border-bottom: 1px solid #222b3a;
-    width: 120px;
+    width: 50%;
     height: 40px;
     background: transparent;
     color: gray;
@@ -46,7 +46,7 @@
     height: 40px;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
     padding-left: 5px;
     text-decoration: none;
     color: gray;

@@ -3,7 +3,12 @@ import { useState } from 'react';
 import { api } from '../api/axios';
 import { useNavigate } from 'react-router-dom';
 
-export default function Login(){
+interface LoginProps{
+    current_page?: string;
+    onClose?:() => void;
+}
+
+export default function Login({current_page, onClose=()=>{}}:LoginProps){
     const [userId, setUserId] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -18,13 +23,18 @@ export default function Login(){
             localStorage.setItem('token', token);
 
             console.log('로그인 성공!');
-            navigate('/', {replace:true});
+            if(current_page){ // 모달일 때
+                onClose();
+                navigate(current_page, {replace: true});
+                window.location.reload();
+            }else{
+                navigate('/', {replace:true});
+            }
         } catch(e) {
             console.error('로그인 실패: ', e);
             setError('아이디 또는 비밀번호가 올바르지 않습니다.');
         }
     }
-
 
     return <div className="login-container">
         <div className='header'>
@@ -43,7 +53,7 @@ export default function Login(){
             {error && <p className='login-error' style={{color:'red', margin:'8px 0 0'}}>{error}</p>}
         </div>
         <div className='footer'>
-            <button onClick={handleLogin}>로그인</button>
+            <button onClick={() => handleLogin()}>로그인</button>
             <a className='sign-up' onClick={() => navigate('/signup', {replace:true})} >회원가입</a>
         </div>
     </div>;

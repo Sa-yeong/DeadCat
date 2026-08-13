@@ -41,7 +41,6 @@ const router = createBrowserRouter([
       {path: 'mypage', element: <MyPageLayout />, children: [
         {index: true, element: <Navigate to='assets' replace />},
         {path: 'assets', element: <Tab1 />, children:[
-          // {index:true, element: <FollowList />},
           {path: 'follow', element: <FollowList />}
           // {index:true, element: <MyStockList />},
           // {path: 'list', element: <MyStockList />},

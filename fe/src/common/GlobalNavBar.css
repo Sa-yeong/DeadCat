@@ -29,6 +29,12 @@
     justify-content: center;
     gap: 15px;
 }
+.globalNav .global-nav-container .right-group div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
 
 /* 버튼과 Link (a) 컴포넌트 디자인 초기화 */
 .globalNav .global-nav-container :is(.left-group,.right-group) button, 
@@ -53,5 +59,3 @@
 .globalNav .global-nav-container :is(.left-group,.right-group) a:hover{
     color: white;
 }
-
-/* 현재 페이지가 무엇인지 알려주는 데코레이션 */

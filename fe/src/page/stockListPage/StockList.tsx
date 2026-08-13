@@ -75,27 +75,29 @@ export function StockList(){
 
     return <div className='stock-table'>
         <div className='table-header'> 
-            <StockRow order={'순위'} 
-            isLike={changeFormat()}
-            s_name={'종목 이름'} c_price={'현재가'} 
-            rise_rate={'등락률'} t_value={'거래대금 순'} />
+            <span className='stock-order'> 순위 </span>
+            <span className='standard-date'>{changeFormat()}</span>
+            <span className='stock-name'>종목 이름</span>
+            <span className='current-price'>현재가</span>
+            <span className='rise-rate'>
+                등락률
+            </span>
+            <span className='trading-value'>거래대금 순</span>
         </div>
         <div className='table-body'>
             {
                 stockRows.map((stock) => 
-                    <NavLink key={stock.stock_code} to={`/stocks/individual/${stock.stock_code}`}>
-                        <StockRow key={stock.stock_code} 
-                        order={stock.rank} 
-                        s_name={stock.stock_name} 
-                        c_price={stock.current_price} 
-                        rise_rate={stock.change_rate}
-                        t_value={stock.trading_value_krw}
-                        isLike={stock.is_favorite}
-                        s_code= {stock.stock_code} 
-                        market={stock.market}
-                        mouseOver={() => setActiveImg(stock.character_img_url)}
-                        />
-                    </NavLink>
+                    <StockRow key={stock.stock_code} 
+                    order={stock.rank} 
+                    s_name={stock.stock_name} 
+                    c_price={stock.current_price} 
+                    rise_rate={stock.change_rate}
+                    t_value={stock.trading_value_krw}
+                    isLike={stock.is_favorite}
+                    s_code= {stock.stock_code} 
+                    market={stock.market}
+                    mouseOver={() => setActiveImg(stock.character_img_url)}
+                    />
                 )
             }
         </div>

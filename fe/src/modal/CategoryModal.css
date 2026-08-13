@@ -42,7 +42,7 @@
     text-decoration: none;
     color: gray;
 }
-.cate-modal .stockList > *:hover{
+.cate-modal .stockList .list-row:hover{
     color: white;
-    background: #1a212c;
+    background: #1a212c; 
 }
