@@ -78,7 +78,7 @@ export class StocksService {
         return rows;
     }
 
-    // 섹터 상승률 계산용: 코드별 등락률. sectors(API 3)가 빌려 씀 → export.
+    // 섹터 상승률 계산용: 코드별 등락률.
     async getChangeRates(codes: string[]): Promise<Map<string, number>> {
         const prices = await this.price.readPrices(codes);
         const result = new Map<string, number>();
@@ -155,29 +155,20 @@ export class StocksService {
             /^[A-Za-z]+$/.test(stockCode);
 
         if (isOverseas) {
-            const endDate = new Date()
-                .toISOString()
-                .slice(0, 10)
-                .replace(/-/g, '');
-
-            // DB의 exchange_code 사용 (없을 때만 'NAS' Fallback)
-            const exchange = meta.exchange_code || 'NAS';
-
-            const overseasChart = await this.kisProvider.getOverseasDailyChart(
-                stockCode,
-                exchange,
-                '',
-                endDate,
+            // DB에서 조회 (syncHistoricalData로 이미 저장됨)
+            const history = await this.repo.findStockHistory(
+                meta.id,
+                timeframe,
             );
 
-            return overseasChart.map(
-                (item) =>
+            return history.map(
+                (h) =>
                     new StockChartResponseDto({
-                        write_time: item.stck_bsop_date,
-                        open_price: Number(item.stck_oprc),
-                        close_price: Number(item.stck_clpr),
-                        low_price: Number(item.stck_lwpr),
-                        high_price: Number(item.stck_hgpr),
+                        write_time: h.record_date.toISOString(), // ISO-8601
+                        open_price: Number(h.open_price),
+                        close_price: Number(h.close_price),
+                        low_price: Number(h.low_price),
+                        high_price: Number(h.high_price),
                     }),
             );
         }

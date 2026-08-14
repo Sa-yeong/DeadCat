@@ -86,9 +86,20 @@ export class PriceScheduler implements OnModuleInit {
                     : '';
 
                 //  100건 이상 있고, DB의 최근 날짜가 '오늘 KST 날짜'와 일치하면 스킵
-                if (count >= 100 && latestDateStr === todayKstStr) {
+                const yesterdayKst = new Date(kstNow);
+                yesterdayKst.setDate(yesterdayKst.getDate() - 1);
+                const yesterdayKstStr = yesterdayKst
+                    .toISOString()
+                    .split('T')[0];
+
+                const compareDate =
+                    stock.stock_type === 'FOREIGN'
+                        ? yesterdayKstStr // 해외는 어제 날짜와 비교
+                        : todayKstStr; //국내는 오늘날짜와 비교
+
+                if (count >= 100 && latestDateStr >= compareDate) {
                     this.logger.log(
-                        `[${stock.name}] 오늘 자 시세까지 최신화 완료되었습니다. (${count}건)`,
+                        `[${stock.name}] 최신화 완료되었습니다. (${count}건)`,
                     );
                     continue;
                 }
@@ -278,7 +289,7 @@ export class PriceScheduler implements OnModuleInit {
 
             // 2. 해외주식 volume-summary 적재 (이미 가져온 ovsPrices 데이터 활용)
 
-            for (const [code, price] of ovsPrices) {
+            /*for (const [code, price] of ovsPrices) {
                 try {
                     const currentPrice = price.current_price ?? 0;
 
@@ -305,8 +316,75 @@ export class PriceScheduler implements OnModuleInit {
                         `해외 volume-summary 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
                     );
                 }
-            }
+            } */
 
+            // 2. 해외주식 volume-summary 적재
+            for (const item of overseas) {
+                try {
+                    await this.sleep(500); // KIS API 호출 제한(Rate Limit) 방지
+
+                    //  KIS 해외 분봉 API 호출하여 volume_graph까지 제대로 받아오기
+                    let summary = await this.kis.fetchOverseasVolumeSummary(
+                        item.symbol,
+                        item.exchange,
+                    );
+
+                    // 검증(Fallback): API 호출은 성공했으나 volume_graph가 비어있거나 total_volume이 0인 경우,
+                    // 미리 받아둔 ovsPrices 데이터로 거래량/거래대금 메우기
+                    if (
+                        summary.total_volume === 0 &&
+                        ovsPrices.has(item.symbol)
+                    ) {
+                        const priceInfo = ovsPrices.get(item.symbol)!;
+                        const currentPrice = priceInfo.current_price ?? 0;
+                        const volume = priceInfo.accumulated_volume ?? 0;
+                        const tradingValue =
+                            priceInfo.trading_value ?? currentPrice * volume;
+
+                        summary.total_volume = volume;
+                        summary.total_trading_value = tradingValue;
+                    }
+
+                    await this.price.writeVolumeSummary(
+                        item.symbol,
+                        summary,
+                        VOLUME_SUMMARY_TTL_SECONDS,
+                    );
+                    this.logger.log(
+                        `해외 volume-summary 적재 완료: ${item.symbol}`,
+                    );
+                } catch (e) {
+                    // 예외 처리(Fallback): 해외 분봉 API 호출 자체가 에러(500, TR 에러 등) 난 경우
+                    if (ovsPrices.has(item.symbol)) {
+                        const priceInfo = ovsPrices.get(item.symbol)!;
+                        const currentPrice = priceInfo.current_price ?? 0;
+                        const volume = priceInfo.accumulated_volume ?? 0;
+                        const tradingValue =
+                            priceInfo.trading_value ?? currentPrice * volume;
+
+                        const fallbackSummary: StockVolumeSummaryData = {
+                            stock_code: item.symbol,
+                            total_volume: volume,
+                            total_trading_value: tradingValue,
+                            volume_graph: [], // 에러 시 최소한 프론트엔드가 터지지 않도록 빈 배열 처리
+                        };
+
+                        await this.price.writeVolumeSummary(
+                            item.symbol,
+                            fallbackSummary,
+                            VOLUME_SUMMARY_TTL_SECONDS,
+                        );
+                        this.logger.log(
+                            `해외 volume-summary 적재 완료 (Fallback 적용): ${item.symbol}`,
+                        );
+                    } else {
+                        this.logger.warn(
+                            `해외 volume-summary 실패 ${item.symbol}: ${e instanceof Error ? e.message : String(e)}`,
+                        );
+                    }
+                }
+            }
+            // PriceScheduler.ts 해외 volume-summary 루프 부분
             this.logger.log(
                 `시세 및 volume-summary 적재 완료: ${entries.length}/${stocks.length}종목 (환율 ${usdKrw})`,
             );
