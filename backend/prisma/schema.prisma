@@ -19,12 +19,68 @@ model affinity {
   @@id([user_id, stock_id])
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model alarms {
+  user_id  BigInt
+  stock_id BigInt
+  price    BigInt
+  stocks   stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users    users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, stock_id, price])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model badges {
+  id          BigInt        @id @default(autoincrement())
+  unlock      String        @db.VarChar(100)
+  have_badges have_badges[]
+}
+
 model categories {
   id     BigInt   @id @default(autoincrement())
   name   String   @db.VarChar(100)
   stocks stocks[]
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model char_affinity {
+  character_1                            BigInt
+  character_2                            BigInt
+  affinity_score                         Int    @db.SmallInt
+  users_char_affinity_character_1Tousers users  @relation("char_affinity_character_1Tousers", fields: [character_1], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_char_affinity_character_2Tousers users  @relation("char_affinity_character_2Tousers", fields: [character_2], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([character_1, character_2])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model char_affinity_log {
+  id                                         BigInt   @id @default(autoincrement())
+  character_1                                BigInt
+  character_2                                BigInt
+  happening                                  String   @db.VarChar(300)
+  change_rate                                Decimal  @db.Decimal(6, 2)
+  create_at                                  DateTime @db.Timestamp(6)
+  users_char_affinity_log_character_1Tousers users    @relation("char_affinity_log_character_1Tousers", fields: [character_1], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_char_affinity_log_character_2Tousers users    @relation("char_affinity_log_character_2Tousers", fields: [character_2], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model char_reactions {
+  reactor_id                              BigInt
+  receiver_id                             BigInt
+  stock_id                                BigInt
+  reaction_id                             BigInt
+  reactions                               reactions @relation(fields: [reaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_char_reactions_reactor_idTousers  users     @relation("char_reactions_reactor_idTousers", fields: [reactor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_char_reactions_receiver_idTousers users     @relation("char_reactions_receiver_idTousers", fields: [receiver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stocks                                  stocks    @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([reactor_id, receiver_id, stock_id, reaction_id])
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model characters {
   stock_id    BigInt   @id
   img_url     String   @db.VarChar(200)
@@ -52,6 +108,26 @@ model comments {
   users      users    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model event_activity {
+  stock_id     BigInt
+  emotion_type String @db.VarChar(50)
+  act          String @db.VarChar(100)
+  stocks       stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([stock_id, emotion_type])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model follow {
+  follower_id                     BigInt
+  followee_id                     BigInt
+  users_follow_followee_idTousers users  @relation("follow_followee_idTousers", fields: [followee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_follow_follower_idTousers users  @relation("follow_follower_idTousers", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([follower_id, followee_id])
+}
+
 model furnitures {
   id               BigInt    @id @default(autoincrement())
   name             String    @unique @db.VarChar(100)
@@ -60,6 +136,30 @@ model furnitures {
   unlock_rise_rate Decimal?  @db.Decimal(6, 2)
   placed           placed[]
   storage          storage[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model have_badges {
+  user_id   BigInt
+  stock_id  BigInt
+  badge_id  BigInt
+  is_hidden Boolean
+  badges    badges  @relation(fields: [badge_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stocks    stocks  @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users     users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, stock_id, badge_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model have_tags {
+  user_id BigInt
+  tag_id  BigInt
+  self    Boolean
+  tags    tags    @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, tag_id, self])
 }
 
 model holdings {
@@ -86,6 +186,7 @@ model indices {
   indices_history indices_history[]
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model indices_history {
   indices_id  BigInt
   open_price  Decimal  @db.Decimal(10, 2)
@@ -134,6 +235,21 @@ model like_posts {
   @@id([user_id, post_id])
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model orders {
+  id        BigInt   @id @default(autoincrement())
+  user_id   BigInt
+  stock_id  BigInt
+  type      String   @db.VarChar(10)
+  quantity  Int      @db.SmallInt
+  create_at DateTime @default(now()) @db.Timestamp(6)
+  side      String?
+  price     BigInt?
+  status    String?  @default("PENDING") @db.VarChar(15)
+  stocks    stocks   @relation(fields: [stock_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
 model placed {
   id           BigInt     @id @default(autoincrement())
   user_id      BigInt
@@ -163,6 +279,30 @@ model posts {
   vote                              vote?
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model reactions {
+  id             BigInt           @id @default(autoincrement())
+  img            String           @db.VarChar(200)
+  char_reactions char_reactions[]
+  room_reactions room_reactions[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model room_reactions {
+  reactor_id                              BigInt
+  receiver_id                             BigInt
+  reaction_id                             BigInt
+  reactions                               reactions @relation(fields: [reaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_room_reactions_reactor_idTousers  users     @relation("room_reactions_reactor_idTousers", fields: [reactor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_room_reactions_receiver_idTousers users     @relation("room_reactions_receiver_idTousers", fields: [receiver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([reactor_id, receiver_id, reaction_id])
+}
+
+
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model stock_history {
   stock_id    BigInt
   record_date DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
@@ -175,6 +315,8 @@ model stock_history {
   @@id([stock_id, record_date])
 }
 
+
+
 model stocks {
   id                  BigInt                @id @default(autoincrement())
   code                String                @db.VarChar(20)
@@ -184,12 +326,7 @@ model stocks {
   name                String                @db.VarChar(100)
   market_cap          BigInt
   per                 Decimal               @db.Decimal(10, 2)
-  psr                 Decimal               @db.Decimal(10, 2)
   pbr                 Decimal               @db.Decimal(10, 2)
-  eps                 Decimal               @db.Decimal(15, 2)
-  bps                 Decimal               @db.Decimal(15, 2)
-  roe                 Decimal               @db.Decimal(10, 2)
-  ev                  BigInt
   name_en             String?               @db.VarChar(100)
   is_event            Boolean               @default(false)
   description         String?
@@ -198,8 +335,8 @@ model stocks {
   ex_dividend_date    DateTime?             @db.Date
   dividend_pay_date   DateTime?             @db.Date
   dividend_yield      Decimal?              @db.Decimal(5, 2)
-  week52_high         BigInt?
-  week52_low          BigInt?
+  week52_high         Decimal?              @db.Decimal(15, 4)
+  week52_low          Decimal?              @db.Decimal(15, 4)
   affinity            affinity[]
   alarms              alarms[]
   char_reactions      char_reactions[]
@@ -213,6 +350,8 @@ model stocks {
   stock_financials    stock_financials[]
   stock_history       stock_history[]
   stock_scores        stock_scores?
+  stock_overview      stock_overview?
+  corp_code           String?               @db.VarChar(20)
   categories          categories?           @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   transaction_history transaction_history[]
 
@@ -227,6 +366,13 @@ model storage {
   users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([user_id, furniture_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model tags {
+  id        BigInt      @id @default(autoincrement())
+  content   String      @db.VarChar(100)
+  have_tags have_tags[]
 }
 
 model transaction_history {
@@ -289,6 +435,17 @@ model vote {
   voting       voting[]
 }
 
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model vote_options {
+  vote_id   BigInt
+  option_no Int    @db.SmallInt
+  content   String @db.VarChar(500)
+  vote      vote   @relation(fields: [vote_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([vote_id, option_no])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model voting {
   vote_id   BigInt
   voter_id  BigInt
@@ -308,170 +465,21 @@ model wardrobe {
   @@id([user_id, clothes_id])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model alarms {
-  user_id  BigInt
-  stock_id BigInt
-  price    BigInt
-  stocks   stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users    users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([user_id, stock_id, price])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model badges {
-  id          BigInt        @id @default(autoincrement())
-  unlock      String        @db.VarChar(100)
-  have_badges have_badges[]
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model char_affinity {
-  character_1                            BigInt
-  character_2                            BigInt
-  affinity_score                         Int    @db.SmallInt
-  users_char_affinity_character_1Tousers users  @relation("char_affinity_character_1Tousers", fields: [character_1], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_char_affinity_character_2Tousers users  @relation("char_affinity_character_2Tousers", fields: [character_2], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([character_1, character_2])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model char_affinity_log {
-  id                                         BigInt   @id @default(autoincrement())
-  character_1                                BigInt
-  character_2                                BigInt
-  happening                                  String   @db.VarChar(300)
-  change_rate                                Decimal  @db.Decimal(6, 2)
-  create_at                                  DateTime @db.Timestamp(6)
-  users_char_affinity_log_character_1Tousers users    @relation("char_affinity_log_character_1Tousers", fields: [character_1], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_char_affinity_log_character_2Tousers users    @relation("char_affinity_log_character_2Tousers", fields: [character_2], references: [id], onDelete: NoAction, onUpdate: NoAction)
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model char_reactions {
-  reactor_id                              BigInt
-  receiver_id                             BigInt
-  stock_id                                BigInt
-  reaction_id                             BigInt
-  reactions                               reactions @relation(fields: [reaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_char_reactions_reactor_idTousers  users     @relation("char_reactions_reactor_idTousers", fields: [reactor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_char_reactions_receiver_idTousers users     @relation("char_reactions_receiver_idTousers", fields: [receiver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  stocks                                  stocks    @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([reactor_id, receiver_id, stock_id, reaction_id])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model event_activity {
-  stock_id     BigInt
-  emotion_type String @db.VarChar(50)
-  act          String @db.VarChar(100)
-  stocks       stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([stock_id, emotion_type])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model follow {
-  follower_id                     BigInt
-  followee_id                     BigInt
-  users_follow_followee_idTousers users  @relation("follow_followee_idTousers", fields: [followee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_follow_follower_idTousers users  @relation("follow_follower_idTousers", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([follower_id, followee_id])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model have_badges {
-  user_id   BigInt
-  stock_id  BigInt
-  badge_id  BigInt
-  is_hidden Boolean
-  badges    badges  @relation(fields: [badge_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  stocks    stocks  @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users     users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([user_id, stock_id, badge_id])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model have_tags {
-  user_id BigInt
-  tag_id  BigInt
-  self    Boolean
-  tags    tags    @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users   users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([user_id, tag_id, self])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model orders {
-  id        BigInt   @id @default(autoincrement())
-  user_id   BigInt
-  stock_id  BigInt
-  type      String   @db.VarChar(10)
-  quantity  Int      @db.SmallInt
-  create_at DateTime @default(now()) @db.Timestamp(6)
-  side      String?
-  price     BigInt?
-  status    String?  @default("PENDING") @db.VarChar(15)
-  stocks    stocks   @relation(fields: [stock_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model reactions {
-  id             BigInt           @id @default(autoincrement())
-  img            String           @db.VarChar(200)
-  char_reactions char_reactions[]
-  room_reactions room_reactions[]
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model room_reactions {
-  reactor_id                              BigInt
-  receiver_id                             BigInt
-  reaction_id                             BigInt
-  reactions                               reactions @relation(fields: [reaction_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_room_reactions_reactor_idTousers  users     @relation("room_reactions_reactor_idTousers", fields: [reactor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_room_reactions_receiver_idTousers users     @relation("room_reactions_receiver_idTousers", fields: [receiver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([reactor_id, receiver_id, reaction_id])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model tags {
-  id        BigInt      @id @default(autoincrement())
-  content   String      @db.VarChar(100)
-  have_tags have_tags[]
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model vote_options {
-  vote_id   BigInt
-  option_no Int    @db.SmallInt
-  content   String @db.VarChar(500)
-  vote      vote   @relation(fields: [vote_id], references: [post_id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([vote_id, option_no])
-}
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model stock_financials {
-  id               BigInt @id @default(autoincrement())
   stock_id         BigInt
   year             Int
   revenue          BigInt @default(0)
   operating_profit BigInt @default(0)
   stocks           stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@id([stock_id, year])
   @@unique([stock_id, year])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+
+// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model stock_scores {
   stock_id      BigInt @id
   growth        Int    @default(0) @db.SmallInt
@@ -480,4 +488,15 @@ model stock_scores {
   dividend      Int    @default(0) @db.SmallInt
   activity      Int    @default(0) @db.SmallInt
   stocks        stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+
+model stock_overview {
+  stock_id          BigInt    @id
+  dividend_per      Int?
+  dividend_cycle    String?
+  ex_dividend_date  DateTime?
+  dividend_pay_date DateTime?
+  description       String?
+  stocks            stocks    @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }

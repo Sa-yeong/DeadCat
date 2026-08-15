@@ -654,6 +654,7 @@ export class KisProvider {
         });
     }
 
+    //해외주식 거래량
     async fetchOverseasVolumeSummary(
         stockCode: string,
         exchangeCode: string,
@@ -795,12 +796,12 @@ export class KisProvider {
                             volume,
                         };
                     })
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     .reverse();
 
-                // --------------------------------------------------
                 // 첫 번째 분봉 데이터 디버깅 로그
-                // --------------------------------------------------
-                if (output2List.length > 0) {
+
+                /*  if (output2List.length > 0) {
                     this.logger.log(
                         `[KIS 해외분봉 데이터] ` +
                             `종목=${symb}, ` +
@@ -813,11 +814,10 @@ export class KisProvider {
                             `종목=${symb}, ` +
                             `output2가 비어 있습니다.`,
                     );
-                }
+                }*/
 
-                // --------------------------------------------------
                 // 최종 데이터 반환
-                // --------------------------------------------------
+
                 return {
                     stock_code: symb,
                     total_volume: totalVolume,
@@ -1094,6 +1094,262 @@ export class KisProvider {
                 dividend_yield: 0, // KIS 시세 TR 미제공 시 기본값 (재무 API 사용 시 추가 매핑)
                 week52_high: Number(o.w52_hgpr) || 0,
                 week52_low: Number(o.w52_lwpr) || 0,
+            };
+        });
+    }
+
+    /**
+     * 국내 주식 상세 지표 조회 (summary API 전용: 시가총액, PER, PBR, 52주 최고/최저 등)
+     */
+    /*async getDomesticStockDetail(code: string) {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
+            const headers = await this.authHeaders('FHKST01010100');
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisDomesticResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: code,
+                    },
+                }),
+            );
+
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            const o = data.output as any;
+
+            return {
+                stock_code: code,
+                // KIS hts_avls는 HTS 시가총액(억 또는 백만 단위)이므로 원 단위 변환 (* 1,000,000)
+                market_cap: Number(o.hts_avls || 0) * 1000000,
+                per: Number(o.per || 0),
+                pbr: Number(o.pbr || 0),
+                // 배당수익률 calculation 또는 per/eps 활용
+                dividend_yield:
+                    Number(o.per) > 0 && Number(o.eps) > 0
+                        ? Number(
+                              (
+                                  (Number(o.dvd_amt || 0) /
+                                      Number(o.stck_prpr || 1)) *
+                                  100
+                              ).toFixed(2),
+                          )
+                        : 0,
+                week52_high: Number(o.w52_hgpr || 0),
+                week52_low: Number(o.w52_lwpr || 0),
+            };
+        });
+    }*/
+
+    /**
+     * 국내 주식 상세 지표 조회
+     * - 시가총액
+     * - PER
+     * - PBR
+     * - 배당수익률
+     * - 52주 최고/최저
+     */
+    async getDomesticStockDetail(code: string) {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
+
+            const headers = await this.authHeaders('FHKST01010100');
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisDomesticResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: code,
+                    },
+                }),
+            );
+
+            // KIS API 자체 오류 확인
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const o = data.output as any;
+
+            // 현재 주가
+            const currentPrice = Number(o.stck_prpr || 0);
+
+            // 연간 주당배당금
+            const dividendPer = Number(o.dvd_amt || 0);
+
+            // 배당수익률 = 연간 주당배당금 / 현재주가 × 100
+            const dividendYield =
+                currentPrice > 0
+                    ? Number(((dividendPer / currentPrice) * 100).toFixed(2))
+                    : 0;
+
+            return {
+                stock_code: code,
+                current_price: currentPrice,
+
+                // HTS 시가총액 단위를 원 단위로 변환
+                market_cap: Number(o.hts_avls || 0) * 1000000,
+
+                // PER
+                per: Number(o.per || 0),
+
+                // PBR
+                pbr: Number(o.pbr || 0),
+
+                // 연간 배당금 / 현재주가 × 100
+                dividend_yield: dividendYield,
+
+                // 52주 최고가
+                week52_high: Number(o.w52_hgpr || 0),
+
+                // 52주 최저가
+                week52_low: Number(o.w52_lwpr || 0),
+            };
+        });
+    }
+
+    /**
+     * 해외 주식 상세 지표 조회 (summary API 전용)
+     */
+    async getOverseasStockDetail(symbol: string, exchange = 'NAS') {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/price`;
+
+            const headers = await this.authHeaders('HHDFS00000300');
+
+            const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+
+            const symb = KIS_SYMBOL[symbol] ?? symbol;
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisOverseasResponse>(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: excd,
+                        SYMB: symb,
+                    },
+                }),
+            );
+
+            // KIS API 자체 오류 확인
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            const o = (data.output || {}) as Record<string, any>;
+
+            // KIS가 AAPL에 실제로 어떤 필드를 내려주는지 확인하기 위한 로그
+            /*console.log(
+                `[KIS 해외주식 응답] ${symbol}`,
+                JSON.stringify(o, null, 2),
+            );*/
+
+            // 기존 매핑
+            const marketCap = Number(o.tomv || 0);
+            const per = Number(o.perx || o.per || 0);
+            const pbr = Number(o.pbrx || o.pbr || 0);
+            const dividendYield = Number(o.pdiv || o.pdy || 0);
+            const week52High = Number(o.h52p || 0);
+            const week52Low = Number(o.l52p || 0);
+
+            return {
+                stock_code: symbol,
+                market_cap: marketCap,
+                per,
+                pbr,
+                dividend_yield: dividendYield,
+                week52_high: week52High,
+                week52_low: week52Low,
+            };
+        });
+    }
+
+    /**
+     * 해외 주식 기업정보/상세지표 조회
+     *
+     * 조회 항목:
+     * - 시가총액
+     * - PER
+     * - PBR
+     * - 52주 최고가
+     * - 52주 최저가
+     */
+    async getOverseasCompanyInfo(symbol: string, exchange = 'NAS') {
+        return this.withRateLimitRetry(async () => {
+            // KIS 해외주식 현재가상세 API
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/price-detail`;
+
+            // 해외주식 현재가상세 TR_ID
+            const headers = await this.authHeaders('HHDFS76200200');
+
+            // 프로젝트의 거래소 코드 매핑 사용
+            const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+
+            // 프로젝트의 종목코드 매핑 사용
+            const symb = KIS_SYMBOL[symbol] ?? symbol;
+
+            const { data } = await firstValueFrom(
+                this.http.get(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: excd,
+                        SYMB: symb,
+                    },
+                }),
+            );
+
+            // KIS 원본 응답 확인
+            /* console.log(
+                `[KIS 해외주식 상세 응답] ${symbol}`,
+                JSON.stringify(data, null, 2),
+            );*/
+
+            // KIS API 자체 오류 확인
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            // 실제 기업정보가 들어있는 output
+            const o = (data.output || {}) as Record<string, any>;
+
+            // KIS 해외주식 현재가상세 응답 필드
+            const marketCap = Number(o.tomv || 0);
+            const per = Number(o.perx || 0);
+            const pbr = Number(o.pbrx || 0);
+            const week52High = Number(o.h52p || 0);
+            const week52Low = Number(o.l52p || 0);
+            const currentPrice = Number(o.last || 0);
+
+            return {
+                stock_code: symbol,
+
+                // 시가총액
+                market_cap: marketCap,
+
+                // PER
+                per,
+
+                // PBR
+                pbr,
+                current_price: currentPrice,
+
+                // 현재가상세 API에는 배당수익률 필드가
+                // 확인되지 않으므로 일단 0
+                dividend_yield: 0,
+
+                // 52주 최고가
+                week52_high: week52High,
+
+                // 52주 최저가
+                week52_low: week52Low,
             };
         });
     }
