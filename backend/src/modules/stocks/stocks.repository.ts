@@ -12,9 +12,9 @@ export interface StockMeta {
 
 export interface StockBasicSummary {
     stock_code: string;
-    market_cap: bigint;
-    per: number;
-    pbr: number;
+    // market_cap: bigint;
+    // per: number;
+    // pbr: number;
 }
 
 @Injectable()
@@ -126,9 +126,9 @@ export class StocksRepository {
             where: { code },
             select: {
                 code: true,
-                market_cap: true,
-                per: true,
-                pbr: true,
+                //  market_cap: true,
+                //  per: true,
+                // pbr: true,
             },
         });
 
@@ -136,9 +136,9 @@ export class StocksRepository {
 
         return {
             stock_code: stock.code,
-            market_cap: stock.market_cap,
-            per: Number(stock.per),
-            pbr: Number(stock.pbr),
+            //   market_cap: stock.market_cap,
+            //  per: Number(stock.per),
+            // pbr: Number(stock.pbr),
         };
     }
 }

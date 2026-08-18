@@ -1099,53 +1099,6 @@ export class KisProvider {
     }
 
     /**
-     * 국내 주식 상세 지표 조회 (summary API 전용: 시가총액, PER, PBR, 52주 최고/최저 등)
-     */
-    /*async getDomesticStockDetail(code: string) {
-        return this.withRateLimitRetry(async () => {
-            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
-            const headers = await this.authHeaders('FHKST01010100');
-
-            const { data } = await firstValueFrom(
-                this.http.get<KisDomesticResponse>(url, {
-                    headers,
-                    params: {
-                        FID_COND_MRKT_DIV_CODE: 'J',
-                        FID_INPUT_ISCD: code,
-                    },
-                }),
-            );
-
-            if (data.rt_cd !== '0') {
-                throw new KisApiError(data.msg_cd, data.msg1);
-            }
-
-            const o = data.output as any;
-
-            return {
-                stock_code: code,
-                // KIS hts_avls는 HTS 시가총액(억 또는 백만 단위)이므로 원 단위 변환 (* 1,000,000)
-                market_cap: Number(o.hts_avls || 0) * 1000000,
-                per: Number(o.per || 0),
-                pbr: Number(o.pbr || 0),
-                // 배당수익률 calculation 또는 per/eps 활용
-                dividend_yield:
-                    Number(o.per) > 0 && Number(o.eps) > 0
-                        ? Number(
-                              (
-                                  (Number(o.dvd_amt || 0) /
-                                      Number(o.stck_prpr || 1)) *
-                                  100
-                              ).toFixed(2),
-                          )
-                        : 0,
-                week52_high: Number(o.w52_hgpr || 0),
-                week52_low: Number(o.w52_lwpr || 0),
-            };
-        });
-    }*/
-
-    /**
      * 국내 주식 상세 지표 조회
      * - 시가총액
      * - PER

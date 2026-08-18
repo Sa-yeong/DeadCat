@@ -265,9 +265,9 @@ export class StocksService {
         // 4. DB 데이터 + KIS/PriceService 데이터 결합
         return new CompanyInfoSummaryResponseDto({
             stock_code: stockCode,
-            market_cap: Number(basicInfo.market_cap),
-            per: basicInfo.per,
-            pbr: basicInfo.pbr,
+            // market_cap: Number(basicInfo.market_cap),
+            //  per: basicInfo.per,
+            // pbr: basicInfo.pbr,
             dividend_yield: dynamicInfo.dividend_yield,
             week52_high: dynamicInfo.week52_high,
             week52_low: dynamicInfo.week52_low,

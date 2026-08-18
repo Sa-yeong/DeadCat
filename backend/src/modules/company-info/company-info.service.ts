@@ -29,12 +29,12 @@ export class CompanyInfoService {
         dividendCycle: string | null,
         currentPrice: number,
     ): number {
-        // 배당금이나 현재가가 없으면 배당수익률 계산 불가
+        // 배당금이나 현재가가 없으면 계산할 수 없음
         if (dividendPer == null || dividendPer <= 0 || currentPrice <= 0) {
             return 0;
         }
 
-        // 1년 동안 지급되는 횟수
+        // 1년 동안 배당금을 지급하는 횟수
         let paymentCount = 1;
 
         switch (dividendCycle) {
@@ -51,17 +51,22 @@ export class CompanyInfoService {
                 break;
 
             case '결산배당':
-            case '배당없음':
-            default:
                 paymentCount = 1;
                 break;
+
+            case '배당없음':
+            default:
+                return 0;
         }
 
         // 1회 배당금 × 연간 지급 횟수
         const annualDividend = dividendPer * paymentCount;
 
-        // 배당수익률 = 연간 배당금 / 현재가 × 100
-        return Number(((annualDividend / currentPrice) * 100).toFixed(2));
+        // 배당수익률 계산
+        const dividendYield = (annualDividend / currentPrice) * 100;
+
+        // 너무 작은 값이 0으로 사라지지 않도록 소수점 4자리까지 유지
+        return Number(dividendYield.toFixed(4));
     }
 
     /**
@@ -83,7 +88,7 @@ export class CompanyInfoService {
      * 배당수익률:
      *   stock_overview의 배당금 + KIS 실시간 현재가로 계산
      */
-    async getSummary(stockCode: string, exchange?: string) {
+    /* async getSummary(stockCode: string, exchange?: string) {
         // ------------------------------------------------
         // 1. DB에서 종목 및 배당 정보 조회
         // ------------------------------------------------
@@ -161,6 +166,66 @@ export class CompanyInfoService {
             pbr: kisData.pbr,
 
             //  stock_overview 배당금으로 계산한 값
+            dividend_yield: dividendYield,
+
+            week52_high: kisData.week52_high,
+            week52_low: kisData.week52_low,
+        };
+    }*/
+
+    async getSummary(stockCode: string, exchange?: string) {
+        // 1. stocks와 stock_overview를 함께 조회
+        const stock = await this.prisma.stocks.findFirst({
+            where: {
+                code: stockCode,
+            },
+            include: {
+                // 배당 정보의 원본은 stock_overview로 통일
+                stock_overview: true,
+            },
+        });
+
+        if (!stock) {
+            throw new NotFoundException(`Stock code '${stockCode}' not found.`);
+        }
+
+        // 2. 국내/해외에 따라 KIS 실시간 정보 조회
+        let kisData;
+
+        if (this.isDomestic(stockCode)) {
+            // 국내 주식
+            kisData = await this.kisProvider.getDomesticStockDetail(stockCode);
+        } else {
+            // 해외 주식
+            kisData = await this.kisProvider.getOverseasCompanyInfo(
+                stockCode,
+                exchange ?? stock.exchange_code ?? 'NAS',
+            );
+        }
+
+        // 3. KIS에서 가져온 현재 주가
+        const currentPrice = Number(kisData.current_price);
+
+        // 4. stock_overview의 배당금 + 배당주기 + 현재가로 배당수익률 계산
+        const dividendYield = this.calculateDividendYield(
+            stock.stock_overview?.dividend_per != null
+                ? Number(stock.stock_overview.dividend_per)
+                : null,
+
+            stock.stock_overview?.dividend_cycle ?? null,
+
+            currentPrice,
+        );
+
+        // 5. summary 응답
+        return {
+            stock_code: stockCode,
+
+            market_cap: kisData.market_cap,
+            per: kisData.per,
+            pbr: kisData.pbr,
+
+            // stock_overview의 배당 정보로 계산한 배당수익률
             dividend_yield: dividendYield,
 
             week52_high: kisData.week52_high,

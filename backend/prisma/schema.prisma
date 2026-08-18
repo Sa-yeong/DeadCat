@@ -299,8 +299,6 @@ model room_reactions {
   @@id([reactor_id, receiver_id, reaction_id])
 }
 
-
-
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model stock_history {
@@ -315,8 +313,6 @@ model stock_history {
   @@id([stock_id, record_date])
 }
 
-
-
 model stocks {
   id                  BigInt                @id @default(autoincrement())
   code                String                @db.VarChar(20)
@@ -324,19 +320,9 @@ model stocks {
   category_id         BigInt?
   stock_type          String                @db.VarChar(10)
   name                String                @db.VarChar(100)
-  market_cap          BigInt
-  per                 Decimal               @db.Decimal(10, 2)
-  pbr                 Decimal               @db.Decimal(10, 2)
   name_en             String?               @db.VarChar(100)
   is_event            Boolean               @default(false)
-  description         String?
-  dividend_per        Int?
-  dividend_cycle      String?               @db.VarChar(10)
-  ex_dividend_date    DateTime?             @db.Date
-  dividend_pay_date   DateTime?             @db.Date
-  dividend_yield      Decimal?              @db.Decimal(5, 2)
-  week52_high         Decimal?              @db.Decimal(15, 4)
-  week52_low          Decimal?              @db.Decimal(15, 4)
+  corp_code           String?               @db.VarChar(20)
   affinity            affinity[]
   alarms              alarms[]
   char_reactions      char_reactions[]
@@ -349,9 +335,8 @@ model stocks {
   posts               posts[]
   stock_financials    stock_financials[]
   stock_history       stock_history[]
-  stock_scores        stock_scores?
   stock_overview      stock_overview?
-  corp_code           String?               @db.VarChar(20)
+  stock_scores        stock_scores?
   categories          categories?           @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   transaction_history transaction_history[]
 
@@ -465,7 +450,6 @@ model wardrobe {
   @@id([user_id, clothes_id])
 }
 
-
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model stock_financials {
   stock_id         BigInt
@@ -478,8 +462,6 @@ model stock_financials {
   @@unique([stock_id, year])
 }
 
-
-// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model stock_scores {
   stock_id      BigInt @id
   growth        Int    @default(0) @db.SmallInt
@@ -490,7 +472,6 @@ model stock_scores {
   stocks        stocks @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
-
 model stock_overview {
   stock_id          BigInt    @id
   dividend_per      Int?
@@ -498,5 +479,11 @@ model stock_overview {
   ex_dividend_date  DateTime?
   dividend_pay_date DateTime?
   description       String?
+  market_cap        BigInt?
+  per               Decimal?  @db.Decimal(10, 2)
+  pbr               Decimal?  @db.Decimal(10, 2)
+  week52_high       Int?
+  week52_low        Int?
+  dividend_yield    Decimal?  @db.Decimal(6, 4)
   stocks            stocks    @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
