@@ -59,16 +59,24 @@ export class PostService {
         limit = 20,
         userId?: string,
     ): Promise<StockPostsResponseDto> {
-        // limit이 너무 크지 않도록 방어
+        // 1. 먼저 종목 자체가 존재하는지 확인
+        const stock = await this.postRepository.findStockByCode(stockCode);
+
+        if (!stock) {
+            // 종목 자체가 없는 경우만 404
+            throw new NotFoundException('종목을 찾을 수 없습니다.');
+        }
+
+        // 2. limit 방어
         const safeLimit = Math.min(Math.max(limit, 1), 50);
 
-        // cursor가 없으면 null
+        // 3. cursor 변환
         const cursorId = cursor ? BigInt(cursor) : null;
 
-        // 로그인한 경우에만 좋아요 여부를 판단
+        // 4. 로그인한 경우 좋아요 여부 확인
         const currentUserId = userId ? BigInt(userId) : undefined;
 
-        // Repository에서 게시글 조회
+        // 5. 해당 종목의 게시글 조회
         const posts = await this.postRepository.findStockPosts(
             stockCode,
             cursorId,
@@ -76,13 +84,21 @@ export class PostService {
             currentUserId,
         );
 
-        // limit + 1개를 가져왔는지 확인
+        // 6. 게시글이 없으면 정상적인 빈 목록 반환
+        if (posts.length === 0) {
+            return new StockPostsResponseDto({
+                posts: [],
+                next_cursor: null,
+                has_more: false,
+            });
+        }
+
+        // 7. limit + 1개 여부로 다음 페이지 존재 확인
         const hasMore = posts.length > safeLimit;
 
-        // 실제 응답에는 limit개만 사용
         const resultPosts = hasMore ? posts.slice(0, safeLimit) : posts;
 
-        // 다음 cursor
+        // 8. 다음 cursor
         const nextCursor =
             hasMore && resultPosts.length > 0
                 ? String(resultPosts[resultPosts.length - 1].id)

@@ -29,6 +29,19 @@ export class PostRepository {
         });
     }
 
+    // 종목 코드로 종목 존재 여부 확인
+    async findStockByCode(stockCode: string) {
+        return this.prisma.stocks.findFirst({
+            where: {
+                code: stockCode,
+            },
+            select: {
+                id: true,
+                code: true,
+            },
+        });
+    }
+
     /** 특정 종목의 커뮤니티 게시글 조회
      * cursor가 없으면 최신 게시글부터 조회한다.
      * cursor가 있으면 해당 ID보다 작은 게시글을 조회한다.
