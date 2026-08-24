@@ -19,6 +19,7 @@ import { CreateCommentRequestDto } from './dto/create-comment-request.dto';
 import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
 import { PostCommentsResponseDto } from './dto/post-comment-response.dto';
 import { VoteResponseDto } from './dto/vote-response.dto';
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 
 interface AuthenticatedRequest extends Request {
     user: { id: string };
@@ -44,7 +45,7 @@ export class PostController {
      *
      * GET /stocks/{stock_code}/posts
      */
-    @Get('stocks/:stock_code/posts')
+    /*@Get('stocks/:stock_code/posts')
     async getStockPosts(
         @Param('stock_code') stockCode: string,
 
@@ -58,6 +59,31 @@ export class PostController {
     ): Promise<StockPostsResponseDto> {
         // 로그인한 경우에만 user ID가 존재한다.
         const userId = req.user?.id;
+
+        return await this.postService.getStockPosts(
+            stockCode,
+            cursor,
+            Number(limit),
+            userId,
+        );
+    }*/
+
+    // 특정 종목의 커뮤니티 게시글 조회
+    // 비로그인 사용자도 조회 가능하며,로그인 사용자는 JWT를 통해 is_liked를 확인한다.
+    @UseGuards(OptionalJwtAuthGuard)
+    @Get('stocks/:stock_code/posts')
+    async getStockPosts(
+        @Param('stock_code') stockCode: string,
+        @Request() req: AuthenticatedRequest,
+
+        // 첫 요청이면 cursor가 없다.
+        @Query('cursor') cursor?: string,
+
+        // 기본 20개
+        @Query('limit') limit = '20',
+    ): Promise<StockPostsResponseDto> {
+        // 로그인 상태라면 user.id가 들어있다. 비로그인 상태라면 undefined이다.
+        const userId = req.user?.id ? String(req.user.id) : undefined;
 
         return await this.postService.getStockPosts(
             stockCode,

@@ -237,6 +237,9 @@ export class KisProvider {
 
     private async authHeaders(trId: string): Promise<Record<string, string>> {
         const token = await this.getAccessToken();
+
+        // this.logger.log(`[KIS MODE] APP_KEY=${this.appKey.substring(0, 6)}`);
+
         return {
             'content-type': 'application/json; charset=utf-8',
             authorization: `Bearer ${token}`,
@@ -1004,63 +1007,124 @@ export class KisProvider {
         return { asks, bids };
     }
 
+    // 해외주식 현재가 1호가 조회
     // 해외주식 호가 조회
     async getOverseasOrderbook(symbol: string, exchange: string) {
-        const headers = await this.authHeaders('HHDFS76950000');
-        // exchange_code 변환 (없으면 기본값 또는 전달값)
-        const excd = OVERSEAS_EXCD[exchange] ?? exchange ?? 'NAS';
-        const symb = KIS_SYMBOL[symbol] ?? symbol;
+        // 해외주식 호가 조회 TR_ID
+        const headers = await this.authHeaders('HHDFS76200100');
+
+        // KIS 해외주식 현재가/호가 조회 API
         const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-asking-price`;
+
+        // 거래소 코드 변환
+        const excd = OVERSEAS_EXCD[exchange] ?? exchange ?? 'NAS';
+
+        // KIS 종목 코드 변환
+        const symb = KIS_SYMBOL[symbol] ?? symbol;
+
+        this.logger.log(
+            `[KIS 해외호가 요청] symbol=${symbol}, exchange=${exchange}, ` +
+                `EXCD=${excd}, SYMB=${symb}, TR_ID=HHDFS76200100`,
+        );
 
         const { data } = await firstValueFrom(
             this.http.get<{
                 output1?: Record<string, string>;
                 output2?: Record<string, string>;
+                output3?: Record<string, string>;
+                rt_cd?: string;
+                msg_cd?: string;
+                msg1?: string;
             }>(url, {
                 headers,
-                params: { AUTH: '', EXCD: excd, SYMB: symb },
+                params: {
+                    // 해외주식 거래소 코드
+                    AUTH: '',
+
+                    // NAS / NYS / AMS 등
+                    EXCD: excd,
+
+                    // 종목 코드
+                    SYMB: symb,
+                },
             }),
         );
 
-        // KIS 해외호가는 output1 또는 output2에 들어옴
-        const output = data?.output1 || data?.output2;
-        if (!output) {
-            return { asks: [], bids: [] };
+        this.logger.log(`[KIS 해외호가 응답] ${JSON.stringify(data)}`);
+
+        // KIS API 자체 오류 확인
+        if (data?.rt_cd !== '0') {
+            this.logger.warn(
+                `[KIS 해외호가 API 오류] ` +
+                    `symbol=${symbol}, ` +
+                    `msg_cd=${data?.msg_cd}, ` +
+                    `msg1=${data?.msg1}`,
+            );
+
+            return {
+                asks: [],
+                bids: [],
+            };
         }
 
-        // 매도호가 (오름차순) - pask1~3, vask1~3 (또는 pask_rsqn)
-        const asks = [
-            {
-                price: Number(output.pask1 || output.pask_rsqn1 || 0),
-                quantity: Number(output.vask1 || output.vask_rsqn1 || 0),
-            },
-            {
-                price: Number(output.pask2 || output.pask_rsqn2 || 0),
-                quantity: Number(output.vask2 || output.vask_rsqn2 || 0),
-            },
-            {
-                price: Number(output.pask3 || output.pask_rsqn3 || 0),
-                quantity: Number(output.vask3 || output.vask_rsqn3 || 0),
-            },
-        ].filter((item) => item.price > 0);
+        // output1 = 현재가
+        // output2 = 호가
+        //  반드시 output2를 사용해야 한다.
 
-        // 매수호가 (내림차순) - pbid1~3, vbid1~3 (또는 pbid_rsqn)
-        const bids = [
-            {
-                price: Number(output.pbid1 || output.pbid_rsqn1 || 0),
-                quantity: Number(output.vbid1 || output.vbid_rsqn1 || 0),
-            },
-            {
-                price: Number(output.pbid2 || output.pbid_rsqn2 || 0),
-                quantity: Number(output.vbid2 || output.vbid_rsqn2 || 0),
-            },
-            {
-                price: Number(output.pbid3 || output.pbid_rsqn3 || 0),
-                quantity: Number(output.vbid3 || output.vbid_rsqn3 || 0),
-            },
-        ].filter((item) => item.price > 0);
+        const output = data?.output2;
 
-        return { asks, bids };
+        if (!output) {
+            this.logger.warn(`[KIS 해외호가 데이터 없음] symbol=${symbol}`);
+
+            return {
+                asks: [],
+                bids: [],
+            };
+        }
+
+        // --------------------------------------------------
+        // 매도호가
+        // pask1 ~ pask10 : 매도 가격
+        // vask1 ~ vask10 : 매도 잔량
+        //
+        // 1호가가 가장 낮은 매도 가격이므로
+        // 그대로 1 → 10 순서로 반환한다.
+        // --------------------------------------------------
+        const asks = Array.from({ length: 10 }, (_, index) => {
+            const level = index + 1;
+
+            return {
+                price: Number(output[`pask${level}`] ?? 0),
+                quantity: Number(output[`vask${level}`] ?? 0),
+            };
+        }).filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+        // --------------------------------------------------
+        // 매수호가
+        // pbid1 ~ pbid10 : 매수 가격
+        // vbid1 ~ vbid10 : 매수 잔량
+        //
+        // 1호가가 가장 높은 매수 가격이므로
+        // 그대로 1 → 10 순서로 반환한다.
+        // --------------------------------------------------
+        const bids = Array.from({ length: 10 }, (_, index) => {
+            const level = index + 1;
+
+            return {
+                price: Number(output[`pbid${level}`] ?? 0),
+                quantity: Number(output[`vbid${level}`] ?? 0),
+            };
+        }).filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+        this.logger.log(
+            `[KIS 해외호가 변환 완료] ` +
+                `symbol=${symbol}, asks=${asks.length}, bids=${bids.length}`,
+        );
+
+        return {
+            asks,
+            bids,
+        };
     }
 
     // 개별 종목 기업 상단 추가 지표 조회 (52주 최고/최저가, 배당수익률)
