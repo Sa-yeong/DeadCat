@@ -54,6 +54,7 @@ export class StocksController {
         );
     }
 
+    //호가창 조회
     @Get(':stock_code/orderbook')
     async getOrderbook(
         @Param('stock_code') stockCode: string,

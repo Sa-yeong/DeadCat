@@ -1084,13 +1084,13 @@ export class KisProvider {
 
         // --------------------------------------------------
         // 매도호가
-        // pask1 ~ pask10 : 매도 가격
-        // vask1 ~ vask10 : 매도 잔량
+        // pask1 ~ pask3 : 매도 가격
+        // vask1 ~ vask3 : 매도 잔량
         //
         // 1호가가 가장 낮은 매도 가격이므로
-        // 그대로 1 → 10 순서로 반환한다.
+        // 그대로 1 → 3순서로 반환한다.
         // --------------------------------------------------
-        const asks = Array.from({ length: 10 }, (_, index) => {
+        const asks = Array.from({ length: 3 }, (_, index) => {
             const level = index + 1;
 
             return {
@@ -1101,13 +1101,13 @@ export class KisProvider {
 
         // --------------------------------------------------
         // 매수호가
-        // pbid1 ~ pbid10 : 매수 가격
-        // vbid1 ~ vbid10 : 매수 잔량
+        // pbid1 ~ pbid3 : 매수 가격
+        // vbid1 ~ vbid3 : 매수 잔량
         //
         // 1호가가 가장 높은 매수 가격이므로
-        // 그대로 1 → 10 순서로 반환한다.
+        // 그대로 1 → 3 순서로 반환한다.
         // --------------------------------------------------
-        const bids = Array.from({ length: 10 }, (_, index) => {
+        const bids = Array.from({ length: 3 }, (_, index) => {
             const level = index + 1;
 
             return {
@@ -1116,10 +1116,10 @@ export class KisProvider {
             };
         }).filter((item) => Number.isFinite(item.price) && item.price > 0);
 
-        this.logger.log(
+        /*this.logger.log(
             `[KIS 해외호가 변환 완료] ` +
                 `symbol=${symbol}, asks=${asks.length}, bids=${bids.length}`,
-        );
+        );*/
 
         return {
             asks,
