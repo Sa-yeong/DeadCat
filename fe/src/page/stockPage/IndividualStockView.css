@@ -2,6 +2,9 @@
     flex: 1;
     display: flex;
     gap: 20px;
+    width: 1300px;
+    margin: 0px auto;
+    
 }
 .individual-view .body{
    flex: 1;
@@ -13,9 +16,8 @@
 .individual-view .side-bar {
     border: 1px solid gray;
     border-radius: 10px;
-    width: 265px;
+    min-width: 265px;
     height: 500px;
-    margin-left: 200px;
     margin-top: 20px;
     background: #141921;
     color: gray;
@@ -110,7 +112,6 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-right: 200px;
  }
  .individual-view .header .left {
     display: flex;

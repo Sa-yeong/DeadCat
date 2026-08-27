@@ -1,7 +1,7 @@
 .community-container {
     flex: 1;
     margin-left: 100px;
-    margin-right: 300px;
+    margin-right: 100px;
     margin-bottom: 10px;
     display: flex;
     flex-direction: column;
@@ -19,7 +19,7 @@
     cursor: pointer;
 }
 
-/* 포스트들 */
+/* 게시글들 */
 .community-container .posts {
     flex: 1;
     width: 100%;
@@ -43,6 +43,7 @@
 }
 .community-container .posts .post img {
     height: 30px;
+    width: 30px;
     border-radius: 50%;
 }
 .community-container .posts .post .name {
@@ -52,7 +53,10 @@
 .community-container .posts .post .content {
     color: white;
 }
-.community-container .posts .post .footer button {
+.community-container .posts .post .footer .button {
+    display: flex;
+}
+.community-container .posts .post .footer .button button {
     color: gray;
     background: transparent;
     border: 1px solid gray;
@@ -60,4 +64,74 @@
     padding: 3px 10px;
     margin-right: 10px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
 }
+.community-container .posts .post .footer .button .active-button { 
+    /* 좋아요를 이미 눌렀음을 표시 */
+    color: tomato;
+    border: 1px solid rgb(87, 65, 61);
+    background: rgba(72, 27, 19, 0.555);
+}
+.community-container .posts .post .footer .button .active-comment {
+    border: 1px solid #3c4b63;
+    background: #1f2734;
+    color: skyblue;
+}
+
+/* 댓글 리스트 */
+.community-container .posts .post .footer .comment-container {
+    border-top: 1px solid gray;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+.community-container .posts .post .footer .comment-container .send {
+    display: flex;
+    gap: 10px;
+    /* min-height: 30px; */
+    align-items: center;
+}
+.community-container .posts .post .footer .comment-container .send textarea {
+    flex: 1;
+    border-radius: 5px;
+    background: #0f131a;
+    border: 1px solid rgb(71, 71, 71);
+    color: gray;
+    resize: none;
+    overflow-y: hidden;
+    max-height: 200px;
+}
+.community-container .posts .post .footer .comment-container .send button {
+    color: white;
+    background: rgb(0, 81, 255);
+    border: none;
+    border-radius: 5px;
+    width: 35px;
+    height: 35px;
+    font-size: 17px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+}
+ /* 댓글 */
+ .community-container .posts .post .footer .comment-container .comment-box {
+    /* border: 1px solid tomato; */
+    font-size: 15px;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 10px;
+ }
+ .community-container .posts .post .footer .comment-container .comment-box .writer{
+    display: flex;
+    gap: 10px;
+ }
+ .community-container .posts .post .footer .comment-container .comment-box .writer .name{
+    font-weight: normal;
+    color: rgb(216, 216, 216);
+ }
+  .community-container .posts .post .footer .comment-container .comment-box > div:not(.writer) {
+    color: rgb(176, 176, 176);
+  }

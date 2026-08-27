@@ -22,6 +22,7 @@ interface CurrentStock{
     current_price: number;
     change_rate: number;
     is_favorite: boolean;
+    is_event: boolean;
 }
 
 export function IndividualStockView(){
@@ -137,7 +138,7 @@ export function IndividualStockView(){
                     stocks.map((stock) => (
                         <AllStockList key={stock.stock_code} stock_code={stock.stock_code}
                         img={stock.character_img_url} name={stock.stock_name}
-                        is_like={stock.is_favorite} rate={stock.change_rate}
+                        is_like={stock.is_favorite} rate={stock.change_rate} is_event={stock.is_event}
                         setCurrentStock={setCurrentStock} currentTab={currentTab}
                         toggleHeart={toggleHeart} />
                     ))
@@ -146,7 +147,7 @@ export function IndividualStockView(){
                     likeStocks.map((likeStock) => (
                         <FavoriteStockList key={likeStock.stock_code} stock_code={likeStock.stock_code}
                         img={likeStock.character_img_url} name={likeStock.stock_name}
-                        is_like={likeStock.is_favorite} rate={likeStock.change_rate}
+                        is_like={likeStock.is_favorite} rate={likeStock.change_rate} is_event={likeStock.is_event}
                         setCurrentStock={setCurrentStock} currentTab={currentTab} />
                     ))
                     }
@@ -163,7 +164,6 @@ export function IndividualStockView(){
                                 style={{color: (currentStock?.is_favorite?'red':'gray')}}>
                                     {(currentStock?.is_favorite == true? <IoHeart /> : <IoHeartOutline />)}
                                 </span>
-                                {/* <LoginModal isOpen */}
                             </span>
                             <span className='down'>
                                 <span style={{color:(currentStock?.change_rate > 0)? 'tomato': ((currentStock?.change_rate==0)?'gray':'skyblue')}}>
@@ -176,10 +176,14 @@ export function IndividualStockView(){
                             <IoIosGitCompare /> 
                             차트 비교
                         </button>
-                        <button className='event'>
-                            <RiAlarmWarningLine />
-                            광장 입장
-                        </button>
+                        {
+                            currentStock?.is_event ? (
+                                <button className='event'>
+                                    <RiAlarmWarningLine />
+                                    광장 입장
+                                </button>
+                            ):''
+                        }
                     </span>
                     <div className='navi-button'>
                         <NavLink to='chart' onClick={() => setCurrentTab('chart')}
@@ -207,7 +211,7 @@ export function IndividualStockView(){
 }
 
 // 전체 종목 리스트
-function AllStockList({stock_code, is_like, img, name, rate, setCurrentStock, currentTab, toggleHeart}) {
+function AllStockList({stock_code, is_like, img, name, rate, is_event, setCurrentStock, currentTab, toggleHeart}) {
     const toggleHeartAll = (e, is_like) => {
         e.stopPropagation();
         e.preventDefault(); 
@@ -223,7 +227,7 @@ function AllStockList({stock_code, is_like, img, name, rate, setCurrentStock, cu
         <span className='content'>
             <span className='name'>
                 <span>{name}</span>
-                <BsDot />
+                {is_event?<BsDot /> : ''}
             </span>
             <span style={{color: (rate>0)?'tomato':(rate===0)?'gray':'skyblue'}}>{rate}%</span>
         </span>
@@ -231,7 +235,7 @@ function AllStockList({stock_code, is_like, img, name, rate, setCurrentStock, cu
 }
 
 //관심 종목 리스트
-function FavoriteStockList({stock_code, is_like, img, name, rate, setCurrentStock, currentTab}) {
+function FavoriteStockList({stock_code, is_like, img, name, rate, is_event, setCurrentStock, currentTab}) {
     const [isLike, setIsLike] = useState(is_like);
 
     const toggleHeart = () => {
@@ -250,9 +254,9 @@ function FavoriteStockList({stock_code, is_like, img, name, rate, setCurrentStoc
         <span className='content'>
             <span className='name'>
                 <span>{name}</span>
-                <BsDot />
+                {is_event? <BsDot /> : ''}
             </span>
-            <span>{rate}%</span>
+            <span style={{color: (rate>0)?'tomato':(rate===0)?'gray':'skyblue'}}>{rate}%</span>
         </span>
     </Link>;;
 }

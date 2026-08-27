@@ -78,8 +78,16 @@ export class IndicesService {
         try {
             const data =
                 def.market === 'U'
-                    ? await this.kis.getDomesticIndexChart(def.kisCode, from, to)
-                    : await this.kis.getOverseasIndexChart(def.kisCode, from, to);
+                    ? await this.kis.getDomesticIndexChart(
+                          def.kisCode,
+                          from,
+                          to,
+                      )
+                    : await this.kis.getOverseasIndexChart(
+                          def.kisCode,
+                          from,
+                          to,
+                      );
             await this.redis.set(
                 `index:${def.indexCode}`,
                 JSON.stringify(data),

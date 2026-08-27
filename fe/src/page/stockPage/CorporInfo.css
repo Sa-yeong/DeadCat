@@ -1,6 +1,5 @@
 .corpor-info-container {
     margin-top: 20px;
-    margin-right: 200px;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -19,7 +18,7 @@
 }
 
 /* 회사 관련 금액 */
-.corpor-info-container .money div {
+.corpor-info-container .money > div {
     border: 1px solid #202835;
     border-radius: 10px;
     width: 8.5vw;
@@ -27,8 +26,17 @@
     color: gray;
     font-size: 13px;
     padding: 10px;
-    /* display: flex;
-    flex-direction: column; */
+    display: flex;
+    flex-direction: column;
+}
+.corpor-info-container .money div .content {
+    font-size: 15px;
+    font-weight: bold;
+    color: white;
+    flex: 1;
+    display: flex;
+    /* justify-content: center; */
+    align-items: center;
 }
 
 /* 연간 실적 */
@@ -39,6 +47,7 @@
     background: #141921;
     padding: 20px;
     color: gray;
+    /* overflow: hidden; */
 }
 
 /* 종목 능력치 */
@@ -48,13 +57,80 @@
     background: #141921;
     width: 300px;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: gray;
+}
+.corpor-info-container .middle .skill-chart > div {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.corpor-info-container .middle .skill-chart div .label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 15px;
+    font-weight: lighter;
+}
+.corpor-info-container .middle .skill-chart div .label .value {
+    color: rgb(202, 202, 202);
+    font-weight: bold;
+}
+.corpor-info-container .middle .skill-chart div .bar-background {
+    background: #202835;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+}
+.corpor-info-container .middle .skill-chart div .bar-background .bar-fill {
+    background: rgb(77, 136, 199);
+    border-radius: 5px;
+    height: 10px;
 }
 
 /* 기업 개요 */
 .corpor-info-container .corpor-outline {
+    display: flex;
+    gap: 10px;
+    color: gray;
+}
+.corpor-info-container .corpor-outline > div {
     border: 1px solid #202835;
     border-radius: 10px;
     background: #141921;
     height: 180px;
     padding: 20px;
+}
+.corpor-info-container .corpor-outline .dividen {
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 10px;
+}
+.corpor-info-container .corpor-outline .dividen > div {
+    /* border: 1px solid tomato; */
+    flex: 1;
+    font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: lighter;
+}
+.corpor-info-container .corpor-outline .dividen > div .value {
+    color: white;
+}
+.corpor-info-container .corpor-outline .dividen > div:not(:last-child) {
+    border-bottom: 1px solid rgba(128, 128, 128, 0.304);
+}
+.corpor-info-container .corpor-outline > div:not(.dividen) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.corpor-info-container .corpor-outline > div:not(.dividen) div {
+    font-size: 15px;
+    color: rgb(179, 179, 179)
 }

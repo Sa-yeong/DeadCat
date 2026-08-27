@@ -2,7 +2,7 @@
     /* border: 1px solid tomato; */
     flex: 1;
     margin-top: 20px;
-    margin-right: 200px;
+    /* margin-right: 200px; */
     display: flex;
     gap: 20px;
 
@@ -119,7 +119,7 @@
 /* 위젯바 - 거래량 */
 .chart-container .rightside-bar .widgetBox-container .widget-content .graph {
     /* border: 1px solid tomato; */
-    padding-top: 10px;
+    /* padding-top: 10px; */
     margin-bottom: 10px;
 }
 .chart-container .rightside-bar .widgetBox-container .widget-content .footer {

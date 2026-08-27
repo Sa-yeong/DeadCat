@@ -27,6 +27,7 @@ import { NicknameModule } from './modules/nickname/nickname.module';
 import { LikePostModule } from './modules/like-post/like-post.module';
 import { RelationModule } from './modules/relation/relation.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { CompanyInfoModule } from './modules/company-info/company-info.module';
 
 // 루트 모듈: 인프라(@Global) + 공통 전역(응답 래퍼, 예외 필터, JWT) + 도메인 모듈.
 @Module({
@@ -61,6 +62,7 @@ import { OrdersModule } from './modules/orders/orders.module';
         NicknameModule,
         LikePostModule,
         RelationModule,
+        CompanyInfoModule,
     ],
     providers: [
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },

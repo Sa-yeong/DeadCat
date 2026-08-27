@@ -3,7 +3,7 @@ import { IoIosClose } from "react-icons/io";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { useEffect, useState } from 'react';
 import { api } from '../../api/axios';
-import { data, useOutletContext, useParams } from 'react-router-dom';
+import { useOutletContext, useParams } from 'react-router-dom';
 import ReactApexChart from 'react-apexcharts';
 
 interface WidgetBoxProps {
@@ -66,6 +66,18 @@ export function StockChart(){
                 item.close_price
             ]
         }))
+    }]
+
+    const volumeSeriesData = [{
+        name: '거래량',
+        data: volume?.volume_graph.map((item) => {
+            const validDateTime = `2026-01-07T${item.write_time}:00`;
+
+            return {
+                x: new Date(validDateTime).getTime(),
+                y: item.volume
+            }       
+        }) || []
     }]
 
     const order = () => {
@@ -247,7 +259,26 @@ export function StockChart(){
             <WidgetBox title='거래량'>
                 <>
                     <div className='graph'>
-                        거래량 그래프
+                        {
+                            volume?.volume_graph && volume.volume_graph.length > 0 && (
+                                <ReactApexChart series={volumeSeriesData} options={{
+                                    dataLabels:{ enabled:false },
+                                    xaxis: {
+                                        type: 'datetime',
+                                        axisTicks:{show: false},
+                                        labels:{show:false}
+                                    },
+                                    yaxis: {
+                                        forceNiceScale: true,
+                                        labels:{show:false}
+                                    },
+                                    tooltip:{
+                                        x:{format:'HH:mm'}
+                                    },
+                                    chart: {toolbar: {show:false}}
+                                }} type='bar' />
+                            )
+                        }
                     </div>
                     <div className='footer'>
                         <span>

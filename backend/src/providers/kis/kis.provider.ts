@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { HttpService } from '@nestjs/axios';
 import {
     Injectable,
@@ -13,6 +14,7 @@ export interface StockPrice {
     current_price: number;
     change_rate: number;
     trading_value: number;
+    accumulated_volume?: number;
 }
 
 // 지수 그래프 1점(OHLC).
@@ -55,6 +57,39 @@ export interface StockVolumeSummaryData {
     total_volume: number;
     total_trading_value: number;
     volume_graph: Array<{ write_time: string; volume: number }>;
+}
+
+// KIS API에서 파싱한 기업 상단 추가 지표 타입
+export interface KisCompanySummaryExtra {
+    dividend_yield: number;
+    week52_high: number;
+    week52_low: number;
+}
+
+// 국내주식 현재가 상세조회 API 응답 인터페이스 (TR: FHKST01010100)
+interface KisDomesticDetailResponse {
+    rt_cd: string;
+    msg_cd: string;
+    msg1: string;
+    output: {
+        w52_hgpr: string; // 52주 최고가
+        w52_lwpr: string; // 52주 최저가
+        hts_avls: string; // 시가총액 (필요시 사용)
+        per: string; // PER (필요시 사용)
+        pbr: string; // PBR (필요시 사용)
+        pdy_cls_prc: string; // 전일 종가
+        // KIS 주식 현재가 TR에는 배당수익률(dvdn_rate 등)이 포함되지 않는 경우가 많아
+        // 0으로 처리하거나 별도 재무 TR을 사용할 수 있음
+    };
+}
+
+//해외주식 차트
+export interface KisOverseasDailyChartItem {
+    bass_dt: string; // 기준일자 (YYYYMMDD) ← 국내는 stck_bsop_date
+    ovrs_nmix_oprc: string; // 시가
+    ovrs_nmix_prpr: string; // 종가
+    ovrs_nmix_hgpr: string; // 고가
+    ovrs_nmix_lwpr: string; // 저가
 }
 
 // 해외 거래소 코드 매핑: 우리 DB(주문용) → KIS 시세조회 EXCD.
@@ -202,6 +237,9 @@ export class KisProvider {
 
     private async authHeaders(trId: string): Promise<Record<string, string>> {
         const token = await this.getAccessToken();
+
+        // this.logger.log(`[KIS MODE] APP_KEY=${this.appKey.substring(0, 6)}`);
+
         return {
             'content-type': 'application/json; charset=utf-8',
             authorization: `Bearer ${token}`,
@@ -259,21 +297,34 @@ export class KisProvider {
             const headers = await this.authHeaders('HHDFS00000300');
             const excd = OVERSEAS_EXCD[exchange] ?? exchange;
             const symb = KIS_SYMBOL[symbol] ?? symbol;
+
             const { data } = await firstValueFrom(
                 this.http.get<KisOverseasResponse>(url, {
                     headers,
                     params: { AUTH: '', EXCD: excd, SYMB: symb },
                 }),
             );
+
             if (data.rt_cd !== '0') {
                 throw new KisApiError(data.msg_cd, data.msg1);
             }
-            const o = data.output;
+
+            const o = data.output as Record<string, any>;
+            const current_price = Number(o.last || 0);
+            const volume = Number(o.tvol || o.vlo || 0);
+
+            // KIS에서 tamt(거래대금)를 넘겨주면 사용하고, 0이면 (현재가 * 거래량)으로 추정 계산
+            const rawTradingValue = Number(o.tamt || 0);
+            const trading_value =
+                rawTradingValue > 0 ? rawTradingValue : current_price * volume;
+
             const price = {
-                current_price: Number(o.last),
+                current_price,
                 change_rate: Number(o.rate),
-                trading_value: Number(o.tamt),
+                accumulated_volume: volume,
+                trading_value,
             };
+
             if (
                 !Number.isFinite(price.current_price) ||
                 price.current_price <= 0
@@ -282,10 +333,10 @@ export class KisProvider {
                     `해외 시세 0/빈값 (${symbol}) — 종목코드/거래상태 확인 필요`,
                 );
             }
+
             return price;
         });
     }
-
     // 여러 국내 종목.
     async getDomesticPrices(codes: string[]): Promise<Map<string, StockPrice>> {
         const result = new Map<string, StockPrice>();
@@ -501,21 +552,30 @@ export class KisProvider {
         return ax.message ?? String(e);
     }
 
-    // 누적 거래대금량 조회
+    // 지연 함수 (Rate Limit 초과 방지용)
+    delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // 국내 거래량 데이터 적재
     async fetchVolumeSummary(
         stockCode: string,
     ): Promise<StockVolumeSummaryData> {
         return this.withRateLimitRetry(async () => {
-            // 누적 거래량/거래대금: 현재가 조회 API
             const priceUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
-            const chartUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice`;
+            const chartUrl = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`;
+
             const priceHeaders = await this.authHeaders('FHKST01010100');
-            const chartHeaders = await this.authHeaders('FHKST01010200');
+            const chartHeaders = await this.authHeaders('FHKST03010200');
 
             const now = new Date();
-            const currentTime = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+            const yyyymmdd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
-            // 누적 거래량/거래대금 조회
+            const currentHourMinute = now.getHours() * 100 + now.getMinutes();
+            const queryTime =
+                currentHourMinute >= 1530
+                    ? '153000'
+                    : `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
+            // 1. 현재가 조회
             const { data: priceData } = await firstValueFrom(
                 this.http.get<KisVolumeSummaryResponse>(priceUrl, {
                     headers: priceHeaders,
@@ -525,37 +585,63 @@ export class KisProvider {
                     },
                 }),
             );
-            if (priceData.rt_cd !== '0')
-                throw new KisApiError(priceData.msg_cd, priceData.msg1);
 
-            // 분봉 시계열 조회
+            if (priceData.rt_cd !== '0') {
+                throw new KisApiError(priceData.msg_cd, priceData.msg1);
+            }
+
+            // Rate Limit 안전 지연
+            await this.delay(350);
+
+            // 2. 분봉 데이터 조회 (FID_INPUT_HOUR_1 포함 필수 파라미터 세팅)
             const { data: chartData } = await firstValueFrom(
                 this.http.get<KisVolumeSummaryResponse>(chartUrl, {
                     headers: chartHeaders,
                     params: {
-                        FID_ETC_CLS_CODE: '',
                         FID_COND_MRKT_DIV_CODE: 'J',
                         FID_INPUT_ISCD: stockCode,
-                        FID_INPUT_HOUR_1: currentTime,
-                        FID_PW_DATA_INCU_YN: 'N',
+                        FID_INPUT_DATE_1: yyyymmdd,
+                        FID_INPUT_DATE_2: yyyymmdd,
+                        FID_INPUT_HOUR_1: queryTime,
+                        FID_PERIOD_DIV_CODE: 'D',
+                        FID_PW_DATA_INCU_YN: 'Y',
+                        FID_ETC_CLS_CODE: '0', // 0: 분봉 데이터
+                        FID_HOUR_CLS_CODE: '1',
+                        FID_PW_DATA_INCU_YN2: '',
+                        FID_BLNG_CLS_CODE: '0',
+                        FID_PRC_CLS_CODE: '0',
                     },
                 }),
             );
-            if (chartData.rt_cd !== '0')
-                throw new KisApiError(chartData.msg_cd, chartData.msg1);
 
-            const output2 = Array.isArray(chartData.output2)
+            if (chartData.rt_cd !== '0') {
+                throw new KisApiError(chartData.msg_cd, chartData.msg1);
+            }
+
+            const output2List: any[] = Array.isArray(chartData.output2)
                 ? chartData.output2
                 : [];
-            const volumeGraph = output2
-                .map((item) => {
-                    const h = item.stck_cntg_hour ?? '';
+
+            this.logger.log(
+                `[${stockCode}] volume_graph output2 count: ${output2List.length}`,
+            );
+
+            const volumeGraph = output2List
+                .map((item: any) => {
+                    const h = String(
+                        item.stck_cntg_hour ??
+                            item.stck_cntg_time ??
+                            item.stck_bsop_hour ??
+                            '',
+                    );
                     return {
                         write_time:
                             h.length >= 4
                                 ? `${h.slice(0, 2)}:${h.slice(2, 4)}`
                                 : h,
-                        volume: Number(item.cntg_vol ?? 0),
+                        volume: Number(
+                            item.cntg_vol ?? item.stck_cntg_vol ?? 0,
+                        ),
                     };
                 })
                 .reverse();
@@ -571,7 +657,198 @@ export class KisProvider {
         });
     }
 
-    //일간 차트데이터
+    //해외주식 거래량
+    async fetchOverseasVolumeSummary(
+        stockCode: string,
+        exchangeCode: string,
+    ): Promise<StockVolumeSummaryData> {
+        // 초당 요청 제한 등에 걸렸을 경우 withRateLimitRetry에서 백오프 후 재시도
+        return this.withRateLimitRetry(async () => {
+            // 해외주식 분봉 조회 API URL
+            const chartUrl = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice`;
+
+            // 해외주식분봉조회[v1_해외주식-030] 실전 TR ID
+            const trId = 'HHDFS76950200';
+
+            // TR ID를 기준으로 인증 헤더 생성
+            const chartHeaders = await this.authHeaders(trId);
+
+            // 거래소 코드 정규화
+            let excd = (exchangeCode || 'NAS').trim().toUpperCase();
+
+            // KIS 해외주식 거래소 코드 변환
+            if (excd === 'NASD' || excd === 'NASDAQ') {
+                excd = 'NAS';
+            }
+
+            if (excd === 'NYSE') {
+                excd = 'NYS';
+            }
+
+            if (excd === 'AMEX') {
+                excd = 'AMS';
+            }
+
+            // 종목코드 정규화
+            const symb = stockCode.trim().toUpperCase();
+
+            // KIS 해외주식 분봉 조회 요청 파라미터
+            const queryParams = {
+                AUTH: '',
+                EXCD: excd,
+                SYMB: symb,
+                NMIN: '1',
+                PINC: '1',
+                NEXT: '',
+                NREC: '120',
+                KEYB: '',
+                FILL: '',
+            };
+
+            // 실제 KIS 요청값 확인용 로그
+            /*this.logger.log(
+                `[KIS 해외분봉 요청] ` +
+                    `URL=${chartUrl}, ` +
+                    `TR_ID=${trId}, ` +
+                    `EXCD=${excd}, ` +
+                    `SYMB=${symb}, ` +
+                    `NMIN=1, ` +
+                    `PINC=1, ` +
+                    `NEXT="", ` +
+                    `NREC=120, ` +
+                    `KEYB="", ` +
+                    `FILL=""`,
+            );*/
+
+            try {
+                // KIS 해외주식 분봉 API 호출
+                const response = await firstValueFrom(
+                    this.http.get<any>(chartUrl, {
+                        headers: chartHeaders,
+                        params: queryParams,
+                    }),
+                );
+
+                const chartData = response.data;
+
+                // KIS API 응답 상태 로그
+                /*   this.logger.log(
+                    `[KIS 해외분봉 응답] ` +
+                        `종목=${symb}, ` +
+                        `status=${response.status}, ` +
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                        `rt_cd=${chartData.rt_cd}, ` +
+                        `msg_cd=${chartData.msg_cd}, ` +
+                        `msg1=${chartData.msg1}`,
+                );*/
+
+                // KIS API 자체 오류 확인
+                if (chartData.rt_cd !== '0') {
+                    throw new Error(
+                        `KIS API 오류: ${chartData.msg_cd} ${chartData.msg1}`,
+                    );
+                }
+
+                // output1: 현재 종목의 전체 거래량/거래대금
+                const output1 = chartData.output1 ?? {};
+
+                // output2: 분봉 데이터
+                const output2List = Array.isArray(chartData.output2)
+                    ? chartData.output2
+                    : [];
+
+                // --------------------------------------------------
+                // 전체 거래량
+                // --------------------------------------------------
+                //
+                // KIS 응답에서 거래량 필드가 존재할 경우 사용한다.
+                //
+                const totalVolume = Number(
+                    output1.tvol ?? output1.acml_vol ?? output1.evol ?? 0,
+                );
+
+                // --------------------------------------------------
+                // 전체 거래대금
+                // --------------------------------------------------
+                const totalTradingValue = Number(
+                    output1.tamt ?? output1.acml_tr_pbmn ?? output1.eamt ?? 0,
+                );
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+                const volumeGraph = output2List
+                    .map((item: any) => {
+                        // KIS 해외분봉 시간
+                        // 예: "021700"
+                        const rawTime = String(
+                            item.khms ?? item.gtime ?? item.xhms ?? '',
+                        );
+
+                        const writeTime =
+                            rawTime.length >= 4
+                                ? `${rawTime.slice(0, 2)}:${rawTime.slice(2, 4)}`
+                                : rawTime;
+
+                        // 해외분봉 거래량
+                        //
+                        // KIS 실제 응답:
+                        // evol = "21456"
+                        const volume = Number(item.evol ?? 0);
+
+                        return {
+                            write_time: writeTime,
+                            volume,
+                        };
+                    })
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    .reverse();
+
+                // 첫 번째 분봉 데이터 디버깅 로그
+
+                /*  if (output2List.length > 0) {
+                    this.logger.log(
+                        `[KIS 해외분봉 데이터] ` +
+                            `종목=${symb}, ` +
+                            `output2 count=${output2List.length}, ` +
+                            `첫 데이터=${JSON.stringify(output2List[0])}`,
+                    );
+                } else {
+                    this.logger.warn(
+                        `[KIS 해외분봉 데이터 없음] ` +
+                            `종목=${symb}, ` +
+                            `output2가 비어 있습니다.`,
+                    );
+                }*/
+
+                // 최종 데이터 반환
+
+                return {
+                    stock_code: symb,
+                    total_volume: totalVolume,
+                    total_trading_value: totalTradingValue,
+                    volume_graph: volumeGraph,
+                };
+            } catch (error) {
+                // HTTP 500 또는 KIS API 자체 오류
+                this.logger.warn(
+                    `[KIS 해외분봉 요청 실패] ` +
+                        `종목=${symb}, ` +
+                        `EXCD=${excd}, ` +
+                        `TR_ID=${trId}, ` +
+                        `에러=${
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                        }`,
+                );
+
+                // withRateLimitRetry가 재시도할 수 있도록
+                // 반드시 에러를 다시 throw한다.
+                throw error;
+            }
+        });
+    }
+
+    //국내주식 일간 차트데이터
     async getDailyChartHistory(
         stockCode: string,
         startDate: string,
@@ -597,8 +874,85 @@ export class KisProvider {
         return data?.output2 ?? [];
     }
 
-    // 호가 조회
-    // 호가 조회
+    //해외주식 차트조회
+    async getOverseasDailyChart(
+        symbol: string,
+        exchange: string,
+        startDate: string,
+        endDate: string,
+    ): Promise<KisDailyChartItem[]> {
+        const headers = await this.authHeaders('HHDFS76240000');
+        const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+        const symb = KIS_SYMBOL[symbol] ?? symbol;
+        const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-daily-chartprice`;
+
+        const { data } = await firstValueFrom(
+            this.http.get<{ output2: any[] }>(url, {
+                headers,
+                params: {
+                    AUTH: '',
+                    EXCD: excd,
+                    SYMB: symb,
+                    GUBN: '0', // 0: 일, 1: 주, 2: 월
+                    BYMD: endDate, // 기준일자
+                    MODP: '1',
+                    KEYB: '',
+                    NMIN: '', // 일봉 조회 시 빈값
+                    PINC: '1',
+                    NEXT: '',
+                    NREC: '100',
+                    FILL: '',
+                },
+            }),
+        );
+
+        /*  this.logger.log(
+            `해외 일봉 전체 raw (${symbol}): ${JSON.stringify(data)}`,
+        );*/
+
+        // KIS 응답 필드를 프론트엔드/서비스 표준 규격으로 변환
+        return (data?.output2 ?? [])
+            .filter(
+                (item) =>
+                    item &&
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                    (item.stck_bsop_date ||
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                        item.xymd ||
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                        item.stck_bsop_date ||
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                        item.kymd ||
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                        item.tymd),
+            )
+            .map((item) => ({
+                /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+                stck_bsop_date:
+                    item.stck_bsop_date ||
+                    item.xymd ||
+                    item.kymd ||
+                    item.tymd ||
+                    '',
+                stck_oprc:
+                    item.open || item.stck_oprc || item.ovrs_nmix_oprc || '0',
+                stck_clpr:
+                    item.clos ||
+                    item.last ||
+                    item.stck_clpr ||
+                    item.ovrs_nmix_prpr ||
+                    '0',
+                stck_hgpr:
+                    item.high || item.stck_hgpr || item.ovrs_nmix_hgpr || '0',
+                stck_lwpr:
+                    item.low || item.stck_lwpr || item.ovrs_nmix_lwpr || '0',
+                acml_vol:
+                    item.vlo || item.evol || item.ncav || item.acml_vol || '0',
+                /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+            }));
+    }
+
+    // 국내 호가 조회
     async getOrderbook(stockCode: string) {
         const headers = await this.authHeaders('FHKST01010200');
         const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn`;
@@ -651,6 +1005,370 @@ export class KisProvider {
         ].filter((item) => item.price > 0);
 
         return { asks, bids };
+    }
+
+    // 해외주식 현재가 1호가 조회
+    // 해외주식 호가 조회
+    async getOverseasOrderbook(symbol: string, exchange: string) {
+        // 해외주식 호가 조회 TR_ID
+        const headers = await this.authHeaders('HHDFS76200100');
+
+        // KIS 해외주식 현재가/호가 조회 API
+        const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-asking-price`;
+
+        // 거래소 코드 변환
+        const excd = OVERSEAS_EXCD[exchange] ?? exchange ?? 'NAS';
+
+        // KIS 종목 코드 변환
+        const symb = KIS_SYMBOL[symbol] ?? symbol;
+
+        this.logger.log(
+            `[KIS 해외호가 요청] symbol=${symbol}, exchange=${exchange}, ` +
+                `EXCD=${excd}, SYMB=${symb}, TR_ID=HHDFS76200100`,
+        );
+
+        const { data } = await firstValueFrom(
+            this.http.get<{
+                output1?: Record<string, string>;
+                output2?: Record<string, string>;
+                output3?: Record<string, string>;
+                rt_cd?: string;
+                msg_cd?: string;
+                msg1?: string;
+            }>(url, {
+                headers,
+                params: {
+                    // 해외주식 거래소 코드
+                    AUTH: '',
+
+                    // NAS / NYS / AMS 등
+                    EXCD: excd,
+
+                    // 종목 코드
+                    SYMB: symb,
+                },
+            }),
+        );
+
+        this.logger.log(`[KIS 해외호가 응답] ${JSON.stringify(data)}`);
+
+        // KIS API 자체 오류 확인
+        if (data?.rt_cd !== '0') {
+            this.logger.warn(
+                `[KIS 해외호가 API 오류] ` +
+                    `symbol=${symbol}, ` +
+                    `msg_cd=${data?.msg_cd}, ` +
+                    `msg1=${data?.msg1}`,
+            );
+
+            return {
+                asks: [],
+                bids: [],
+            };
+        }
+
+        // output1 = 현재가
+        // output2 = 호가
+        //  반드시 output2를 사용해야 한다.
+
+        const output = data?.output2;
+
+        if (!output) {
+            this.logger.warn(`[KIS 해외호가 데이터 없음] symbol=${symbol}`);
+
+            return {
+                asks: [],
+                bids: [],
+            };
+        }
+
+        // --------------------------------------------------
+        // 매도호가
+        // pask1 ~ pask3 : 매도 가격
+        // vask1 ~ vask3 : 매도 잔량
+        //
+        // 1호가가 가장 낮은 매도 가격이므로
+        // 그대로 1 → 3순서로 반환한다.
+        // --------------------------------------------------
+        const asks = Array.from({ length: 3 }, (_, index) => {
+            const level = index + 1;
+
+            return {
+                price: Number(output[`pask${level}`] ?? 0),
+                quantity: Number(output[`vask${level}`] ?? 0),
+            };
+        }).filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+        // --------------------------------------------------
+        // 매수호가
+        // pbid1 ~ pbid3 : 매수 가격
+        // vbid1 ~ vbid3 : 매수 잔량
+        //
+        // 1호가가 가장 높은 매수 가격이므로
+        // 그대로 1 → 3 순서로 반환한다.
+        // --------------------------------------------------
+        const bids = Array.from({ length: 3 }, (_, index) => {
+            const level = index + 1;
+
+            return {
+                price: Number(output[`pbid${level}`] ?? 0),
+                quantity: Number(output[`vbid${level}`] ?? 0),
+            };
+        }).filter((item) => Number.isFinite(item.price) && item.price > 0);
+
+        /*this.logger.log(
+            `[KIS 해외호가 변환 완료] ` +
+                `symbol=${symbol}, asks=${asks.length}, bids=${bids.length}`,
+        );*/
+
+        return {
+            asks,
+            bids,
+        };
+    }
+
+    // 개별 종목 기업 상단 추가 지표 조회 (52주 최고/최저가, 배당수익률)
+    async getCompanySummaryExtra(
+        code: string,
+    ): Promise<KisCompanySummaryExtra | null> {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
+            const headers = await this.authHeaders('FHKST01010100'); // 국내주식현재가 상세 TR
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisDomesticDetailResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: code,
+                    },
+                }),
+            );
+
+            if (data.rt_cd !== '0') {
+                this.logger.error(
+                    `KIS 기업 추가 지표 조회 실패 (${code}): ${data.msg1}`,
+                );
+                return null;
+            }
+
+            const o = data.output;
+
+            return {
+                dividend_yield: 0, // KIS 시세 TR 미제공 시 기본값 (재무 API 사용 시 추가 매핑)
+                week52_high: Number(o.w52_hgpr) || 0,
+                week52_low: Number(o.w52_lwpr) || 0,
+            };
+        });
+    }
+
+    /**
+     * 국내 주식 상세 지표 조회
+     * - 시가총액
+     * - PER
+     * - PBR
+     * - 배당수익률
+     * - 52주 최고/최저
+     */
+    async getDomesticStockDetail(code: string) {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-price`;
+
+            const headers = await this.authHeaders('FHKST01010100');
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisDomesticResponse>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: code,
+                    },
+                }),
+            );
+
+            // KIS API 자체 오류 확인
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const o = data.output as any;
+
+            // 현재 주가
+            const currentPrice = Number(o.stck_prpr || 0);
+
+            // 연간 주당배당금
+            const dividendPer = Number(o.dvd_amt || 0);
+
+            // 배당수익률 = 연간 주당배당금 / 현재주가 × 100
+            const dividendYield =
+                currentPrice > 0
+                    ? Number(((dividendPer / currentPrice) * 100).toFixed(2))
+                    : 0;
+
+            return {
+                stock_code: code,
+                current_price: currentPrice,
+
+                // HTS 시가총액 단위를 원 단위로 변환
+                market_cap: Number(o.hts_avls || 0) * 1000000,
+
+                // PER
+                per: Number(o.per || 0),
+
+                // PBR
+                pbr: Number(o.pbr || 0),
+
+                // 연간 배당금 / 현재주가 × 100
+                dividend_yield: dividendYield,
+
+                // 52주 최고가
+                week52_high: Number(o.w52_hgpr || 0),
+
+                // 52주 최저가
+                week52_low: Number(o.w52_lwpr || 0),
+            };
+        });
+    }
+
+    /**
+     * 해외 주식 상세 지표 조회 (summary API 전용)
+     */
+    async getOverseasStockDetail(symbol: string, exchange = 'NAS') {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/price`;
+
+            const headers = await this.authHeaders('HHDFS00000300');
+
+            const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+
+            const symb = KIS_SYMBOL[symbol] ?? symbol;
+
+            const { data } = await firstValueFrom(
+                this.http.get<KisOverseasResponse>(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: excd,
+                        SYMB: symb,
+                    },
+                }),
+            );
+
+            // KIS API 자체 오류 확인
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            const o = (data.output || {}) as Record<string, any>;
+
+            // KIS가 AAPL에 실제로 어떤 필드를 내려주는지 확인하기 위한 로그
+            /*console.log(
+                `[KIS 해외주식 응답] ${symbol}`,
+                JSON.stringify(o, null, 2),
+            );*/
+
+            // 기존 매핑
+            const marketCap = Number(o.tomv || 0);
+            const per = Number(o.perx || o.per || 0);
+            const pbr = Number(o.pbrx || o.pbr || 0);
+            const dividendYield = Number(o.pdiv || o.pdy || 0);
+            const week52High = Number(o.h52p || 0);
+            const week52Low = Number(o.l52p || 0);
+
+            return {
+                stock_code: symbol,
+                market_cap: marketCap,
+                per,
+                pbr,
+                dividend_yield: dividendYield,
+                week52_high: week52High,
+                week52_low: week52Low,
+            };
+        });
+    }
+
+    /**
+     * 해외 주식 기업정보/상세지표 조회
+     *
+     * 조회 항목:
+     * - 시가총액
+     * - PER
+     * - PBR
+     * - 52주 최고가
+     * - 52주 최저가
+     */
+    async getOverseasCompanyInfo(symbol: string, exchange = 'NAS') {
+        return this.withRateLimitRetry(async () => {
+            // KIS 해외주식 현재가상세 API
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/price-detail`;
+
+            // 해외주식 현재가상세 TR_ID
+            const headers = await this.authHeaders('HHDFS76200200');
+
+            // 프로젝트의 거래소 코드 매핑 사용
+            const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+
+            // 프로젝트의 종목코드 매핑 사용
+            const symb = KIS_SYMBOL[symbol] ?? symbol;
+
+            const { data } = await firstValueFrom(
+                this.http.get(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: excd,
+                        SYMB: symb,
+                    },
+                }),
+            );
+
+            // KIS 원본 응답 확인
+            /* console.log(
+                `[KIS 해외주식 상세 응답] ${symbol}`,
+                JSON.stringify(data, null, 2),
+            );*/
+
+            // KIS API 자체 오류 확인
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+
+            // 실제 기업정보가 들어있는 output
+            const o = (data.output || {}) as Record<string, any>;
+
+            // KIS 해외주식 현재가상세 응답 필드
+            const marketCap = Number(o.tomv || 0);
+            const per = Number(o.perx || 0);
+            const pbr = Number(o.pbrx || 0);
+            const week52High = Number(o.h52p || 0);
+            const week52Low = Number(o.l52p || 0);
+            const currentPrice = Number(o.last || 0);
+
+            return {
+                stock_code: symbol,
+
+                // 시가총액
+                market_cap: marketCap,
+
+                // PER
+                per,
+
+                // PBR
+                pbr,
+                current_price: currentPrice,
+
+                // 현재가상세 API에는 배당수익률 필드가
+                // 확인되지 않으므로 일단 0
+                dividend_yield: 0,
+
+                // 52주 최고가
+                week52_high: week52High,
+
+                // 52주 최저가
+                week52_low: week52Low,
+            };
+        });
     }
 }
 
