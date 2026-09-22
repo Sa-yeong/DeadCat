@@ -43,6 +43,7 @@ export class FavoritesRepository {
         return rows.map((r) => r.stocks.code);
     }
 
+    //유저의 관심 종목 조회
     async findFavoriteStocksByUser(userId: bigint) {
         return await this.prisma.interest.findMany({
             where: { user_id: userId },

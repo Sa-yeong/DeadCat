@@ -622,9 +622,9 @@ export class KisProvider {
                 ? chartData.output2
                 : [];
 
-            this.logger.log(
+            /*this.logger.log(
                 `[${stockCode}] volume_graph output2 count: ${output2List.length}`,
-            );
+            );*/
 
             const volumeGraph = output2List
                 .map((item: any) => {
@@ -1195,9 +1195,11 @@ export class KisProvider {
             const o = data.output as any;
 
             // 현재 주가
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             const currentPrice = Number(o.stck_prpr || 0);
 
             // 연간 주당배당금
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
             const dividendPer = Number(o.dvd_amt || 0);
 
             // 배당수익률 = 연간 주당배당금 / 현재주가 × 100
@@ -1211,6 +1213,7 @@ export class KisProvider {
                 current_price: currentPrice,
 
                 // HTS 시가총액 단위를 원 단위로 변환
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 market_cap: Number(o.hts_avls || 0) * 1000000,
 
                 // PER

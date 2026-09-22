@@ -279,7 +279,7 @@ export class PriceScheduler implements OnModuleInit {
                         summary,
                         VOLUME_SUMMARY_TTL_SECONDS,
                     );
-                    this.logger.log(`국내 volume-summary 적재 완료: ${code}`);
+                    // this.logger.log(`국내 volume-summary 적재 완료: ${code}`);
                 } catch (e) {
                     this.logger.warn(
                         `국내 volume-summary 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
@@ -288,35 +288,6 @@ export class PriceScheduler implements OnModuleInit {
             }
 
             // 2. 해외주식 volume-summary 적재 (이미 가져온 ovsPrices 데이터 활용)
-
-            /*for (const [code, price] of ovsPrices) {
-                try {
-                    const currentPrice = price.current_price ?? 0;
-
-                    const volume = price.accumulated_volume ?? 0;
-                    const tradingValue =
-                        price.trading_value ?? currentPrice * volume;
-
-                    const ovsSummary: StockVolumeSummaryData = {
-                        stock_code: code,
-                        total_volume: volume,
-                        total_trading_value: tradingValue,
-                        // volume_graph가 필요한 경우 빈 배열([])이나 기본값으로 전달
-                        volume_graph: [],
-                    };
-
-                    await this.price.writeVolumeSummary(
-                        code,
-                        ovsSummary,
-                        VOLUME_SUMMARY_TTL_SECONDS,
-                    );
-                    this.logger.log(`해외 volume-summary 적재 완료: ${code}`);
-                } catch (e) {
-                    this.logger.warn(
-                        `해외 volume-summary 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
-                    );
-                }
-            } */
 
             // 2. 해외주식 volume-summary 적재
             for (const item of overseas) {
@@ -350,9 +321,9 @@ export class PriceScheduler implements OnModuleInit {
                         summary,
                         VOLUME_SUMMARY_TTL_SECONDS,
                     );
-                    this.logger.log(
+                    /*this.logger.log(
                         `해외 volume-summary 적재 완료: ${item.symbol}`,
-                    );
+                    );*/
                 } catch (e) {
                     // 예외 처리(Fallback): 해외 분봉 API 호출 자체가 에러(500, TR 에러 등) 난 경우
                     if (ovsPrices.has(item.symbol)) {
@@ -374,9 +345,9 @@ export class PriceScheduler implements OnModuleInit {
                             fallbackSummary,
                             VOLUME_SUMMARY_TTL_SECONDS,
                         );
-                        this.logger.log(
+                        /*this.logger.log(
                             `해외 volume-summary 적재 완료 (Fallback 적용): ${item.symbol}`,
-                        );
+                        );*/
                     } else {
                         this.logger.warn(
                             `해외 volume-summary 실패 ${item.symbol}: ${e instanceof Error ? e.message : String(e)}`,
@@ -385,9 +356,9 @@ export class PriceScheduler implements OnModuleInit {
                 }
             }
             // PriceScheduler.ts 해외 volume-summary 루프 부분
-            this.logger.log(
+            /*this.logger.log(
                 `시세 및 volume-summary 적재 완료: ${entries.length}/${stocks.length}종목 (환율 ${usdKrw})`,
-            );
+            );*/
         } catch (e) {
             this.logger.error(
                 `폴링 실패: ${e instanceof Error ? e.message : String(e)}`,

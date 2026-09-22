@@ -164,16 +164,38 @@ export class PriceService {
         );
     }
     // 차트 캔들 데이터 읽기
+    // 차트 캔들 데이터 읽기
     async readStockChart(
         stockCode: string,
         timeframe: string,
     ): Promise<StockChartItem[]> {
-        const raw = await this.redis.get(chartKey(stockCode, timeframe));
-        if (!raw) return [];
+        // 실제 Redis key를 확인하기 위한 로그
+        const key = chartKey(stockCode, timeframe);
+
+        console.log('[readStockChart]');
+        console.log('stockCode:', stockCode);
+        console.log('timeframe:', timeframe);
+        console.log('redis key:', key);
+
+        const raw = await this.redis.get(key);
+
+        // Redis에 데이터가 존재하는지 확인
+        console.log('redis data exists:', raw !== null);
+
+        if (!raw) {
+            console.log('차트 데이터가 Redis에 없습니다.');
+            return [];
+        }
 
         try {
-            return JSON.parse(raw) as StockChartItem[];
-        } catch {
+            const chart = JSON.parse(raw) as StockChartItem[];
+
+            // 실제 차트 개수 확인
+            console.log('chart count:', chart.length);
+
+            return chart;
+        } catch (error) {
+            console.error('차트 데이터 JSON 파싱 실패:', error);
             return [];
         }
     }
