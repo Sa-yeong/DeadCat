@@ -12,6 +12,6 @@ import { KisModule } from 'src/providers/kis/kis.module';
     imports: [PriceModule, FavoritesModule, KisModule],
     controllers: [StocksController],
     providers: [StocksService, StocksRepository],
-    exports: [StocksService],
+    exports: [StocksService, StocksRepository],
 })
 export class StocksModule {}

@@ -8,9 +8,12 @@ export class TendencyService {
     private readonly CANDLE_COUNT = 20;
 
     /**
-     * 주식 자체의 경향성 + 사용자가 보유한 상황에서의 경향성을 계산
+     * 주식 자체의 경향성과 사용자 수익률을 계산
      */
-    calculate(chart: StockChartItem[], userProfitRate: number): TendencyResult {
+    calculate(
+        chart: StockChartItem[],
+        userProfitRate: number | null,
+    ): TendencyResult {
         const recentChart = chart.slice(-this.CANDLE_COUNT);
 
         const stcTendency = recentChart.map((candle) =>
@@ -23,9 +26,9 @@ export class TendencyService {
 
         const loss = this.calculateLossTendency(stcTendency);
 
-        const profit = this.normalizeProfit(userProfitRate);
+        // 미보유자는 사용자 수익률이 없으므로 0으로 처리
+        const profit = this.normalizeProfit(userProfitRate ?? 0);
 
-        // 실제 감정 계산에 사용되는 데이터를 확인하기 위한 로그
         console.log('[TendencyService]');
         console.log('chart count:', chart.length);
         console.log('recent chart count:', recentChart.length);
@@ -39,7 +42,6 @@ export class TendencyService {
 
         return {
             stc_tendency: stcTendency,
-
             usr_tendency: {
                 profit,
                 volatility,
@@ -51,12 +53,6 @@ export class TendencyService {
 
     /**
      * 캔들의 등락률
-     *
-     * 현재 StockChartItem에는 change_rate가 없으므로
-     * close / open을 이용해 계산.
-     *
-     * 만약 StockChartItem에 change_rate를 추가할 수 있다면
-     * 그 값을 그대로 사용하는 것이 더 좋음.
      */
     private calculateChangeRate(candle: StockChartItem): number {
         if (candle.open_price === 0) {
@@ -69,13 +65,7 @@ export class TendencyService {
     }
 
     /**
-     * 변동성
-     *
-     * 최근 등락률의 표준편차를
-     * 0 ~ 1 범위로 정규화
-     *
-     * 1% 이하 → 0
-     * 5% 이상 → 1
+     * 최근 등락률의 표준편차를 0~1로 정규화
      */
     private calculateVolatility(rates: number[]): number {
         if (rates.length < 2) {
@@ -96,12 +86,6 @@ export class TendencyService {
 
     /**
      * 최근 상승/하락 모멘텀
-     *
-     * 평균 등락률
-     *
-     * +2% 이상 → +1
-     *  0%     →  0
-     * -2% 이하 → -1
      */
     private calculateMomentum(rates: number[]): number {
         if (rates.length === 0) {
@@ -116,12 +100,6 @@ export class TendencyService {
 
     /**
      * 최근 하락 지속성
-     *
-     * 하락 캔들의 비율을 이용
-     *
-     * 50% 이하 → 0
-     * 75% → 0.5
-     * 100% → 1
      */
     private calculateLossTendency(rates: number[]): number {
         if (rates.length === 0) {
@@ -136,11 +114,7 @@ export class TendencyService {
     }
 
     /**
-     * 사용자 수익률
-     *
-     * +20% 이상 → +1
-     *  0%      →  0
-     * -20% 이하 → -1
+     * 사용자 수익률을 -1~1로 정규화
      */
     private normalizeProfit(profitRate: number): number {
         return this.clamp(profitRate / 20, -1, 1);

@@ -8,7 +8,27 @@ export type EmotionName =
     | 'anxious'
     | 'sleepy';
 
-export type UserAction = 'click' | 'buy' | 'sell' | 'spam_click';
+/**
+ * 실제 캐릭터 모션(VRMA) 이름
+ */
+export type MotionName =
+    | 'idle'
+    | 'tired'
+    | 'depression'
+    | 'sleep'
+    | 'anxious'
+    | 'surprise'
+    | 'upset'
+    | 'annoying'
+    | 'relief'
+    | 'madness';
+
+export type UserAction = 'CLICK' | 'BUY' | 'SELL' | 'SPAM_CLICK';
+
+export interface UserInteraction {
+    type: UserAction;
+    times?: number;
+}
 
 export interface TendencyResult {
     stc_tendency: number[];
@@ -33,18 +53,19 @@ export interface EmotionInput {
         loss: number;
     };
 
-    userProfitRate: number;
-
-    holdingPeriodDays: number;
+    userProfitRate: number | null;
+    holdingPeriodDays: number | null;
 
     fluctuationRate: number;
-
     sensitivity: number;
+
+    interaction?: UserInteraction;
 }
 
 export interface EmotionOutput {
     emotion: EmotionName;
-    motion: string;
+    motion: MotionName;
     weight: number;
     duration: number | null;
+    is_holding: boolean;
 }

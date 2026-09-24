@@ -7,9 +7,10 @@ import { MarketTimeService } from './service/market-time.service';
 
 import { HoldingModule } from '../holding/holding.module';
 import { PriceModule } from 'src/price/price.module';
+import { StocksModule } from '../stocks/stocks.module';
 
 @Module({
-    imports: [PriceModule, HoldingModule],
+    imports: [PriceModule, HoldingModule, StocksModule],
 
     controllers: [EmotionController],
 
