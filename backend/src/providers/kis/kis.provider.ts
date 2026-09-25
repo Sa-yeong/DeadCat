@@ -972,37 +972,23 @@ export class KisProvider {
             return { asks: [], bids: [] };
         }
 
-        // 매도호가 (askp1 ~ askp3, askp_rsqn1 ~ askp_rsqn3) -> 오름차순
-        const asks = [
-            {
-                price: Number(output1.askp1),
-                quantity: Number(output1.askp_rsqn1),
-            },
-            {
-                price: Number(output1.askp2),
-                quantity: Number(output1.askp_rsqn2),
-            },
-            {
-                price: Number(output1.askp3),
-                quantity: Number(output1.askp_rsqn3),
-            },
-        ].filter((item) => item.price > 0);
+        // 매도호가 (askp1 ~ askp10, askp_rsqn1 ~ askp_rsqn10) -> 오름차순
+        const asks = Array.from({ length: 10 }, (_, index) => {
+            const level = index + 1;
+            return {
+                price: Number(output1[`askp${level}`] ?? 0),
+                quantity: Number(output1[`askp_rsqn${level}`] ?? 0),
+            };
+        }).filter((item) => Number.isFinite(item.price) && item.price > 0);
 
-        // 매수호가 (bidp1 ~ bidp3, bidp_rsqn1 ~ bidp_rsqn3) -> 내림차순
-        const bids = [
-            {
-                price: Number(output1.bidp1),
-                quantity: Number(output1.bidp_rsqn1),
-            },
-            {
-                price: Number(output1.bidp2),
-                quantity: Number(output1.bidp_rsqn2),
-            },
-            {
-                price: Number(output1.bidp3),
-                quantity: Number(output1.bidp_rsqn3),
-            },
-        ].filter((item) => item.price > 0);
+        // 매수호가 (bidp1 ~ bidp10, bidp_rsqn1 ~ bidp_rsqn10) -> 내림차순
+        const bids = Array.from({ length: 10 }, (_, index) => {
+            const level = index + 1;
+            return {
+                price: Number(output1[`bidp${level}`] ?? 0),
+                quantity: Number(output1[`bidp_rsqn${level}`] ?? 0),
+            };
+        }).filter((item) => Number.isFinite(item.price) && item.price > 0);
 
         return { asks, bids };
     }
@@ -1084,13 +1070,11 @@ export class KisProvider {
 
         // --------------------------------------------------
         // 매도호가
-        // pask1 ~ pask3 : 매도 가격
-        // vask1 ~ vask3 : 매도 잔량
         //
         // 1호가가 가장 낮은 매도 가격이므로
-        // 그대로 1 → 3순서로 반환한다.
+        // 그대로 1 → 10순서로 반환한다.
         // --------------------------------------------------
-        const asks = Array.from({ length: 3 }, (_, index) => {
+        const asks = Array.from({ length: 10 }, (_, index) => {
             const level = index + 1;
 
             return {
@@ -1101,13 +1085,10 @@ export class KisProvider {
 
         // --------------------------------------------------
         // 매수호가
-        // pbid1 ~ pbid3 : 매수 가격
-        // vbid1 ~ vbid3 : 매수 잔량
-        //
         // 1호가가 가장 높은 매수 가격이므로
-        // 그대로 1 → 3 순서로 반환한다.
+        // 그대로 1 → 10 순서로 반환한다.
         // --------------------------------------------------
-        const bids = Array.from({ length: 3 }, (_, index) => {
+        const bids = Array.from({ length: 10 }, (_, index) => {
             const level = index + 1;
 
             return {

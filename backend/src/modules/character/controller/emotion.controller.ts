@@ -11,9 +11,12 @@ import { EmotionService } from '../service/emotion.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
 interface AuthenticatedRequest extends Request {
-    user: { id: string };
+    user: {
+        id?: string | number;
+        sub?: string | number;
+        [key: string]: any;
+    };
 }
-
 @Controller('characters')
 export class EmotionController {
     constructor(private readonly emotionService: EmotionService) {}

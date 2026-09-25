@@ -15,11 +15,31 @@ import { StockDetailResponseDto } from './dto/stock-detail.response.dto';
 import { VolumeSummaryResponseDto } from './dto/volume-summary.response.dto';
 import { StockChartResponseDto } from './dto/stock-chart-dto';
 import { OrderbookResponseDto } from './dto/orderbook.response.dto';
+import { PriceService } from 'src/price/price.service';
 
 // 거래대금 상위 종목 리스트. 선택 인증: 로그인 시 is_favorite 표시.
 @Controller('stocks')
 export class StocksController {
-    constructor(private readonly stocksService: StocksService) {}
+    constructor(
+        private readonly stocksService: StocksService,
+        private readonly priceService: PriceService,
+    ) {}
+
+    @Get(':stock_code/test-price')
+    async testWritePrice(
+        @Param('stock_code') stockCode: string,
+        @Query('price') price: string,
+    ) {
+        const numPrice = Number(price) || 75000;
+        await this.priceService.writeSinglePrice(stockCode, {
+            current_price: numPrice,
+        });
+        return {
+            message: 'Redis 시세 업데이트 완료',
+            stockCode,
+            price: numPrice,
+        };
+    }
 
     // GET /stocks/ranking?market=DOMESTIC|FOREIGN (생략 시 전체 통합)
     @Get('ranking')
