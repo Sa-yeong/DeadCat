@@ -169,6 +169,7 @@ export class StocksService {
                         close_price: Number(h.close_price),
                         low_price: Number(h.low_price),
                         high_price: Number(h.high_price),
+                        volume: Number(h.volume ?? 0),
                     }),
             );
         }
@@ -184,6 +185,7 @@ export class StocksService {
                     close_price: Number(h.close_price),
                     low_price: Number(h.low_price),
                     high_price: Number(h.high_price),
+                    volume: Number(h.volume ?? 0),
                 }),
         );
     }

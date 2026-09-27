@@ -184,6 +184,9 @@ export class PriceScheduler implements OnModuleInit {
                                 close_price: closePrice,
                                 low_price: lowPrice,
                                 high_price: highPrice,
+                                volume: toSafeBigInt(
+                                    Math.round(Number(item.acml_vol || 0)),
+                                ),
                             },
                             create: {
                                 stock_id: stock.id,
@@ -192,6 +195,9 @@ export class PriceScheduler implements OnModuleInit {
                                 close_price: closePrice,
                                 low_price: lowPrice,
                                 high_price: highPrice,
+                                volume: toSafeBigInt(
+                                    Math.round(Number(item.acml_vol || 0)),
+                                ),
                             },
                         });
                         savedCount++;
@@ -267,7 +273,9 @@ export class PriceScheduler implements OnModuleInit {
                 });
             }
 
-            await this.price.writePrices(entries, PRICE_TTL_SECONDS);
+            // await this.price.writePrices(entries, PRICE_TTL_SECONDS);
+            //랭킹만 업데이트
+            await this.price.writePricesRankingOnly(entries);
 
             // 1. 국내주식 volume-summary 적재 (API 호출 방식)
             for (const code of domesticCodes) {
@@ -288,14 +296,12 @@ export class PriceScheduler implements OnModuleInit {
             }
 
             // 2. 해외주식 volume-summary 적재 (이미 가져온 ovsPrices 데이터 활용)
-
-            // 2. 해외주식 volume-summary 적재
             for (const item of overseas) {
                 try {
                     await this.sleep(500); // KIS API 호출 제한(Rate Limit) 방지
 
                     //  KIS 해외 분봉 API 호출하여 volume_graph까지 제대로 받아오기
-                    let summary = await this.kis.fetchOverseasVolumeSummary(
+                    const summary = await this.kis.fetchOverseasVolumeSummary(
                         item.symbol,
                         item.exchange,
                     );

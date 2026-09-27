@@ -72,7 +72,8 @@ export class PriceService {
     async writeSinglePrice(
         code: string,
         priceData: Partial<StockPrice>,
-        ttlSeconds = 60,
+        ttlSeconds = 120,
+        //ttlSeconds = 60,
     ): Promise<void> {
         const key = priceKey(code);
 
@@ -107,6 +108,17 @@ export class PriceService {
 
         await this.redis.set(key, JSON.stringify(updated), ttlSeconds);
     }
+
+    // 랭킹만 업데이트 (현재가는 웹소켓이 담당)
+    async writePricesRankingOnly(
+        entries: { code: string; rankingScore: number }[],
+    ): Promise<void> {
+        await this.redis.zadd(
+            RANKING_KEY,
+            entries.map((e) => [e.rankingScore, e.code]),
+        );
+    }
+
     /*async writeSinglePrice(
         code: string,
         priceData: Partial<StockPrice>,

@@ -4,6 +4,7 @@ export class StockChartResponseDto {
     close_price: number;
     low_price: number;
     high_price: number;
+    volume: number;
 
     constructor(partial: Partial<StockChartResponseDto>) {
         Object.assign(this, partial);

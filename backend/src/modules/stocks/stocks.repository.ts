@@ -64,18 +64,65 @@ export class StocksRepository {
     }
 
     // DB에 저장된 차트 히스토리 조회
-    async findStockHistory(stockId: bigint, timeframe?: string) {
-        return await this.prisma.stock_history.findMany({
+    async findStockHistory(stockId: bigint, timeframe: string = 'DAY') {
+        const allData = await this.prisma.stock_history.findMany({
             where: { stock_id: stockId },
-            orderBy: { record_date: 'asc' }, // 시계열 오름차순
+            orderBy: { record_date: 'asc' },
             select: {
                 record_date: true,
                 open_price: true,
                 close_price: true,
                 low_price: true,
                 high_price: true,
+                volume: true,
             },
         });
+
+        // WEEK/MONTH/YEAR는 DB에서 집계
+        if (timeframe === 'DAY') return allData;
+
+        // 주봉/월봉/년봉: 기간별 그룹핑
+        const getGroupKey = (date: Date): string => {
+            if (timeframe === 'WEEK') {
+                // 해당 주의 월요일 날짜로 그룹핑
+                const d = new Date(date);
+                const day = d.getUTCDay();
+                const diff = day === 0 ? -6 : 1 - day;
+                d.setUTCDate(d.getUTCDate() + diff);
+                return d.toISOString().split('T')[0];
+            }
+            if (timeframe === 'MONTH') {
+                return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+            }
+            if (timeframe === 'YEAR') {
+                return `${date.getUTCFullYear()}`;
+            }
+            return date.toISOString().split('T')[0];
+        };
+
+        // 그룹별 집계
+        const grouped = new Map<string, typeof allData>();
+        for (const row of allData) {
+            const key = getGroupKey(new Date(row.record_date));
+            if (!grouped.has(key)) grouped.set(key, []);
+            grouped.get(key)!.push(row);
+        }
+
+        return Array.from(grouped.values()).map((rows) => ({
+            record_date: rows[0].record_date, // 시작일
+            open_price: rows[0].open_price, // 첫 시가
+            close_price: rows[rows.length - 1].close_price, // 마지막 종가
+            high_price: rows.reduce(
+                (max, r) => (r.high_price > max ? r.high_price : max),
+                rows[0].high_price,
+            ),
+            low_price: rows.reduce(
+                (min, r) => (r.low_price < min ? r.low_price : min),
+                rows[0].low_price,
+            ),
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            volume: rows.reduce((sum, r) => sum + r.volume, BigInt(0)), // 거래량 합산
+        }));
     }
 
     //stock_history update

@@ -853,9 +853,18 @@ export class KisProvider {
         stockCode: string,
         startDate: string,
         endDate: string,
+        timeframe: string = 'DAY',
     ): Promise<KisDailyChartItem[]> {
         const headers = await this.authHeaders('FHKST03010100');
         const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice`;
+
+        const periodMap: Record<string, string> = {
+            DAY: 'D',
+            WEEK: 'W',
+            MONTH: 'M',
+            YEAR: 'Y',
+        };
+        const periodCode = periodMap[timeframe] ?? 'D';
 
         const { data } = await firstValueFrom(
             this.http.get<{ output2: KisDailyChartItem[] }>(url, {
@@ -865,10 +874,20 @@ export class KisProvider {
                     FID_INPUT_ISCD: stockCode,
                     FID_INPUT_DATE_1: startDate,
                     FID_INPUT_DATE_2: endDate,
-                    FID_PERIOD_DIV_CODE: 'D',
+                    FID_PERIOD_DIV_CODE: periodCode,
                     FID_ORG_ADJ_PRC: '0',
                 },
             }),
+        );
+
+        // KIS 일봉 응답의 거래량 확인용
+        this.logger.log(
+            `[KIS volume] ${stockCode}: ${JSON.stringify(
+                (data?.output2 ?? []).slice(0, 3).map((item) => ({
+                    date: item.stck_bsop_date,
+                    volume: item.acml_vol,
+                })),
+            )}`,
         );
 
         return data?.output2 ?? [];
