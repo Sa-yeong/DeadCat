@@ -273,9 +273,24 @@ export class PriceScheduler implements OnModuleInit {
                 });
             }
 
-            // await this.price.writePrices(entries, PRICE_TTL_SECONDS);
-            //랭킹만 업데이트
-            await this.price.writePricesRankingOnly(entries);
+            // 국내는 랭킹만, 해외는 현재가도 같이 업데이트
+            const domesticEntries = entries.filter((e) =>
+                domesticCodes.includes(e.code),
+            );
+            const overseasEntries = entries.filter(
+                (e) => !domesticCodes.includes(e.code),
+            );
+
+            // 국내: 랭킹만 업데이트 (현재가는 웹소켓 담당)
+            await this.price.writePricesRankingOnly(
+                domesticEntries.map((e) => ({
+                    code: e.code,
+                    rankingScore: e.rankingScore,
+                })),
+            );
+
+            // 해외: 현재가도 같이 업데이트 (웹소켓이 미국 장 시간에만 동작)
+            await this.price.writePrices(overseasEntries, PRICE_TTL_SECONDS);
 
             // 1. 국내주식 volume-summary 적재 (API 호출 방식)
             for (const code of domesticCodes) {

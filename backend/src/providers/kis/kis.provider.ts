@@ -925,49 +925,58 @@ export class KisProvider {
             }),
         );
 
-        /*  this.logger.log(
-            `해외 일봉 전체 raw (${symbol}): ${JSON.stringify(data)}`,
+        /*this.logger.log(
+            `해외 일봉 첫번째 raw: ${JSON.stringify(data?.output2?.[0])}`,
         );*/
 
-        // KIS 응답 필드를 프론트엔드/서비스 표준 규격으로 변환
         return (data?.output2 ?? [])
             .filter(
                 (item) =>
                     item &&
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     (item.stck_bsop_date ||
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         item.xymd ||
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                        item.stck_bsop_date ||
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         item.kymd ||
-                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                         item.tymd),
             )
             .map((item) => ({
-                /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+                // KIS 날짜 필드를 내부 표준 날짜 필드로 변환
                 stck_bsop_date:
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     item.stck_bsop_date ||
                     item.xymd ||
                     item.kymd ||
                     item.tymd ||
                     '',
+
+                // 시가
                 stck_oprc:
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     item.open || item.stck_oprc || item.ovrs_nmix_oprc || '0',
+
+                // 종가
                 stck_clpr:
                     item.clos ||
                     item.last ||
                     item.stck_clpr ||
                     item.ovrs_nmix_prpr ||
                     '0',
+
+                // 고가
                 stck_hgpr:
                     item.high || item.stck_hgpr || item.ovrs_nmix_hgpr || '0',
+
+                // 저가
                 stck_lwpr:
                     item.low || item.stck_lwpr || item.ovrs_nmix_lwpr || '0',
+
+                // 해외주식 기간별시세 API의 거래량은 tvol을 사용
                 acml_vol:
-                    item.vlo || item.evol || item.ncav || item.acml_vol || '0',
-                /* eslint-enable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+                    item.tvol ||
+                    item.vlo ||
+                    item.evol ||
+                    item.ncav ||
+                    item.acml_vol ||
+                    '0',
             }));
     }
 
