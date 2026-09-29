@@ -42,6 +42,62 @@ export class PostRepository {
         });
     }
 
+    /**
+     * 새 게시글 작성 (일반 글 및 투표 글 트랜잭션 처리)
+     */
+    async createPostWithVote(
+        userId: string,
+        stockId: bigint,
+        content: string,
+        type: string,
+        voteOptions?: string[],
+    ) {
+        const BigIntUserId = BigInt(userId);
+        const hasVote = Array.isArray(voteOptions) && voteOptions.length >= 2;
+
+        const newPost = await this.prisma.$transaction(async (tx) => {
+            // 1. posts 테이블에 게시글 생성
+            const post = await tx.posts.create({
+                data: {
+                    writer_id: BigIntUserId,
+                    stock_id: stockId,
+                    content,
+                    type: type || 'COMMUNITY',
+                },
+            });
+
+            // 2. 투표 선택지가 전달된 경우 vote 및 vote_options 생성
+            if (hasVote) {
+                const vote = await tx.vote.create({
+                    data: {
+                        post_id: post.id,
+                        state: true, // 진행 중
+                        end_date: new Date(
+                            Date.now() + 7 * 24 * 60 * 60 * 1000,
+                        ), // 기본 7일 후 마감
+                    },
+                });
+
+                const optionsData = voteOptions.map((optContent, index) => ({
+                    vote_id: vote.post_id,
+                    option_no: index + 1,
+                    content: optContent,
+                }));
+
+                await tx.vote_options.createMany({
+                    data: optionsData,
+                });
+            }
+
+            return post;
+        });
+
+        return {
+            newPost,
+            hasVote,
+        };
+    }
+
     /** 특정 종목의 커뮤니티 게시글 조회
      * cursor가 없으면 최신 게시글부터 조회한다.
      * cursor가 있으면 해당 ID보다 작은 게시글을 조회한다.

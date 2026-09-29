@@ -58,7 +58,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
         this.socket = new WebSocket(websocketUrl);
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-misused-promises
         this.socket.on('open', async () => {
             this.connected = true;
 
@@ -67,7 +67,9 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
             await this.subscribeInitialStocks(approvalKey);
         });
 
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
         this.socket.on('message', async (data) => {
+            // eslint-disable-next-line @typescript-eslint/no-base-to-string
             await this.handleMessage(data.toString());
         });
 
@@ -109,6 +111,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
 
             this.connect().catch((error) => {
                 this.logger.error(
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                     `KIS WebSocket reconnect failed: ${error.message}`,
                 );
             });
@@ -140,13 +143,15 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
             );
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const data = await response.json();
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (!data.approval_key) {
             throw new Error(`KIS WebSocket approval key가 응답에 없습니다.`);
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
         return data.approval_key;
     }
 

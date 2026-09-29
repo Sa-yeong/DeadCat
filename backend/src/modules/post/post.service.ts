@@ -20,10 +20,16 @@ import {
 } from './dto/post-comment-response.dto';
 import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
 import { VoteOptionResultDto, VoteResponseDto } from './dto/vote-response.dto';
+import { CreatePostRequestDto } from './dto/create-post-request.dto copy';
+import { CreatePostResponseDto } from './dto/create-post-response.dto';
+import { PrismaService } from 'src/providers/database/prisma.service';
 
 @Injectable()
 export class PostService {
-    constructor(private readonly postRepository: PostRepository) {}
+    constructor(
+        private readonly postRepository: PostRepository,
+        private readonly prisma: PrismaService,
+    ) {}
 
     async getMyPosts(userId: string): Promise<MyPostItemDto[]> {
         const posts = await this.postRepository.findUserPosts(userId);
@@ -48,6 +54,43 @@ export class PostService {
                 source_type: 'COMMUNITY', // 필요 시 지정
             });
         });
+    }
+
+    //새 게시글 작성
+    async createPost(
+        userId: string,
+        dto: CreatePostRequestDto,
+    ): Promise<CreatePostResponseDto> {
+        // 1. 종목 코드로 종목 ID 조회
+        const stock = await this.postRepository.findStockByCode(dto.stock_code);
+
+        if (!stock) {
+            throw new NotFoundException(
+                `존재하지 않는 주식 종목 코드입니다: ${dto.stock_code}`,
+            );
+        }
+
+        // 2. 리포지토리 트랜잭션 호출하여 게시글 및 투표 생성
+        const { newPost, hasVote } =
+            await this.postRepository.createPostWithVote(
+                userId,
+                stock.id,
+                dto.content,
+                dto.type,
+                dto.vote_option,
+            );
+
+        // 3. API 명세 규격에 맞춘 응답 반환
+        return {
+            code: 'success',
+            description: '게시물이 성공적으로 작성되었습니다.',
+            data: {
+                id: String(newPost.id),
+                has_vote: hasVote,
+                content: newPost.content,
+                created_at: newPost.write_time.toISOString(),
+            },
+        };
     }
 
     /**

@@ -20,6 +20,8 @@ import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
 import { PostCommentsResponseDto } from './dto/post-comment-response.dto';
 import { VoteResponseDto } from './dto/vote-response.dto';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
+import { CreatePostRequestDto } from './dto/create-post-request.dto copy';
+import { CreatePostResponseDto } from './dto/create-post-response.dto';
 
 interface AuthenticatedRequest extends Request {
     user: { id: string };
@@ -39,34 +41,6 @@ export class PostController {
 
         return await this.postService.getMyPosts(userId);
     }
-
-    /**
-     * 특정 종목의 커뮤니티 게시글 목록 조회
-     *
-     * GET /stocks/{stock_code}/posts
-     */
-    /*@Get('stocks/:stock_code/posts')
-    async getStockPosts(
-        @Param('stock_code') stockCode: string,
-
-        @Request() req: AuthenticatedRequest,
-
-        // 첫 요청이면 cursor가 없다.
-        @Query('cursor') cursor?: string,
-
-        // 기본 20개
-        @Query('limit') limit = '20',
-    ): Promise<StockPostsResponseDto> {
-        // 로그인한 경우에만 user ID가 존재한다.
-        const userId = req.user?.id;
-
-        return await this.postService.getStockPosts(
-            stockCode,
-            cursor,
-            Number(limit),
-            userId,
-        );
-    }*/
 
     // 특정 종목의 커뮤니티 게시글 조회
     // 비로그인 사용자도 조회 가능하며,로그인 사용자는 JWT를 통해 is_liked를 확인한다.
@@ -145,7 +119,7 @@ export class PostController {
     /**
      * POST /posts/{postId}/vote/options/{optionNo}
      *
-     * 투표 참여
+     * 5.투표 참여
      */
     @UseGuards(JwtAuthGuard)
     @Post('posts/:postId/vote/options/:optionNo')
@@ -169,5 +143,22 @@ export class PostController {
             selectedOptionNo,
             userId,
         );
+    }
+
+    /**
+     * 6. 새 게시글 작성
+     *
+     * POST /posts/create
+     */
+    //@UseGuards(JwtAuthGuard)
+    @Post('posts/create')
+    async createPost(
+        @Body() body: CreatePostRequestDto,
+        @Request() req: AuthenticatedRequest,
+    ): Promise<CreatePostResponseDto> {
+        // const userId = String(req.user.id);
+        const userId = '2';
+
+        return await this.postService.createPost(userId, body);
     }
 }
