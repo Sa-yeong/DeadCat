@@ -194,10 +194,6 @@ export class PostService {
                 vote = new StockPostVoteDto({
                     vote_id: String(post.vote.post_id),
 
-                    // 현재 vote 테이블에는 title 컬럼이 없으므로
-                    // 게시글 title을 투표 제목으로 사용
-                    title: post.title ?? '',
-
                     state: post.vote.state,
 
                     end_date: post.vote.end_date.toISOString(),
@@ -210,8 +206,6 @@ export class PostService {
 
             return new StockPostItemDto({
                 post_id: String(post.id),
-
-                title: post.title,
 
                 content: post.content,
 

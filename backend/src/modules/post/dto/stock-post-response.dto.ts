@@ -30,7 +30,6 @@ export class StockPostVoteOptionDto {
  */
 export class StockPostVoteDto {
     vote_id: string;
-    title: string;
     state: boolean;
     end_date: string;
     total_voters: number;
@@ -46,7 +45,6 @@ export class StockPostVoteDto {
  */
 export class StockPostItemDto {
     post_id: string;
-    title: string | null;
     content: string;
     write_time: string;
     type: string;
