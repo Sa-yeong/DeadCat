@@ -63,6 +63,16 @@ export class StocksRepository {
         });
     }
 
+    // 최근 일봉 2개(최신이 앞) — 현재가가 캐시에 없을 때 대신 쓴다
+    async findLastTwoCloses(stockId: bigint) {
+        return await this.prisma.stock_history.findMany({
+            where: { stock_id: stockId },
+            orderBy: { record_date: 'desc' },
+            take: 2,
+            select: { close_price: true },
+        });
+    }
+
     // DB에 저장된 차트 히스토리 조회
     async findStockHistory(stockId: bigint, timeframe: string = 'DAY') {
         const allData = await this.prisma.stock_history.findMany({

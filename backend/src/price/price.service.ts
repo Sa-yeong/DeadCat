@@ -72,8 +72,9 @@ export class PriceService {
     async writeSinglePrice(
         code: string,
         priceData: Partial<StockPrice>,
-        ttlSeconds = 120,
-        //ttlSeconds = 60,
+        // 장 마감·주말·연휴에도 마지막 체결가가 남아야 한다 — 다음 첫 체결이 덮어쓴다.
+        // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
+        ttlSeconds = 60 * 60 * 24 * 7,
     ): Promise<void> {
         const key = priceKey(code);
 

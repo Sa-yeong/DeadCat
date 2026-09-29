@@ -60,8 +60,10 @@ export class StocksService {
         const rows: StockRankingResponseDto[] = [];
         for (const code of codes) {
             const meta = metaByCode.get(code);
-            const price = prices.get(code);
-            if (!meta || !price) continue; // 메타/시세 없는 종목은 제외
+            let price = prices.get(code);
+            // 캐시에 시세가 없으면(Redis 초기화 직후 등) DB 마지막 종가로 대신한다
+            if (!price && meta) price = (await this.fallbackPrice(meta.id)) ?? undefined;
+            if (!meta || !price) continue; // 메타/시세 둘 다 없는 종목만 제외
             rows.push({
                 rank: rows.length + 1,
                 stock_code: code,
@@ -88,6 +90,24 @@ export class StocksService {
         return result;
     }
 
+    // 캐시에 현재가가 없을 때 — DB 마지막 종가와 그 전날 대비 등락률.
+    // 0원으로 응답하면 화면·주문·감정 계산이 실제 가격으로 오해한다.
+    private async fallbackPrice(stockId: bigint) {
+        const [last, prev] = await this.repo.findLastTwoCloses(stockId);
+        if (!last) return null;
+        const cur = Number(last.close_price);
+        const base = prev ? Number(prev.close_price) : cur;
+        return {
+            current_price: cur,
+            change_rate: base
+                ? Number((((cur - base) / base) * 100).toFixed(2))
+                : 0,
+            trading_value: 0,
+            accumulated_volume: 0,
+            trading_value_krw: 0,
+        };
+    }
+
     // GET /stock/{stock_code} 개별 종목 기본 정보 조회
     async getStockDetail(
         stockCode: string,
@@ -97,7 +117,8 @@ export class StocksService {
         if (!meta) throw new NotFoundException('종목을 찾을 수 없습니다.');
 
         const prices = await this.price.readPrices([stockCode]);
-        const price = prices.get(stockCode);
+        const price =
+            prices.get(stockCode) ?? (await this.fallbackPrice(meta.id));
 
         const isFavorite = userId
             ? (await this.favorites.findFavoriteStockCodes(userId)).has(
