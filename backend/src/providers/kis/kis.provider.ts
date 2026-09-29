@@ -108,7 +108,21 @@ const KIS_SYMBOL: Record<string, string> = {
     'BRK.B': 'BRK/B',
 };
 
-const TOKEN_CACHE_KEY = 'kis:access_token';
+// 접근 토큰 캐시 — 앱키별로 칸을 나눈다.
+// 팀이 Redis 하나를 같이 쓰는데 KIS 앱키는 각자라서, 칸이 하나면 남의 앱키로 받은 토큰을
+// 내 앱키와 같이 보내게 되고 KIS가 거부한다(해외 시세 폴링이 자주 멈추던 원인).
+const tokenCacheKey = (appKey: string): string =>
+    `kis:access_token:${appKey.slice(0, 8)}`;
+// 최근 발급 표시 — KIS는 토큰 발급을 1분에 1회로 제한한다.
+// 이 표시가 살아 있는 동안은 토큰을 새로 받지도, 받은 토큰을 버리지도 않는다(무한 재발급 방지).
+// 서버가 여러 대(또는 provider 인스턴스가 여러 개)여도 같이 지키도록 Redis에 둔다.
+const tokenIssuedKey = (appKey: string): string =>
+    `kis:access_token_issued:${appKey.slice(0, 8)}`;
+const TOKEN_REISSUE_COOLDOWN_S = 60;
+// KIS가 토큰을 거부할 때 주는 코드 — 유효하지 않은 token / 기간이 만료된 token
+const TOKEN_ERROR_CODES = new Set(['EGW00121', 'EGW00123']);
+// axios 인스턴스는 전역 기본 인스턴스라, 토큰 오류 감시(interceptor)는 한 번만 단다
+let tokenWatchInstalled = false;
 
 const REQUEST_DELAY_MS = 500;
 const MAX_RETRY = 3;
@@ -204,12 +218,114 @@ export class KisProvider {
         this.baseUrl = this.config.get<string>('kis.baseUrl')!;
         this.appKey = this.config.get<string>('kis.appKey')!;
         this.appSecret = this.config.get<string>('kis.appSecret')!;
+        this.watchTokenErrors();
     }
 
-    // 접근 토큰: Redis 캐시 우선. 없으면 발급 후 캐시(만료 60초 전까지 TTL).
+    /**
+     * 모든 KIS 응답을 보고 토큰 거부면 캐시를 버린다.
+     * withRateLimitRetry로 감싸지 않은 호출(호가·일봉 등)도 여기서 걸러진다 —
+     * 다음 호출이 새 토큰을 받는다. 재시도는 withRateLimitRetry만 한다.
+     */
+    private watchTokenErrors(): void {
+        if (tokenWatchInstalled) return;
+        tokenWatchInstalled = true;
+        // 캐시를 다 버린 **다음에** 응답을 넘긴다 — 호출한 쪽이 곧바로 재시도할 때
+        // 버리기가 늦게 끝나 방금 받은 새 토큰을 지우는 일을 막는다
+        const inspect = async (
+            url?: string,
+            status?: number,
+            data?: unknown,
+        ) => {
+            if (!url?.startsWith(this.baseUrl) || url.includes('/oauth2/'))
+                return;
+            const code = (data as { msg_cd?: string } | undefined)?.msg_cd;
+            if ((code && TOKEN_ERROR_CODES.has(code)) || status === 401) {
+                await this.dropToken(code ?? `HTTP ${status}`).catch(
+                    () => false,
+                );
+            }
+        };
+        this.http.axiosRef.interceptors.response.use(
+            async (res) => {
+                await inspect(res.config?.url, res.status, res.data);
+                return res;
+            },
+            async (err: {
+                config?: { url?: string };
+                response?: { status?: number; data?: unknown };
+            }) => {
+                await inspect(
+                    err.config?.url,
+                    err.response?.status,
+                    err.response?.data,
+                );
+                return Promise.reject(err);
+            },
+        );
+    }
+
+    /**
+     * 거부된 토큰을 캐시에서 버린다. 버렸으면 true.
+     * 1분 안에 새로 받은 토큰까지 거부되면 토큰 문제가 아니다(앱키 오류·KIS 점검 등) —
+     * 버리지 않고 false. 여기서 또 버리면 요청마다 재발급을 시도해 KIS 제한에 걸린다.
+     */
+    private async dropToken(reason: string, log = true): Promise<boolean> {
+        if (await this.redis.get(tokenIssuedKey(this.appKey))) {
+            // 앱키가 틀린 경우 요청마다 찍히면 로그가 뒤덮인다 — 1분에 한 번만
+            if (log && Date.now() - this.lastCooldownWarn > 60_000) {
+                this.lastCooldownWarn = Date.now();
+                this.logger.warn(
+                    `KIS 토큰 거부됨(${reason}) — 1분 안에 받은 토큰이라 다시 받지 않음. 앱키/서버 상태 확인 필요`,
+                );
+            }
+            return false;
+        }
+        // 응답 감시가 먼저 버렸으면 조용히 넘어간다(같은 거부를 두 번 기록하지 않게)
+        if (!(await this.redis.get(tokenCacheKey(this.appKey)))) return true;
+        await this.redis.del(tokenCacheKey(this.appKey));
+        if (log) {
+            this.logger.warn(
+                `KIS 토큰 거부됨(${reason}) → 캐시 삭제, 다음 요청에서 새로 발급`,
+            );
+        }
+        return true;
+    }
+
+    private lastCooldownWarn = 0;
+
+    private isTokenError(e: unknown): boolean {
+        const code =
+            e instanceof KisApiError
+                ? e.code
+                : (e as { response?: { data?: { msg_cd?: string } } }).response
+                      ?.data?.msg_cd;
+        const status = (e as { response?: { status?: number } }).response
+            ?.status;
+        return (!!code && TOKEN_ERROR_CODES.has(code)) || status === 401;
+    }
+
+    // 발급 중인 요청 — 서버 시작 직후처럼 여러 호출이 동시에 빈 캐시를 만나도 발급은 한 번만
+    private issuing: Promise<string> | null = null;
+
+    // 접근 토큰: Redis 캐시 우선(앱키별 칸). 없으면 발급 후 캐시(만료 60초 전까지 TTL).
     async getAccessToken(): Promise<string> {
-        const cached = await this.redis.get(TOKEN_CACHE_KEY);
+        const cached = await this.redis.get(tokenCacheKey(this.appKey));
         if (cached) return cached;
+        if (!this.issuing) {
+            this.issuing = this.issueToken().finally(() => {
+                this.issuing = null;
+            });
+        }
+        return this.issuing;
+    }
+
+    private async issueToken(): Promise<string> {
+        // 1분 안에 이미 발급했다 — KIS 발급 제한(1분 1회). 이번 요청은 실패로 두고 다음 주기에 다시
+        if (await this.redis.get(tokenIssuedKey(this.appKey))) {
+            throw new ServiceUnavailableException(
+                'KIS 토큰을 1분 안에 이미 발급했습니다. 잠시 후 다시 시도합니다.',
+            );
+        }
 
         const url = `${this.baseUrl}/oauth2/tokenP`;
         try {
@@ -222,10 +338,16 @@ export class KisProvider {
             );
             const expiresIn = Number(data.expires_in) || 86400;
             await this.redis.set(
-                TOKEN_CACHE_KEY,
+                tokenCacheKey(this.appKey),
                 data.access_token,
                 Math.max(expiresIn - 60, 60),
             );
+            await this.redis.set(
+                tokenIssuedKey(this.appKey),
+                String(Date.now()),
+                TOKEN_REISSUE_COOLDOWN_S,
+            );
+            this.logger.log('KIS 접근 토큰 새로 발급');
             return data.access_token;
         } catch (e) {
             this.logger.error(`KIS 토큰 발급 실패: ${this.errMsg(e)}`);
@@ -498,9 +620,12 @@ export class KisProvider {
         });
     }
 
-    // 초당 한도 초과면 백오프 후 재시도. 그 외 에러는 즉시 throw.
+    // 초당 한도 초과면 백오프 후 재시도.
+    // 토큰 거부면 캐시를 버리고 새 토큰으로 **한 번만** 재시도(1분 안에 받은 토큰이면 재시도 없음).
+    // 그 외 에러는 즉시 throw.
     private async withRateLimitRetry<T>(fn: () => Promise<T>): Promise<T> {
         let lastError: unknown;
+        let tokenRetried = false;
         for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
             try {
                 return await fn();
@@ -509,6 +634,11 @@ export class KisProvider {
                 if (this.isRateLimitError(e) && attempt < MAX_RETRY) {
                     await this.sleep(RETRY_BACKOFF_MS * attempt);
                     continue;
+                }
+                if (!tokenRetried && this.isTokenError(e)) {
+                    tokenRetried = true;
+                    // 기록은 응답 감시(watchTokenErrors)가 이미 했다
+                    if (await this.dropToken('', false)) continue;
                 }
                 throw e;
             }
