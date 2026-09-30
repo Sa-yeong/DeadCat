@@ -320,7 +320,6 @@ model stocks {
   category_id         BigInt?
   stock_type          String                @db.VarChar(10)
   name                String                @db.VarChar(100)
-  name_en             String?               @db.VarChar(100)
   is_event            Boolean               @default(false)
   corp_code           String?               @db.VarChar(20)
   affinity            affinity[]

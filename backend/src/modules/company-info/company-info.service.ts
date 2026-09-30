@@ -179,7 +179,9 @@ export class CompanyInfoService {
             where: {
                 code: stockCode,
             },
-            include: {
+            // 종목 테이블은 필요한 칸만 읽는다 — 통째로 읽으면 설계와 DB의 칸이 어긋날 때마다 에러(2026-09-30 name_en 사례)
+            select: {
+                exchange_code: true,
                 // 배당 정보의 원본은 stock_overview로 통일
                 stock_overview: true,
             },
@@ -240,7 +242,8 @@ export class CompanyInfoService {
         // stocks 테이블에서 해당 종목 ID 및 재무제표 조회
         const stock = await this.prisma.stocks.findFirst({
             where: { code: stockCode },
-            include: {
+            // 필요한 칸만 읽는다 (getSummary 주석 참고)
+            select: {
                 stock_financials: {
                     orderBy: { year: 'asc' },
                 },
@@ -265,7 +268,8 @@ export class CompanyInfoService {
     async getScores(stockCode: string) {
         const stock = await this.prisma.stocks.findFirst({
             where: { code: stockCode },
-            include: {
+            // 필요한 칸만 읽는다 (getSummary 주석 참고)
+            select: {
                 stock_scores: true,
             },
         });
@@ -294,7 +298,8 @@ export class CompanyInfoService {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const stock = await this.prisma.stocks.findFirst({
             where: { code: stockCode },
-            include: {
+            // 필요한 칸만 읽는다 (getSummary 주석 참고)
+            select: {
                 stock_overview: true,
             },
         });
