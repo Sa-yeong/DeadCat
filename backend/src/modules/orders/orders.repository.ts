@@ -54,10 +54,13 @@ export class OrdersRepository {
             });
             if (!user) throw new BadRequestException('유저 없음');
 
+            // holdings는 거실(위치 칸 등)과 같이 쓰는 테이블이다. 주문은 **쓰는 칸만** 읽고 쓴다 —
+            // 모든 칸을 읽으면 다른 기능이 칸을 추가/삭제할 때마다 주문이 깨진다(2026-09-30 x_position 사례)
             const holding = await tx.holdings.findUnique({
                 where: {
                     user_id_stock_id: { user_id: userId, stock_id: stockId },
                 },
+                select: { quantity: true, mean_price_krw: true },
             });
 
             let avgCostAtTrade: bigint | null = null;
@@ -83,6 +86,7 @@ export class OrdersRepository {
                             mean_price_krw: tradePrice,
                             created_at: new Date(),
                         },
+                        select: { stock_id: true },
                     });
                 } else {
                     const newQuantity = holding.quantity + quantity;
@@ -102,6 +106,7 @@ export class OrdersRepository {
                             quantity: newQuantity,
                             mean_price_krw: newMeanPrice,
                         },
+                        select: { stock_id: true },
                     });
                 }
             } else {
@@ -124,6 +129,7 @@ export class OrdersRepository {
                                 stock_id: stockId,
                             },
                         },
+                        select: { stock_id: true },
                     });
                 } else {
                     // 매도는 평단가(mean_price_krw)는 그대로 유지, 수량만 차감
@@ -135,6 +141,7 @@ export class OrdersRepository {
                             },
                         },
                         data: { quantity: remainingQuantity },
+                        select: { stock_id: true },
                     });
                 }
 
