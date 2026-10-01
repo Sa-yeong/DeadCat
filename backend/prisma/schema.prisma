@@ -30,40 +30,10 @@ model alarms {
   @@id([user_id, stock_id, price])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model badges {
-  id          BigInt        @id @default(autoincrement())
-  unlock      String        @db.VarChar(100)
-  have_badges have_badges[]
-}
-
 model categories {
   id     BigInt   @id @default(autoincrement())
   name   String   @db.VarChar(100)
   stocks stocks[]
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model char_affinity {
-  character_1                            BigInt
-  character_2                            BigInt
-  affinity_score                         Int    @db.SmallInt
-  users_char_affinity_character_1Tousers users  @relation("char_affinity_character_1Tousers", fields: [character_1], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users_char_affinity_character_2Tousers users  @relation("char_affinity_character_2Tousers", fields: [character_2], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([character_1, character_2])
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model char_affinity_log {
-  id                                         BigInt   @id @default(autoincrement())
-  character_1                                BigInt
-  character_2                                BigInt
-  happening                                  String   @db.VarChar(300)
-  change_rate                                Decimal  @db.Decimal(6, 2)
-  create_at                                  DateTime @db.Timestamp(6)
-  users_char_affinity_log_character_1Tousers users    @relation("char_affinity_log_character_1Tousers", fields: [character_1], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  users_char_affinity_log_character_2Tousers users    @relation("char_affinity_log_character_2Tousers", fields: [character_2], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -136,19 +106,6 @@ model furnitures {
   unlock_rise_rate Decimal?  @db.Decimal(6, 2)
   placed           placed[]
   storage          storage[]
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model have_badges {
-  user_id   BigInt
-  stock_id  BigInt
-  badge_id  BigInt
-  is_hidden Boolean
-  badges    badges  @relation(fields: [badge_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  stocks    stocks  @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users     users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@id([user_id, stock_id, badge_id])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -256,6 +213,7 @@ model placed {
   furniture_id BigInt
   position_x   Decimal    @db.Decimal(10, 5)
   position_y   Decimal    @db.Decimal(10, 5)
+  rotation     Float
   furnitures   furnitures @relation(fields: [furniture_id], references: [id], onUpdate: NoAction)
   users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -307,7 +265,7 @@ model stock_history {
   close_price BigInt
   low_price   BigInt
   high_price  BigInt
-  volume      BigInt   @default(0) 
+  volume      BigInt?  @default(0) 
   stocks      stocks   @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([stock_id, record_date])
@@ -327,7 +285,6 @@ model stocks {
   char_reactions      char_reactions[]
   characters          characters?
   event_activity      event_activity[]
-  have_badges         have_badges[]
   holdings            holdings[]
   interest            interest[]
   orders              orders[]
@@ -383,16 +340,11 @@ model users {
   share_option                                           Boolean               @default(true)
   affinity                                               affinity[]
   alarms                                                 alarms[]
-  char_affinity_char_affinity_character_1Tousers         char_affinity[]       @relation("char_affinity_character_1Tousers")
-  char_affinity_char_affinity_character_2Tousers         char_affinity[]       @relation("char_affinity_character_2Tousers")
-  char_affinity_log_char_affinity_log_character_1Tousers char_affinity_log[]   @relation("char_affinity_log_character_1Tousers")
-  char_affinity_log_char_affinity_log_character_2Tousers char_affinity_log[]   @relation("char_affinity_log_character_2Tousers")
   char_reactions_char_reactions_reactor_idTousers        char_reactions[]      @relation("char_reactions_reactor_idTousers")
   char_reactions_char_reactions_receiver_idTousers       char_reactions[]      @relation("char_reactions_receiver_idTousers")
   comments                                               comments[]
   follow_follow_followee_idTousers                       follow[]              @relation("follow_followee_idTousers")
   follow_follow_follower_idTousers                       follow[]              @relation("follow_follower_idTousers")
-  have_badges                                            have_badges[]
   have_tags                                              have_tags[]
   holdings                                               holdings[]
   interest                                               interest[]

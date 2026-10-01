@@ -131,7 +131,10 @@ export class StocksRepository {
                 rows[0].low_price,
             ),
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            volume: rows.reduce((sum, r) => sum + r.volume, BigInt(0)), // 거래량 합산
+            volume: rows.reduce(
+                (sum, r) => sum + (r.volume ?? BigInt(0)),
+                BigInt(0),
+            ), // 거래량 합산 (빈 값은 0)
         }));
     }
 
