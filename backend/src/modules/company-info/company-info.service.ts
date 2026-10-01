@@ -219,11 +219,22 @@ export class CompanyInfoService {
             currentPrice,
         );
 
-        // 5. summary 응답
+        // 5. 시가총액 원화 — 화면은 국내·해외 모두 '조/억 원'으로 보여준다.
+        //    해외는 달러 시총(KIS tomv) × 원/달러 환율. 환율을 못 받으면 null(화면이 달러로 표시)
+        let marketCapKrw: number | null = Number(kisData.market_cap) || null;
+        if (marketCapKrw !== null && !this.isDomestic(stockCode)) {
+            const rate = await this.kisProvider.getUsdKrwRate().catch(() => 0);
+            marketCapKrw = rate > 0 ? Math.round(marketCapKrw * rate) : null;
+        }
+
+        // 6. summary 응답
         return {
             stock_code: stockCode,
 
+            // 시장 통화 그대로(국내 원, 해외 달러)
             market_cap: kisData.market_cap,
+            // 원화 환산 시가총액 — 국내는 market_cap과 같다
+            market_cap_krw: marketCapKrw,
             per: kisData.per,
             pbr: kisData.pbr,
 

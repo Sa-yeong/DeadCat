@@ -50,30 +50,34 @@ export class OrdersService {
         const isImmediate = dto.order_type === OrderType.MARKET;
         const initialStatus = isImmediate ? 'COMPLETED' : 'PENDING';
 
-        const newOrder = await this.ordersRepository.createOrder({
-            userId,
-            stockId: stock.id,
-            orderSide: dto.order_side,
-            orderType: dto.order_type,
-            quantity: dto.quantity,
-            price: executionPrice,
-            status: initialStatus,
-        });
-
+        let orderId: bigint;
         if (isImmediate) {
-            await this.ordersRepository.executeTrade({
+            // 체결과 주문 기록을 한 트랜잭션으로 — 실패하면 둘 다 남지 않는다
+            ({ orderId } = await this.ordersRepository.executeTrade({
                 userId,
                 stockId: stock.id,
                 side: dto.order_side,
+                orderType: dto.order_type,
                 quantity: dto.quantity,
                 tradePrice: BigInt(executionPrice!),
+            }));
+        } else {
+            const newOrder = await this.ordersRepository.createOrder({
+                userId,
+                stockId: stock.id,
+                orderSide: dto.order_side,
+                orderType: dto.order_type,
+                quantity: dto.quantity,
+                price: executionPrice,
+                status: initialStatus,
             });
+            orderId = newOrder.id;
         }
 
         return new CreateOrderResponseDto({
             code: 'SUCCESS',
             message: '주문 요청 성공',
-            order_id: String(newOrder.id),
+            order_id: String(orderId),
             status: initialStatus,
         });
     }

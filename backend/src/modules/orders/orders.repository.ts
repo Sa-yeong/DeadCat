@@ -37,14 +37,18 @@ export class OrdersRepository {
     }
 
     // 체결 처리: 잔고, holdings, transaction_history를 하나의 트랜잭션으로 묶어서 처리
+    // 시장가 체결 + 주문 기록을 **한 트랜잭션**으로. 잔고·보유 부족으로 체결이 실패하면
+    // 주문 기록도 남지 않는다(예전엔 주문을 먼저 COMPLETED로 저장해 실패해도 '체결 완료'가 남았다).
     async executeTrade(params: {
         userId: bigint;
         stockId: bigint;
         side: OrderSide;
+        orderType: string;
         quantity: number;
         tradePrice: bigint;
-    }) {
-        const { userId, stockId, side, quantity, tradePrice } = params;
+    }): Promise<{ orderId: bigint }> {
+        const { userId, stockId, side, orderType, quantity, tradePrice } =
+            params;
         const totalAmount = tradePrice * BigInt(quantity);
 
         return await this.prisma.$transaction(async (tx) => {
@@ -153,7 +157,7 @@ export class OrdersRepository {
             }
 
             // transaction_history 최종 기록
-            return await tx.transaction_history.create({
+            await tx.transaction_history.create({
                 data: {
                     user_id: userId,
                     stock_id: stockId,
@@ -165,6 +169,22 @@ export class OrdersRepository {
                     realized_profit: realizedProfit,
                 },
             });
+
+            // 주문 기록 — 체결이 끝난 뒤 같은 트랜잭션 안에서 COMPLETED로
+            const order = await tx.orders.create({
+                data: {
+                    user_id: userId,
+                    stock_id: stockId,
+                    side,
+                    type: orderType,
+                    quantity,
+                    price: tradePrice,
+                    status: 'COMPLETED',
+                    create_at: new Date(),
+                },
+                select: { id: true },
+            });
+            return { orderId: order.id };
         });
     }
 }

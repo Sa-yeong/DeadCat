@@ -1351,9 +1351,10 @@ export class KisProvider {
                 stock_code: code,
                 current_price: currentPrice,
 
-                // HTS 시가총액 단위를 원 단위로 변환
+                // HTS 시가총액(hts_avls)은 **억 원** 단위 → 원 단위로 변환.
+                // (예전 × 1,000,000은 100배 작게 나왔다 — 삼성전자 1,600조가 16조로)
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                market_cap: Number(o.hts_avls || 0) * 1000000,
+                market_cap: Number(o.hts_avls || 0) * 100_000_000,
 
                 // PER
                 per: Number(o.per || 0),
