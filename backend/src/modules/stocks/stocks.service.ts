@@ -13,6 +13,12 @@ import {
 import { KisProvider } from 'src/providers/kis/kis.provider';
 import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
 
+/** KIS 호가 조회 결과(국내·해외 공통 모양) */
+type OrderbookData = {
+    asks: { price: number; quantity: number }[];
+    bids: { price: number; quantity: number }[];
+};
+
 // 거래대금 상위 N (시범 20종목이라 전부 포함됨).
 const TOP_N = 20;
 
@@ -211,6 +217,31 @@ export class StocksService {
         );
     }
 
+    private readonly orderbookCache = new Map<
+        string,
+        { at: number; value: Promise<OrderbookData> }
+    >();
+    private static readonly ORDERBOOK_SHARE_MS = 1000;
+
+    /** 종목별 호가를 ORDERBOOK_SHARE_MS 동안 공유. 실패한 요청은 공유하지 않는다 */
+    private sharedOrderbook(
+        code: string,
+        load: () => Promise<OrderbookData>,
+    ): Promise<OrderbookData> {
+        const hit = this.orderbookCache.get(code);
+        if (hit && Date.now() - hit.at < StocksService.ORDERBOOK_SHARE_MS) {
+            return hit.value;
+        }
+        const value = load();
+        this.orderbookCache.set(code, { at: Date.now(), value });
+        value.catch(() => {
+            if (this.orderbookCache.get(code)?.value === value) {
+                this.orderbookCache.delete(code);
+            }
+        });
+        return value;
+    }
+
     // GET /stocks/{stock_code}/orderbook 실시간 호가창 조회
     async getOrderbook(stockCode: string): Promise<OrderbookResponseDto> {
         const meta = await this.repo.findStockByCode(stockCode);
@@ -223,20 +254,17 @@ export class StocksService {
             meta.stock_type === 'OVERSEAS' ||
             /^[A-Za-z]+$/.test(stockCode);
 
-        let orderbook: {
-            asks: { price: number; quantity: number }[];
-            bids: { price: number; quantity: number }[];
-        };
+        // 화면은 보는 사람마다 2초에 한 번 호가를 부른다. 매번 KIS를 직접 부르면 시청자 수만큼
+        // 호출이 늘어 KIS 초당 한도에 걸린다 — 종목별로 1초 동안 같은 결과(진행 중인 요청 포함)를 나눠 쓴다.
+        const orderbook = await this.sharedOrderbook(stockCode, () =>
+            isOverseas
+                ? this.kisProvider.getOverseasOrderbook(
+                      stockCode,
+                      meta.exchange_code || 'NAS',
+                  )
+                : this.kisProvider.getOrderbook(stockCode),
+        );
 
-        if (isOverseas) {
-            const exchange = meta.exchange_code || 'NAS';
-            orderbook = await this.kisProvider.getOverseasOrderbook(
-                stockCode,
-                exchange,
-            );
-        } else {
-            orderbook = await this.kisProvider.getOrderbook(stockCode);
-        }
 
         // DTO 객체 변환
         const asks = orderbook.asks.map(

@@ -201,6 +201,14 @@ export class PostService {
                     total_voters: totalVoters,
 
                     options,
+
+                    // 내가 고른 선택지 — 새로고침해도 투표 결과를 다시 숨기지 않게
+                    my_option_no:
+                        currentUserId !== undefined
+                            ? (post.vote.voting.find(
+                                  (v) => v.voter_id === currentUserId,
+                              )?.option_no ?? null)
+                            : null,
                 });
             }
 

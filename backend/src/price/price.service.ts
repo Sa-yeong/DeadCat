@@ -56,6 +56,8 @@ export class PriceService {
                 ...price,
                 trading_value_krw: Math.round(rankingScore),
             };
+            // 웹소켓 쪽 메모리 값도 갱신 — 다음 체결 반영 때 거래대금 등을 덮어쓰지 않게
+            this.latest.set(code, { ...this.latest.get(code), ...cached });
             await this.redis.set(
                 priceKey(code),
                 JSON.stringify(cached),
@@ -68,46 +70,70 @@ export class PriceService {
         );
     }
 
-    // 웹소켓 수신 시 단일 종목 실시간 시세 Redis 업데이트
+    // ── 웹소켓 실시간 시세 쓰기 ──────────────────────────────────────
+    // 체결마다 Redis를 읽고(GET) 쓰면(SET) 장중 명령 수가 폭증한다(Upstash 한도 위험).
+    // 그래서 ① 마지막 값을 메모리에 들고 있어 읽기를 없애고 ② 1초에 한 번 몰아서 쓴다.
+    // 종목당 Redis 쓰기 ≤ 1회/초. 화면은 2초마다 읽으므로 체감 지연 없음.
+    private readonly latest = new Map<string, CachedPrice>(); // 종목별 최신 시세(메모리)
+    private readonly dirty = new Set<string>(); // 아직 Redis에 안 쓴 종목
+    private flushTimer: NodeJS.Timeout | null = null;
+    private static readonly FLUSH_MS = 1000;
+    // 장 마감·주말·연휴에도 마지막 체결가가 남아야 한다 — 다음 첫 체결이 덮어쓴다.
+    // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
+    private static readonly LIVE_TTL_S = 60 * 60 * 24 * 7;
+
+    // 웹소켓 수신 시 단일 종목 실시간 시세 반영 (Redis에는 FLUSH_MS마다 몰아서)
     async writeSinglePrice(
         code: string,
         priceData: Partial<StockPrice>,
-        // 장 마감·주말·연휴에도 마지막 체결가가 남아야 한다 — 다음 첫 체결이 덮어쓴다.
-        // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
-        ttlSeconds = 60 * 60 * 24 * 7,
     ): Promise<void> {
-        const key = priceKey(code);
-
-        const existingRaw = await this.redis.get(key);
-
-        if (existingRaw) {
-            const existing = JSON.parse(existingRaw) as CachedPrice;
-
-            const updated: CachedPrice = {
-                ...existing,
-                ...priceData,
-            };
-
-            await this.redis.set(key, JSON.stringify(updated), ttlSeconds);
-
-            return;
+        let base = this.latest.get(code);
+        if (!base) {
+            // 서버 켜고 처음 보는 종목만 한 번 읽어 다른 필드(거래대금 등)를 이어받는다
+            const raw = await this.redis.get(priceKey(code));
+            base = raw
+                ? (JSON.parse(raw) as CachedPrice)
+                : {
+                      current_price: 0,
+                      change_rate: 0,
+                      trading_value: 0,
+                      accumulated_volume: 0,
+                      trading_value_krw: 0,
+                  };
         }
+        this.latest.set(code, { ...base, ...priceData });
+        this.dirty.add(code);
+        if (!this.flushTimer) {
+            this.flushTimer = setTimeout(
+                () => void this.flush(),
+                PriceService.FLUSH_MS,
+            );
+        }
+    }
 
-        // Redis에 기존 데이터가 없는 경우
-        const currentPrice = priceData.current_price ?? 0;
-        const changeRate = priceData.change_rate ?? 0;
-        const tradingValue = priceData.trading_value ?? 0;
-        const accumulatedVolume = priceData.accumulated_volume ?? 0;
-
-        const updated: CachedPrice = {
-            current_price: currentPrice,
-            change_rate: changeRate,
-            trading_value: tradingValue,
-            accumulated_volume: accumulatedVolume,
-            trading_value_krw: tradingValue,
-        };
-
-        await this.redis.set(key, JSON.stringify(updated), ttlSeconds);
+    private async flush(): Promise<void> {
+        this.flushTimer = null;
+        const codes = [...this.dirty];
+        this.dirty.clear();
+        for (const code of codes) {
+            const v = this.latest.get(code);
+            if (!v) continue;
+            try {
+                await this.redis.set(
+                    priceKey(code),
+                    JSON.stringify(v),
+                    PriceService.LIVE_TTL_S,
+                );
+            } catch {
+                this.dirty.add(code); // 다음 회차에 다시
+            }
+        }
+        if (this.dirty.size && !this.flushTimer) {
+            this.flushTimer = setTimeout(
+                () => void this.flush(),
+                PriceService.FLUSH_MS,
+            );
+        }
     }
 
     // 랭킹만 업데이트 (현재가는 웹소켓이 담당)

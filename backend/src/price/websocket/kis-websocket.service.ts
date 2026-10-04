@@ -319,14 +319,18 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         }
 
         const trId = parts[1];
+        // 체결이 몰리면 한 메시지에 여러 건이 묶여 온다(parts[2] = 건수).
+        // 현재가에는 마지막 체결만 의미가 있으므로 마지막 한 건만 쓴다
+        // (예전엔 첫 건만 읽어 묶음 안의 최신 체결을 놓쳤다).
+        const record = lastRecord(parts[3], parts[2]);
 
         if (trId === 'HDFSCNT0') {
-            await this.handleOverseasPriceMessage(parts[3]);
+            await this.handleOverseasPriceMessage(record);
             return;
         }
 
         if (trId === 'H0STCNT0') {
-            await this.handleDomesticPriceMessage(parts[3]);
+            await this.handleDomesticPriceMessage(record);
             return;
         }
     }
@@ -386,4 +390,14 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
     /*private async handleMessage(rawMessage: string): Promise<void> {
         this.logger.log(`[KIS WS] message: ${rawMessage}`);
     }*/
+}
+
+/** '^'로 이어진 n건짜리 체결 데이터에서 마지막 한 건만 꺼낸다. 건수를 못 읽으면 그대로 */
+export function lastRecord(data: string, countField: string): string {
+    const count = Number(countField);
+    if (!Number.isInteger(count) || count <= 1) return data;
+    const fields = data.split('^');
+    if (fields.length % count !== 0) return data; // 모양이 예상과 다르면 손대지 않는다
+    const per = fields.length / count;
+    return fields.slice(per * (count - 1)).join('^');
 }

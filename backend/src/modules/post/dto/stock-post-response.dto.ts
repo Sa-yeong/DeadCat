@@ -34,6 +34,8 @@ export class StockPostVoteDto {
     end_date: string;
     total_voters: number;
     options: StockPostVoteOptionDto[];
+    /** 로그인한 사용자가 고른 선택지 번호. 안 골랐거나 비로그인이면 null */
+    my_option_no: number | null;
 
     constructor(partial: Partial<StockPostVoteDto>) {
         Object.assign(this, partial);
