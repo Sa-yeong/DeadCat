@@ -1,0 +1,105 @@
+/* DEADCAT 개별종목 화면 전용 스타일
+   - Tailwind v4를 preflight(전역 리셋) 없이 불러온다.
+     기존 antd 페이지의 스타일이 바뀌지 않도록 base 레이어를 제외한다. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Tailwind v4는 `@import "tailwindcss"` 한 줄을 쓸 때만 소스를 자동 탐지한다.
+   위처럼 레이어를 따로 불러오면 탐지가 꺼져 유틸리티가 하나도 생성되지 않으므로,
+   클래스를 읽어올 경로를 직접 지정한다. (이 화면 파일들만 스캔 → 팀 페이지 영향 없음) */
+@source "../page/stockDetail";
+@source "../page/livingRoom";
+
+@theme {
+  --color-dc-bg: #1c1c1e;
+  --color-dc-nav: #212126;
+  --color-dc-panel: #26262b;
+  --color-dc-input: #2a2a2e;
+  --color-dc-chip: #34343c;
+  --color-dc-text: #ededea;
+  --color-dc-text-2: #c6c6be;
+  --color-dc-muted: #97978e;
+  --color-dc-dim: #9a9a93;
+  --color-dc-faint: #6e6e68;
+  --color-dc-up: #f2564c;
+  --color-dc-down: #5b8cff;
+  --color-dc-up-soft: #ff7a70;
+  --color-dc-down-soft: #6fa0ff;
+  --color-dc-line: rgba(255, 255, 255, 0.18);
+  --color-dc-line-soft: rgba(255, 255, 255, 0.07);
+  --font-dc-sans: 'Gothic A1', system-ui, sans-serif;
+  --font-dc-mono: 'Space Grotesk', ui-monospace, monospace;
+}
+
+/* 이 화면 안에서만 도는 최소한의 초기화 (preflight 대신) */
+.dc-screen,
+.dc-screen * {
+  box-sizing: border-box;
+}
+.dc-screen {
+  font-family: var(--font-dc-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  letter-spacing: normal;
+  color: var(--color-dc-text);
+  background: var(--color-dc-bg);
+}
+.dc-screen h1,
+.dc-screen h2,
+.dc-screen p {
+  margin: 0;
+}
+.dc-screen button {
+  font-family: inherit;
+  color: inherit;
+}
+.dc-screen a {
+  color: inherit;
+  text-decoration: none;
+}
+.dc-screen input,
+.dc-screen textarea {
+  font-family: inherit;
+  outline: none;
+}
+
+/* 스크롤바 — 시안과 동일 */
+.dc-screen ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.dc-screen ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dc-screen ::-webkit-scrollbar-thumb {
+  background: #26262b;
+  border-radius: 2px;
+}
+.dc-screen ::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.dc-screen * {
+  scrollbar-width: thin;
+  scrollbar-color: #26262b transparent;
+}
+
+/* 스크롤 영역 — 끝까지 굴려도 바깥 페이지가 따라 굴러가지 않게 */
+.dc-screen .dc-scroll {
+  overscroll-behavior: contain;
+}
+
+/* 호가 한 줄 — 누르면 주문 가격으로 들어간다는 걸 손끝에서 알게 */
+.dc-screen .dc-ob-row:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* 거실 — 아이템을 준 순간에만 뜨는 하트 게이지 */
+@keyframes lr-flash {
+  0% { opacity: 0; transform: translateY(6px); }
+  12% { opacity: 1; transform: translateY(0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-8px); }
+}

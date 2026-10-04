@@ -15,6 +15,8 @@ import { ChangeProfile } from './page/mypage/ChangeProile';
 import { MyPost } from './page/mypage/MyPost';
 import { MyComment } from './page/mypage/MyComment';
 import { LikePost } from './page/mypage/LikePost';
+import { StockDetailPage } from './page/stockDetail/StockDetailPage';
+import { LivingRoomPage } from './page/livingRoom/LivingRoomPage';
 
 const router = createBrowserRouter([
   {
@@ -27,6 +29,9 @@ const router = createBrowserRouter([
         {path:'basic-list', element:<StockList />},
         {path:'category', element: <CategoryList />}
       ]},
+      {path: 'stocks/:stockCode', element: <StockDetailPage />},
+      {path: 'room', element: <LivingRoomPage />},
+      {path: 'room/:userId', element: <LivingRoomPage />},
       {path: 'mypage', element: <MyPageLayout />, children: [
         {index: true, element: <Navigate to='assets' replace />},
         {path: 'assets', element: <Tab1 />, children:[
