@@ -4,6 +4,7 @@ import {
     IsNotEmpty,
     IsNumber,
     IsOptional,
+    IsPositive,
     IsString,
     Max,
     Min,
@@ -42,8 +43,9 @@ export class CreateOrderDto {
     })
     quantity!: number;
 
+    // 지정가·예약 가격 — 시장 통화(국내 원 정수, 해외 달러 소수 2자리까지). 시장가는 무시
     @IsOptional()
-    @IsNumber()
-    @Min(1)
+    @IsNumber({ maxDecimalPlaces: 2 })
+    @IsPositive()
     price?: number | null;
 }
