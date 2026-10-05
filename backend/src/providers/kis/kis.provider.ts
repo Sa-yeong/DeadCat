@@ -193,6 +193,17 @@ interface KisFxResponse {
     output1: { ovrs_nmix_prpr: string };
 }
 
+// 국내 당일 분봉 한 줄 (TR: FHKST03010200)
+export interface KisMinuteItem {
+    stck_bsop_date: string; // 영업일자 (YYYYMMDD)
+    stck_cntg_hour: string; // 체결시각 (HHMMSS)
+    stck_prpr: string; // 그 분의 마지막 가격(종가)
+    stck_oprc: string; // 시가
+    stck_hgpr: string; // 고가
+    stck_lwpr: string; // 저가
+    cntg_vol: string; // 그 분의 체결량
+}
+
 export interface KisDailyChartItem {
     stck_bsop_date: string; // 영업일자 (YYYYMMDD)
     stck_oprc: string; // 시가
@@ -996,31 +1007,71 @@ export class KisProvider {
         };
         const periodCode = periodMap[timeframe] ?? 'D';
 
-        const { data } = await firstValueFrom(
-            this.http.get<{ output2: KisDailyChartItem[] }>(url, {
-                headers,
-                params: {
-                    FID_COND_MRKT_DIV_CODE: 'J',
-                    FID_INPUT_ISCD: stockCode,
-                    FID_INPUT_DATE_1: startDate,
-                    FID_INPUT_DATE_2: endDate,
-                    FID_PERIOD_DIV_CODE: periodCode,
-                    FID_ORG_ADJ_PRC: '0',
-                },
-            }),
-        );
+        return this.withRateLimitRetry(async () => {
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd?: string;
+                    msg_cd?: string;
+                    msg1?: string;
+                    output2: KisDailyChartItem[];
+                }>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                        FID_INPUT_DATE_1: startDate,
+                        FID_INPUT_DATE_2: endDate,
+                        FID_PERIOD_DIV_CODE: periodCode,
+                        FID_ORG_ADJ_PRC: '0',
+                    },
+                }),
+            );
 
-        // KIS 일봉 응답의 거래량 확인용
-        this.logger.log(
-            `[KIS volume] ${stockCode}: ${JSON.stringify(
-                (data?.output2 ?? []).slice(0, 3).map((item) => ({
-                    date: item.stck_bsop_date,
-                    volume: item.acml_vol,
-                })),
-            )}`,
-        );
+            if (data?.rt_cd && data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd ?? '', data.msg1 ?? '');
+            }
+            // 빈 칸(영업일자 없음)은 버린다 — 상장 전 구간 등
+            return (data?.output2 ?? []).filter(
+                (item) => !!item?.stck_bsop_date,
+            );
+        });
+    }
 
-        return data?.output2 ?? [];
+    /**
+     * 국내 당일 분봉 — hhmmss 시각 이전 30개(최신이 앞).
+     * 장 시작 전·휴장일에는 비어 있을 수 있다.
+     */
+    async getMinuteChart(
+        stockCode: string,
+        hhmmss: string,
+    ): Promise<KisMinuteItem[]> {
+        return this.withRateLimitRetry(async () => {
+            const headers = await this.authHeaders('FHKST03010200');
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice`;
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd?: string;
+                    msg_cd?: string;
+                    msg1?: string;
+                    output2?: KisMinuteItem[];
+                }>(url, {
+                    headers,
+                    params: {
+                        FID_ETC_CLS_CODE: '',
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                        FID_INPUT_HOUR_1: hhmmss,
+                        FID_PW_DATA_INCU_YN: 'Y',
+                    },
+                }),
+            );
+            if (data?.rt_cd && data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd ?? '', data.msg1 ?? '');
+            }
+            return (data?.output2 ?? []).filter(
+                (r) => !!r?.stck_cntg_hour && Number(r.stck_prpr) > 0,
+            );
+        });
     }
 
     //해외주식 차트조회
@@ -1029,6 +1080,18 @@ export class KisProvider {
         exchange: string,
         startDate: string,
         endDate: string,
+        gubn: '0' | '1' | '2' = '0', // 0: 일, 1: 주, 2: 월
+    ): Promise<KisDailyChartItem[]> {
+        return this.withRateLimitRetry(() =>
+            this.fetchOverseasDailyChart(symbol, exchange, endDate, gubn),
+        );
+    }
+
+    private async fetchOverseasDailyChart(
+        symbol: string,
+        exchange: string,
+        endDate: string,
+        gubn: '0' | '1' | '2',
     ): Promise<KisDailyChartItem[]> {
         const headers = await this.authHeaders('HHDFS76240000');
         const excd = OVERSEAS_EXCD[exchange] ?? exchange;
@@ -1042,7 +1105,7 @@ export class KisProvider {
                     AUTH: '',
                     EXCD: excd,
                     SYMB: symb,
-                    GUBN: '0', // 0: 일, 1: 주, 2: 월
+                    GUBN: gubn,
                     BYMD: endDate, // 기준일자
                     MODP: '1',
                     KEYB: '',

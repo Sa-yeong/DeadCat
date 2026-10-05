@@ -13,6 +13,13 @@ const POLL_CRON = '*/30 * * * * *';
 const PRICE_TTL_SECONDS = 100;
 const DEFAULT_USD_KRW = 1350;
 const VOLUME_SUMMARY_TTL_SECONDS = 300;
+/** 국내 일봉을 모으는 기간(년) — 차트 확대·축소에서 주봉으로 넘어가기(약 13개월) 전에 끊기지 않게 */
+const HISTORY_YEARS = 2;
+/** KIS 기간별 시세는 한 번에 최대 100건 — 국내 일봉은 이만큼 거슬러 올라가며 받는다(약 500거래일) */
+const HISTORY_PAGES = 5;
+/** 이만큼 쌓였으면(약 2년 거래일) 오늘 것만 이어 붙인다. 해외는 쪽 넘김이 없어 100 */
+const DOMESTIC_FULL_HISTORY = 480;
+const FOREIGN_FULL_HISTORY = 100;
 
 const toSafeBigInt = (val: string | number): bigint => {
     const num = Number(val);
@@ -24,6 +31,7 @@ const toSafeBigInt = (val: string | number): bigint => {
 export class PriceScheduler implements OnModuleInit {
     private readonly logger = new Logger(PriceScheduler.name);
     private isPolling = false;
+    private isSyncing = false;
 
     constructor(
         private readonly prisma: PrismaService,
@@ -32,14 +40,20 @@ export class PriceScheduler implements OnModuleInit {
     ) {}
 
     // 서버 시작 시 실행되는 초기화 로직
-    async onModuleInit(): Promise<void> {
-        this.logger.log('서버 초기화: 과거 일봉 데이터 동기화를 확인합니다...');
-        await this.syncHistoricalData();
+    // 수집은 뒤에서 돈다 — 끝날 때까지 서버가 열리지 않으면 재시작마다 화면이 멈춘다
+    onModuleInit(): void {
+        this.logger.log(
+            '서버 초기화: 과거 일봉 데이터 동기화를 뒤에서 시작합니다...',
+        );
+        void this.syncHistoricalData();
     }
 
     // 과거 일봉 데이터 DB 수집 메서드
     @Cron('0 40 15 * * 1-5')
     private async syncHistoricalData(): Promise<void> {
+        if (this.isSyncing) return; // 앞선 수집이 아직 도는 중
+        this.isSyncing = true;
+        const startedAt = Date.now();
         try {
             const stocks = await this.prisma.stocks.findMany({
                 select: {
@@ -59,9 +73,9 @@ export class PriceScheduler implements OnModuleInit {
             const todayKstStr = kstNow.toISOString().split('T')[0]; // "2026-08-12"
             const endDate = todayKstStr.replace(/-/g, ''); // "20260812"
 
-            // 1년 전 날짜 (YYYYMMDD)
+            // HISTORY_YEARS 년 전 날짜 (YYYYMMDD)
             const pastDate = new Date(kstNow);
-            pastDate.setFullYear(pastDate.getFullYear() - 1);
+            pastDate.setFullYear(pastDate.getFullYear() - HISTORY_YEARS);
             const startDate = pastDate
                 .toISOString()
                 .split('T')[0]
@@ -97,7 +111,11 @@ export class PriceScheduler implements OnModuleInit {
                         ? yesterdayKstStr // 해외는 어제 날짜와 비교
                         : todayKstStr; //국내는 오늘날짜와 비교
 
-                if (count >= 100 && latestDateStr >= compareDate) {
+                const full =
+                    stock.stock_type === 'FOREIGN'
+                        ? FOREIGN_FULL_HISTORY
+                        : DOMESTIC_FULL_HISTORY;
+                if (count >= full && latestDateStr >= compareDate) {
                     this.logger.log(
                         `[${stock.name}] 최신화 완료되었습니다. (${count}건)`,
                     );
@@ -119,11 +137,12 @@ export class PriceScheduler implements OnModuleInit {
                         endDate,
                     );
                 } else {
-                    // 국내 종목
-                    items = await this.kis.getDailyChartHistory(
+                    // 국내 종목 — 덜 쌓였으면 100건씩 거슬러 올라가며, 다 쌓였으면 최근 100건만
+                    items = await this.fetchDomesticHistory(
                         stock.code,
                         startDate,
                         endDate,
+                        count >= full ? 1 : HISTORY_PAGES,
                     );
                 }
 
@@ -148,8 +167,13 @@ export class PriceScheduler implements OnModuleInit {
                     }
                 }
 
+                // 다 쌓인 종목은 DB 의 마지막 날부터만 쓴다(그날은 장중 값일 수 있어 다시 쓴다)
+                // — 이미 있는 날짜를 매번 다시 쓰면 재시작마다 수천 건을 쓴다
+                const fromDate =
+                    count >= full ? latestDateStr.replace(/-/g, '') : '';
                 let savedCount = 0;
                 for (const [cleanDate, item] of uniqueItemsMap.entries()) {
+                    if (cleanDate < fromDate) continue;
                     const year = Number(cleanDate.substring(0, 4));
                     const month = Number(cleanDate.substring(4, 6)) - 1; // JS 월은 0부터 시작
                     const day = Number(cleanDate.substring(6, 8));
@@ -218,7 +242,55 @@ export class PriceScheduler implements OnModuleInit {
             this.logger.error(
                 `과거 시세 수집 중 예외 발생: ${error instanceof Error ? error.message : String(error)}`,
             );
+        } finally {
+            this.isSyncing = false;
+            this.logger.log(
+                `과거 일봉 동기화 끝 (${((Date.now() - startedAt) / 1000).toFixed(1)}초)`,
+            );
         }
+    }
+
+    /**
+     * 국내 일봉 — KIS 는 요청 한 번에 최근 100건만 준다. 받은 것 중 가장 오래된 날 전날을
+     * 새 끝날로 삼아 pages 번까지 거슬러 올라간다.
+     */
+    private async fetchDomesticHistory(
+        code: string,
+        startDate: string,
+        endDate: string,
+        pages: number,
+    ): Promise<KisDailyChartItem[]> {
+        const all: KisDailyChartItem[] = [];
+        let to = endDate;
+        for (let page = 0; page < pages; page++) {
+            const rows = await this.kis.getDailyChartHistory(
+                code,
+                startDate,
+                to,
+            );
+            if (rows.length === 0) break;
+            all.push(...rows);
+            const oldest = rows.reduce(
+                (min, r) => (r.stck_bsop_date < min ? r.stck_bsop_date : min),
+                to,
+            );
+            if (rows.length < 100 || oldest <= startDate) break;
+            to = this.dayBefore(oldest);
+            await this.sleep(300);
+        }
+        return all;
+    }
+
+    /** YYYYMMDD 의 전날 */
+    private dayBefore(yyyymmdd: string): string {
+        const d = new Date(
+            Date.UTC(
+                Number(yyyymmdd.slice(0, 4)),
+                Number(yyyymmdd.slice(4, 6)) - 1,
+                Number(yyyymmdd.slice(6, 8)) - 1,
+            ),
+        );
+        return d.toISOString().slice(0, 10).replace(/-/g, '');
     }
 
     @Cron(POLL_CRON)

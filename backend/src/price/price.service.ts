@@ -285,6 +285,20 @@ export class PriceService {
             ttlSeconds,
         );
     }
+    // 차트 캔들 데이터 통째로 쓰기 — 병합·개수 제한 없이 (분봉처럼 100개를 넘는 것)
+    async replaceStockChart(
+        stockCode: string,
+        timeframe: string,
+        data: StockChartItem[],
+        ttlSeconds: number,
+    ): Promise<void> {
+        await this.redis.set(
+            chartKey(stockCode, timeframe),
+            JSON.stringify(data),
+            ttlSeconds,
+        );
+    }
+
     // 차트 캔들 데이터 읽기
     async readStockChart(
         stockCode: string,
