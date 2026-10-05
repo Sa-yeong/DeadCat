@@ -19,6 +19,9 @@ import { Block } from './components/Block';
 
 type BlockId = 'orderbook' | 'order' | 'volume' | 'rail';
 const BLOCK_IDS: BlockId[] = ['orderbook', 'order', 'volume', 'rail'];
+/** 이만큼(px) 안 움직이고 이 시간(ms) 안에 떼면 '누르기' — 넘으면 차트 끌기 */
+const TAP_SLOP_PX = 5;
+const TAP_MAX_MS = 500;
 
 /**
  * 개별 종목 화면 — 라우트 /stocks/:stockCode
@@ -209,28 +212,56 @@ export function StockDetailPage() {
   }, [occlusion, stage]);
 
   /**
-   * 캐릭터 누르기 — 차트 탭에서 창문 안을 눌렀을 때만. 창문 안은 차트가 덮고 있어
-   * 캔버스가 직접 못 받으므로 무대에서 가로챈다(막지는 않는다 — 차트도 그대로 받는다).
-   * 몸에 닿았는지는 런타임이 판단한다.
+   * 차트 창 안의 누르기 — 창문 안은 차트가 덮고 있어 캔버스가 직접 못 받으므로
+   * 무대에서 가로챈다(막지는 않는다 — 차트도 그대로 받는다).
+   *  · 짧게 눌렀다 떼면 캐릭터 누르기(몸에 닿았는지는 런타임이 판단)
+   *  · 누르고 있는 동안은 차트를 끄는 중 — 캐릭터가 돌아오기 시작하지 않는다
+   * 클릭 반응은 뗄 때 판단한다 — 차트를 끌려고 캐릭터 위를 누른 것까지 반응하지 않게(2026-10-05).
    */
   const lastTab = useRef(tab);
   lastTab.current = tab;
   useEffect(() => {
     const el = rootRef.current?.querySelector('main');
     if (!el) return;
-    const onDown = (e: PointerEvent) => {
-      if (lastTab.current !== 'CHART' || !stageLoop.current) return;
+    let press: { x: number; y: number; at: number; moved: boolean } | null = null;
+    const local = (e: PointerEvent) => {
       const r = el.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const onDown = (e: PointerEvent) => {
+      if (lastTab.current !== 'CHART' || !stageLoop.current || e.button !== 0) return;
+      const p = local(e);
       const w = layoutRef.current.win;
       // 탭 줄과 차트 도구 줄은 버튼 자리라 뺀다
-      if (x < w.left || x > w.right || y < w.top + layoutRef.current.tabHeight + TOOLBAR_H || y > w.bottom) return;
-      stageLoop.current.onTap(x, y);
+      if (p.x < w.left || p.x > w.right || p.y < w.top + layoutRef.current.tabHeight + TOOLBAR_H || p.y > w.bottom) return;
+      press = { ...p, at: performance.now(), moved: false };
+      stageLoop.current.setDragging(true);
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!press || press.moved) return;
+      const p = local(e);
+      if (Math.hypot(p.x - press.x, p.y - press.y) >= TAP_SLOP_PX) press.moved = true;
+    };
+    const onUp = () => {
+      if (!press) return;
+      const p = press;
+      press = null;
+      stageLoop.current?.setDragging(false);
+      if (!p.moved && performance.now() - p.at < TAP_MAX_MS) stageLoop.current?.onTap(p.x, p.y);
     };
     el.addEventListener('pointerdown', onDown, true);
-    return () => el.removeEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      el.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
   }, []);
+
+  const panStage = useCallback((dx: number) => stageLoop.current?.panBy(dx), []);
 
   const basic = tick?.basic ?? null;
 
@@ -277,6 +308,7 @@ export function StockDetailPage() {
           lastCandle={liveLast}
           communityKey={communityKey}
           onCompose={() => setComposing(true)}
+          onPan={panStage}
         />
 
         {tick ? (

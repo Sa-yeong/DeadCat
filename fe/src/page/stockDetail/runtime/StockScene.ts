@@ -39,6 +39,8 @@ interface FaceLayer {
   tracks: FaceTrack[];
   start: number;
   fadeOutAt: number | null;
+  /** 빠지는 데 걸리는 시간(초) — 다음 모션으로 넘어갈 때의 섞는 시간 */
+  fadeDur: number;
   once: boolean;
 }
 
@@ -80,6 +82,18 @@ export class StockScene {
   private readonly env = new StageEnvironment();
   private motionBase = '';
   private disposed = false;
+
+  /** 카메라 가로 이동(m) — 차트를 좌우로 밀면 창틀(카메라)이 같이 간다. 캐릭터는 제자리 */
+  private panX = 0;
+  /** 캐릭터 깊이에서 1m 가 화면 몇 px 인가 — applyFraming 이 갱신 */
+  private pxPerM = 1;
+  /** 캐릭터 위치(m, 가로)와 몸 방향(+ = 화면 오른쪽을 봄) */
+  private rootX = 0;
+  private rootYaw = 0;
+  private baseYaw = 0;
+
+  /** 매 프레임 그리기 직전 — 루프가 위치 이동(차트 슬라이드 연동)을 계산하는 자리 */
+  beforeFrame: ((dt: number) => void) | null = null;
 
   /** 한 번 모션이 끝났을 때 — 루프가 유지 감정으로 돌려보낸다 */
   onMotionEnd: ((name: MotionName) => void) | null = null;
@@ -133,6 +147,7 @@ export class StockScene {
     });
 
     this.vrm = vrm;
+    this.baseYaw = vrm.scene.rotation.y; // VRM0 은 이미 180° 돌아 있다
     this.measureBody(vrm);
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.mixer.addEventListener('finished', (e) => {
@@ -143,6 +158,7 @@ export class StockScene {
     await this.clip(first);
     if (this.disposed) return;
     this.scene.add(vrm.scene);
+    this.setRoot(this.rootX, this.rootYaw); // 불러오기 전에 정해 둔 위치가 있으면
     this.applyFraming();
   }
 
@@ -152,7 +168,8 @@ export class StockScene {
   }
 
   /**
-   * 모션 하나를 튼다. 이전 모션과 CROSSFADE_S 동안 섞이며 넘어간다(매칭표 규칙 3).
+   * 모션 하나를 튼다. 이전 모션과 섞이며 넘어간다(매칭표 규칙 3).
+   * 섞는 시간 = 이전 모션의 fadeOut → 새 모션의 fadeIn → CROSSFADE_S 순으로 먼저 있는 값.
    * 같은 반복 모션을 다시 요청하면 처음부터 다시 틀지 않는다.
    */
   async play(name: MotionName): Promise<void> {
@@ -169,11 +186,19 @@ export class StockScene {
     action.setLoop(def.loop ? THREE.LoopRepeat : THREE.LoopOnce, def.loop ? Infinity : 1);
     action.clampWhenFinished = !def.loop;
     action.play();
-    if (prev && prev !== action) prev.crossFadeTo(action, CROSSFADE_S, false);
+    action.timeScale = def.speed ?? 1;
+    const prevDef = this.currentName ? MOTIONS[this.currentName] : undefined;
+    const fade = prevDef?.fadeOut ?? def.fadeIn ?? CROSSFADE_S;
+    if (prev && prev !== action) prev.crossFadeTo(action, fade, false);
 
     const now = this.clock.elapsedTime;
-    for (const l of this.faces) if (l.fadeOutAt === null) l.fadeOutAt = now;
-    this.faces.push({ tracks: def.face, start: now, fadeOutAt: null, once: !def.loop });
+    for (const l of this.faces) {
+      if (l.fadeOutAt === null) {
+        l.fadeOutAt = now;
+        l.fadeDur = fade;
+      }
+    }
+    this.faces.push({ tracks: def.face, start: now, fadeOutAt: null, fadeDur: fade, once: !def.loop });
 
     this.current = action;
     this.currentName = name;
@@ -192,6 +217,33 @@ export class StockScene {
     this.framing = f;
     this.renderer.setSize(f.width, f.height, false);
     this.applyFraming();
+  }
+
+  /** 카메라 가로 이동(m) */
+  setPan(x: number) {
+    this.panX = x;
+    this.applyFraming();
+  }
+
+  /** 캐릭터 위치(m)와 몸 방향(라디안, + = 화면 오른쪽을 봄) */
+  setRoot(x: number, yaw: number) {
+    this.rootX = x;
+    this.rootYaw = yaw;
+    if (this.vrm) {
+      this.vrm.scene.position.x = x;
+      this.vrm.scene.rotation.y = this.baseYaw + yaw;
+    }
+    this.env.setFocus(x);
+  }
+
+  /** 캐릭터 깊이에서 1m 가 화면 몇 px 인가 */
+  get pixelsPerMeter(): number {
+    return this.pxPerM;
+  }
+
+  /** 캐릭터가 카메라 가운데에 있을 때의 화면 가로 위치와 무대 폭(px) */
+  get home(): { centerX: number; width: number } | null {
+    return this.framing ? { centerX: this.framing.centerX, width: this.framing.width } : null;
   }
 
   /** 화면 좌표(캔버스 기준 px)가 캐릭터 몸에 닿는가 */
@@ -274,7 +326,8 @@ export class StockScene {
     const spanM = this.body.headTop - this.body.hips;
     const d = (spanM * s) / Math.max(spanPx, 1);
     const camY = this.body.headTop - ((f.horizon - f.headTop) * d) / s;
-    const camX = -((f.centerX - f.vanishX) * d) / s;
+    const camX = -((f.centerX - f.vanishX) * d) / s + this.panX;
+    this.pxPerM = s / d;
     this.camera.position.set(camX, camY, d);
     this.camera.lookAt(camX, camY, 0);
 
@@ -293,6 +346,7 @@ export class StockScene {
   private frame() {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (!this.vrm || !this.mixer) return;
+    this.beforeFrame?.(dt);
     this.mixer.update(dt);
     this.applyFaces(dt);
     this.vrm.update(dt);
@@ -311,11 +365,11 @@ export class StockScene {
     const val = new Map<string, number>();
     let shot = 0;
 
-    this.faces = this.faces.filter((l) => l.fadeOutAt === null || now - l.fadeOutAt < CROSSFADE_S);
+    this.faces = this.faces.filter((l) => l.fadeOutAt === null || now - l.fadeOutAt < l.fadeDur);
     for (const l of this.faces) {
       const t = now - l.start;
       const rise = Math.min(1, t / FACE_RISE_S);
-      const fall = l.fadeOutAt === null ? 1 : Math.max(0, 1 - (now - l.fadeOutAt) / CROSSFADE_S);
+      const fall = l.fadeOutAt === null ? 1 : Math.max(0, 1 - (now - l.fadeOutAt) / Math.max(l.fadeDur, 1e-3));
       for (const tr of l.tracks) {
         const v = faceValue(tr, t) * rise * fall;
         val.set(tr.expr, Math.max(val.get(tr.expr) ?? 0, v));

@@ -7,7 +7,9 @@
 
 export type MotionName =
   | 'idle' | 'tired' | 'depression' | 'sleep' | 'anxious'
-  | 'surprise' | 'upset' | 'annoying' | 'relief' | 'madness';
+  | 'surprise' | 'upset' | 'annoying' | 'relief' | 'madness'
+  // 차트를 밀어 캐릭터가 밀려났다가 가운데로 돌아올 때 (2026-10-05 도휘 제작)
+  | 'walk' | 'run' | 'stoprun';
 
 export type EmotionName =
   | 'happy' | 'sad' | 'tired' | 'depression' | 'euphoria' | 'panic' | 'anxious' | 'sleepy';
@@ -35,12 +37,24 @@ export interface MotionDef {
   /** true = 반복, false = 한 번 재생 후 유지 감정으로 복귀 */
   loop: boolean;
   face: FaceTrack[];
+  /** 이 모션으로 **들어올 때** 앞 모션과 섞이는 시간(초). 없으면 CROSSFADE_S */
+  fadeIn?: number;
+  /** 이 모션이 **끝나고 다음 모션으로 넘어갈 때** 섞이는 시간(초). fadeIn 보다 먼저 본다 */
+  fadeOut?: number;
+  /** 재생 배속. 1 = 원래 속도, 0.5 = 절반 속도(두 배 길게). 없으면 1 */
+  speed?: number;
 }
 
 /** 매칭표의 프레임 → 초. 30fps, 1프레임 = 0초 */
 const f = (frame: number) => (frame - 1) / 30;
 
-export const MOTIONS: Record<Exclude<MotionName, 'madness'>, MotionDef> = {
+/**
+ * 파일이 있는 모션만 적는다. 이름만 있고 여기 없는 것(madness)은 틀라고 해도 조용히 넘어간다.
+ *
+ * walk · run — 제자리 걷기/달리기 반복. 몸을 가는 쪽으로 트는 것과 실제 이동은 코드(StageReturn)가 한다.
+ * stoprun — 달려와 멈춘 뒤 숨 고르기(한 번). 걷기는 멈춘 뒤 바로 유지 모션으로 섞여 넘어간다.
+ */
+export const MOTIONS: Partial<Record<MotionName, MotionDef>> = {
   idle: { file: 'idle.vrma', loop: true, face: [] }, // 표정은 유지 감정이 준다 — IDLE_FACE
   tired: { file: 'tired.vrma', loop: true, face: [{ expr: 'sad', value: 1 }, { expr: 'darkcircle', value: 1 }] },
   depression: { file: 'depression.vrma', loop: true, face: [{ expr: 'sad', value: 1 }, { expr: 'shade', value: 1 }] },
@@ -53,6 +67,10 @@ export const MOTIONS: Record<Exclude<MotionName, 'madness'>, MotionDef> = {
     face: [{ expr: 'angry', value: 1 }, { expr: 'blink', keys: [[f(31), 0], [f(35), 1]] }],
   },
   annoying: { file: 'annoying.vrma', loop: false, face: [{ expr: 'angry', value: 1 }] },
+  walk: { file: 'walk.vrma', loop: true, face: [] },
+  run: { file: 'run.vrma', loop: true, face: [] },
+  // 숨 고르기 — 달리기에서 들어오는 시간(fadeIn), 끝나고 유지 모션으로 돌아가는 시간(fadeOut), 배속(speed)
+  stoprun: { file: 'stoprun.vrma', loop: false, face: [], fadeIn: 0.4, fadeOut: 0.6, speed: 1 },
   relief: {
     file: 'relief.vrma',
     loop: false,
@@ -75,7 +93,7 @@ export const IDLE_FACE: Partial<Record<EmotionName, string>> = {
   panic: 'surprised',
 };
 
-/** 모션 전환 시 섞는 시간 — 매칭표 재생 규칙 3 */
+/** 모션 전환 시 섞는 시간 기본값 — 매칭표 재생 규칙 3. 모션별로 fadeIn·fadeOut 으로 바꿀 수 있다 */
 export const CROSSFADE_S = 0.6;
 /** 표정이 0에서 목표 세기까지 올라가는 시간 — 동작 테스트용 HTML 기본값 */
 export const FACE_RISE_S = 0.3;

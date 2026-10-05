@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Emotion, MotionName } from '../src/page/stockDetail/runtime/motionTable';
 import type { StockStageLoop } from '../src/page/stockDetail/runtime/StockStageLoop';
 
@@ -24,6 +24,15 @@ const loop = () => (window as unknown as { __dcStage?: StockStageLoop | null }).
 export function StageDevPanel() {
   const [hold, setHold] = useState('기본');
   const [open, setOpen] = useState(true);
+  // 차트 슬라이드 연동 확인용 — 지금 걷는 중/달리는 중
+  const [moving, setMoving] = useState<string>('—');
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const m = loop()?.returning ?? null;
+      setMoving(m === 'run' ? '달리기' : m === 'walk' ? '걷기' : '—');
+    }, 100);
+    return () => window.clearInterval(t);
+  }, []);
   const btn = (on: boolean): React.CSSProperties => ({
     height: 24, padding: '0 8px', margin: '0 4px 4px 0', borderRadius: 3, cursor: 'pointer', fontSize: 11,
     border: '1px solid rgba(255,255,255,0.22)', background: on ? '#F2564C' : '#26262B', color: '#EDEDEA',
@@ -61,6 +70,10 @@ export function StageDevPanel() {
                 </button>
               );
             })}
+          </div>
+          <div style={{ margin: '6px 0 0' }}>
+            돌아오기: <b style={{ color: moving === '—' ? '#8A8A82' : '#F2564C' }}>{moving}</b>
+            <span style={{ color: '#8A8A82' }}> (차트를 좌우로 끌었다 놓으면)</span>
           </div>
           <div style={{ marginTop: 6, color: '#8A8A82' }}>
             차트 탭에서 캐릭터를 누르면 클릭 반응 — anxious·sleepy 만 반응이 있다(백엔드 표와 같음). 1.5초 안에 3번 이상은 연타.

@@ -34,6 +34,7 @@ export class StageEnvironment {
   private readonly floorMat: THREE.ShaderMaterial;
   private readonly hazeMat: THREE.ShaderMaterial;
   private readonly haze: THREE.Mesh;
+  private readonly floor: THREE.Mesh;
 
   constructor() {
     // ── 바닥: 넓은 평면 하나. 격자는 셰이더가 그린다(선 굵기가 거리와 상관없이 1px 안팎) ──
@@ -49,6 +50,7 @@ export class StageEnvironment {
         uLine: { value: LINE_ALPHA },
         uMajorLine: { value: MAJOR_ALPHA },
         uHaze: { value: HAZE_COLOR },
+        uFocus: { value: new THREE.Vector2() },
         uHazeAlpha: { value: HAZE_ALPHA },
       },
       vertexShader: /* glsl */ `
@@ -63,6 +65,7 @@ export class StageEnvironment {
         uniform vec3 uCam;
         uniform float uFogNear, uFogFar, uCell, uMajor, uLine, uMajorLine, uHazeAlpha;
         uniform vec3 uHaze;
+        uniform vec2 uFocus;
         varying vec3 vWorld;
 
         // 한 방향 격자선 — 화면 픽셀 기준 굵기(fwidth). 칸이 화면에서 너무 작아지면(먼 곳) 옅게 해
@@ -89,7 +92,7 @@ export class StageEnvironment {
           a *= 1.0 - fog;
 
           // 캐릭터 발밑 둘레를 살짝 밝힌다 — 공간의 중심이 어디인지
-          float pool = 1.0 - smoothstep(0.0, 3.5, length(p));
+          float pool = 1.0 - smoothstep(0.0, 3.5, length(p - uFocus));
           a = min(a + pool * 0.05, 1.0);
 
           float h = pow(fog, 2.0) * uHazeAlpha;
@@ -100,6 +103,7 @@ export class StageEnvironment {
       `,
     });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), this.floorMat);
+    this.floor = floor;
     floor.rotation.x = -Math.PI / 2;
     floor.renderOrder = -2; // 캐릭터보다 먼저(뒤에) 그린다
     this.group.add(floor);
@@ -140,6 +144,9 @@ export class StageEnvironment {
    */
   update(camera: THREE.PerspectiveCamera) {
     const d = camera.position.z; // 카메라 ↔ 캐릭터 거리
+    // 바닥 판은 카메라를 따라 옮기되 굵은 선 간격 단위로만 — 격자 무늬가 미끄러지지 않고 끝도 안 보이게
+    const step = CELL * MAJOR_EVERY;
+    this.floor.position.x = Math.round(camera.position.x / step) * step;
     this.floorMat.uniforms.uCam.value.copy(camera.position);
     // 캐릭터 조금 뒤부터 옅어지기 시작해, 꽤 멀리서 다 사라진다
     this.floorMat.uniforms.uFogNear.value = d + 2;
@@ -152,6 +159,11 @@ export class StageEnvironment {
     this.haze.scale.set(span, 18, 1);
     this.haze.position.y = 9 - 0.01; // 판 아랫변이 바닥(y=0)에 닿게
     this.hazeMat.uniforms.uHeight.value = 18;
+  }
+
+  /** 발밑 빛 웅덩이 중심 — 캐릭터를 따라간다 */
+  setFocus(x: number) {
+    this.floorMat.uniforms.uFocus.value.set(x, 0);
   }
 
   dispose() {
