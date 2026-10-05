@@ -1,61 +1,113 @@
-.globalNav{
+/* 전역 상단 네비 — 아트보드(2026-10) 기준: 어두운 바 56px · DEADCAT 글자 로고 · 메뉴 5개 · 둥근 검색창 · 프로필 원 */
+.globalNav {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 32px;
     width: 100%;
-    background: #1A1A1A;
-    
-}
-.globalNav .global-nav-container{
-    color: lightgray;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 30px;
-    margin: 0px auto;
-    max-width: 1300px;
-}
-#logo{
-    font-weight: bold;
-    font-size: 19px;
-}
-.globalNav .global-nav-container .left-group{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 15px;
-
-}
-.globalNav .global-nav-container .right-group{
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 15px;
-}
-.globalNav .global-nav-container .right-group div {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
+    height: 56px;
+    padding: 0 28px;
+    background: #212126;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    font-family: 'Gothic A1', system-ui, sans-serif;
+    color: #ededea;
 }
 
-/* 버튼과 Link (a) 컴포넌트 디자인 초기화 */
-.globalNav .global-nav-container :is(.left-group,.right-group) button, 
-.globalNav .global-nav-container :is(.left-group,.right-group) a{
-    background: none;
+.globalNav .gnb-wordmark {
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    color: #ededea;
     text-decoration: none;
+}
+
+.globalNav .gnb-menu {
+    display: flex;
+    flex-grow: 1;
+    align-items: center;
+    gap: 26px;
+    height: 100%;
+}
+
+/* 메뉴 — 링크와 버튼을 같은 모양으로 */
+.globalNav .gnb-menu :is(a, button) {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    padding: 0;
     border: none;
-    color: lightgray;
-    font-family: inherit;
-    font-size: 18px;
+    background: none;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    color: #9a9a93;
+    text-decoration: none;
     cursor: pointer;
-    padding: 0 15px;
+}
+.globalNav .gnb-menu :is(a, button):hover {
+    color: #ededea;
 }
 
-/* 이미지 크기 조정 */
-.globalNav .global-nav-container :is(.left-group,.right-group) img{
-    height: 30px;
+/* 지금 보고 있는 메뉴 — 굵게 + 아래 빨간 줄 */
+.globalNav .gnb-menu .on {
+    font-weight: 700;
+    color: #ededea;
+}
+.globalNav .gnb-menu .on::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: #f2564c;
 }
 
-/* hovering시 데코레이션 */
-.globalNav .global-nav-container :is(.left-group,.right-group) button:hover, 
-.globalNav .global-nav-container :is(.left-group,.right-group) a:hover{
-    color: white;
+.globalNav .gnb-right {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+}
+
+/* 검색창 — 돋보기는 칸 안 왼쪽 */
+.globalNav .gnb-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.globalNav .gnb-search svg {
+    position: absolute;
+    left: 12px;
+    width: 16px;
+    height: 16px;
+    color: #9a9a93;
+    pointer-events: none;
+}
+.globalNav .gnb-search input {
+    box-sizing: border-box;
+    width: 236px;
+    height: 34px;
+    padding: 0 14px 0 34px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    background: #2a2a2e;
+    color: #ededea;
+    font: inherit;
+    font-size: 14px;
+}
+.globalNav .gnb-search input::placeholder {
+    color: #9a9a93;
+}
+
+/* 프로필 원 */
+.globalNav .gnb-avatar {
+    display: block;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #5b49d8;
+    cursor: pointer;
 }

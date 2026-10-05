@@ -1,43 +1,44 @@
 import './GlobalNavBar.css'
-import { Link, useNavigate } from "react-router-dom";
-import logo from '../assets/logo_white.png';
-import user1 from '../assets/user1.png';
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { SearchBar } from './SearchBar';
 import { LoginModal } from '../modal/LoginModal';
 import { useState } from 'react';
 
+/**
+ * 전역 상단 네비 — 아트보드(2026-10) 기준.
+ * 메뉴: 홈 · 전체종목 · 거실 탐색 · 마이페이지 / 오른쪽: 종목 검색 · 프로필 원
+ * 지금 보고 있는 메뉴는 굵게 + 아래 빨간 줄.
+ * {경로 미정} 홈(거실)·거실 탐색은 화면이 생기면 Link 로 바꾼다.
+ */
 export function GlobalNavBar(){
-    // logo 이미지   홈버튼   주식 리스트 버튼   커뮤니티 버튼 갤러리 버튼    검색 창  마이 페이지 버튼
     const navigate = useNavigate();
+    const { pathname } = useLocation();
     const [open, setOpen] = useState<boolean>(false);
 
+    // 마이페이지 — 로그인했으면 이동, 아니면 로그인 창
     const ClickMyPage = () => {
         const token = localStorage.getItem('token');
-
-        if(token){ // 로그인 상태인 경우
+        if(token){
             navigate('/mypage', {replace:true})
         }else{
             setOpen(true);
         }
     }
 
-    return <div className='globalNav'>
-        <div className='global-nav-container'>
-            <div className='left-group'>
-                <img src={logo} alt="로고 이미지" />
-                <span id='logo'>DEADCAT</span> 
-                <button>홈(거실)</button>
-                <Link to='/stocks'>전체 종목</Link>
-                <button>거실 탐색</button>
-            </div>
-            <div className='right-group'>
-                <SearchBar />
-                <div onClick={ClickMyPage}>
-                    <span>마이페이지</span>
-                    <img src={user1} alt='사용자 프로필 이미지' />
-                </div>
-            </div>
+    const on = (prefix: string) => (pathname.startsWith(prefix) ? 'on' : undefined);
+
+    return <header className='globalNav'>
+        <Link to='/' className='gnb-wordmark'>DEADCAT</Link>
+        <nav className='gnb-menu'>
+            <button type='button' className={on('/room')}>홈</button>
+            <Link to='/stocks' className={on('/stocks')}>전체종목</Link>
+            <button type='button'>거실 탐색</button>
+            <button type='button' className={on('/mypage')} onClick={ClickMyPage}>마이페이지</button>
+        </nav>
+        <div className='gnb-right'>
+            <div className='gnb-search'><SearchBar /></div>
+            <button type='button' className='gnb-avatar' aria-label='내 프로필' onClick={ClickMyPage} />
         </div>
         <LoginModal isOpen={open} onClose={()=>{setOpen(false)}} current_page='/mypage'/>
-    </div>;
+    </header>;
 }
