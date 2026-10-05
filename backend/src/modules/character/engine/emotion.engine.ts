@@ -37,7 +37,11 @@ export class EmotionEngine {
         }
 
         // 장기 보유
-        if (holdingPeriodDays !== null && holdingPeriodDays >= 90) {
+        if (
+            holdingPeriodDays !== null &&
+            holdingPeriodDays >= 90 &&
+            usr_tendency.loss >= 0.5
+        ) {
             marketEmotions.push(
                 this.createOutput(
                     'tired',
@@ -50,7 +54,7 @@ export class EmotionEngine {
         }
 
         // 수익 중
-        if (userProfitRate !== null && userProfitRate >= 10) {
+        if (userProfitRate !== null && userProfitRate > 0) {
             marketEmotions.push(
                 this.createOutput(
                     'happy',
@@ -63,7 +67,7 @@ export class EmotionEngine {
         }
 
         // 손실 중
-        if (userProfitRate !== null && userProfitRate <= -10) {
+        if (userProfitRate !== null && userProfitRate < 0) {
             marketEmotions.push(
                 this.createOutput(
                     'sad',
@@ -102,9 +106,13 @@ export class EmotionEngine {
         }
 
         // 큰 변동
-        if (Math.abs(fluctuationRate) >= 5) {
+        if (Math.abs(fluctuationRate) >= 16 * this.sensitivity) {
             const emotion: EmotionName =
                 fluctuationRate < 0 ? 'panic' : 'euphoria';
+
+            marketEmotions.push(
+                this.createOutput(emotion, 'surprise', 1.0, 2000, isHolding),
+            );
 
             marketEmotions.push(
                 this.createOutput(
@@ -200,7 +208,13 @@ export class EmotionEngine {
         switch (currentEmotion.emotion) {
             case 'anxious':
                 return [
-                    this.createOutput('anxious', 'relief', 1.0, 400, isHolding),
+                    this.createOutput(
+                        'anxious',
+                        'relief',
+                        1.0,
+                        2000,
+                        isHolding,
+                    ),
                 ];
 
             case 'sleepy':
@@ -261,7 +275,7 @@ export class EmotionEngine {
                         400,
                         isHolding,
                     ),
-                    this.createOutput('happy', 'idle', 1.0, 400, isHolding),
+                    this.createOutput('happy', 'idle', 1.0, 2000, isHolding),
                 ];
 
             case 'panic':
@@ -305,7 +319,7 @@ export class EmotionEngine {
                         400,
                         isHolding,
                     ),
-                    this.createOutput('sad', 'upset', 1.0, 400, isHolding),
+                    this.createOutput('sad', 'upset', 1.0, 2000, isHolding),
                 ];
 
             case 'panic':
@@ -314,7 +328,9 @@ export class EmotionEngine {
                 return [];
 
             default:
-                return [this.createOutput('sad', 'upset', 1.0, 400, isHolding)];
+                return [
+                    this.createOutput('sad', 'upset', 1.0, 2000, isHolding),
+                ];
         }
     }
 
@@ -335,7 +351,7 @@ export class EmotionEngine {
                         'anxious',
                         'annoying',
                         annoyingWeight,
-                        400,
+                        2000,
                         isHolding,
                     ),
                 ];
@@ -346,14 +362,14 @@ export class EmotionEngine {
                         'sleepy',
                         'surprise',
                         1.0,
-                        400,
+                        2000,
                         isHolding,
                     ),
                     this.createOutput(
                         'anxious',
                         'annoying',
                         annoyingWeight,
-                        400,
+                        2000,
                         isHolding,
                     ),
                 ];
@@ -373,7 +389,7 @@ export class EmotionEngine {
                         'anxious',
                         'annoying',
                         annoyingWeight,
-                        400,
+                        2000,
                         isHolding,
                     ),
                 ];

@@ -41,6 +41,7 @@ export class HoldingRepository {
         });
     }
 
+    //보유 종목
     async findEmotionHolding(userId: string, stockCode: string) {
         return this.prisma.holdings.findFirst({
             where: {
