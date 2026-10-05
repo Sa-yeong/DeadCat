@@ -4,7 +4,7 @@
  * 개별종목 화면은 네비를 그리지 않는다. 단일 HTML 미리보기에서만 시안 모양을 보이려고 쓴다.
  */
 export function GlobalBar() {
-  const items = ['홈', '전체종목', '거실 탐색', '이벤트', '마이페이지'];
+  const items = ['홈', '전체종목', '거실 탐색', '마이페이지'];
   return (
     <header
       className="dc-screen relative box-border flex items-center gap-8 px-7"
