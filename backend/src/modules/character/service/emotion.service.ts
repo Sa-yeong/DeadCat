@@ -7,6 +7,7 @@ import { MarketTimeService } from './market-time.service';
 import { EmotionEngine } from '../engine/emotion.engine';
 import { EmotionOutput } from '../types/emotion.types';
 import { PriceService } from 'src/price/price.service';
+import { StockHistoryRepository } from 'src/modules/stock-history/stock-history.repository';
 
 @Injectable()
 export class EmotionService {
@@ -16,6 +17,7 @@ export class EmotionService {
         private readonly stocksRepository: StocksRepository,
         private readonly tendencyService: TendencyService,
         private readonly marketTimeService: MarketTimeService,
+        private readonly stockHistoryRepository: StockHistoryRepository,
     ) {}
 
     async calculateEmotion(
@@ -26,7 +28,7 @@ export class EmotionService {
         isHolding: boolean;
         emotions: EmotionOutput[];
     }> {
-        // 1. 종목 정보 조회
+        // 1. 종목 조회
         const stock = await this.stocksRepository.findStockByCode(stockCode);
 
         if (!stock) {
@@ -34,20 +36,13 @@ export class EmotionService {
         }
 
         // 2. 보유 정보 조회
-        /*const holding = await this.holdingRepository.findEmotionHolding(
-            userId,
-            stockCode,
-        );
-
-        const isHolding = !!holding;*/
-
         const holding = userId
             ? await this.holdingRepository.findEmotionHolding(userId, stockCode)
             : null;
 
         const isHolding = !!holding;
 
-        // 3. 현재 가격 조회
+        // 3. 현재 주가 조회
         const prices = await this.priceService.readPrices([stockCode]);
 
         const currentStock = prices.get(stockCode);
@@ -58,7 +53,7 @@ export class EmotionService {
 
         const currentPrice = currentStock.current_price;
 
-        // 4. 보유 중인 경우 사용자 정보 계산
+        // 4. 사용자 보유 데이터
         let userProfitRate: number | null = null;
         let holdingPeriodDays: number | null = null;
 
@@ -71,29 +66,21 @@ export class EmotionService {
             holdingPeriodDays = this.calculateHoldingPeriod(holding.created_at);
         }
 
-        // 5. 차트 조회
-        const chart = await this.priceService.readStockChart(stockCode, '1d');
+        // 5. stock_history에서 최근 차트 조회
+        const chart = await this.stockHistoryRepository.findRecentChart(
+            stock.id,
+            20,
+        );
 
-        // 6. Tendency 계산
+        // 6. 종목 경향성 + 사용자 수익률 계산
         const tendency = this.tendencyService.calculate(chart, userProfitRate);
 
-        // 7. 시장 운영 여부
+        // 7. 국내/해외 시장 구분
         const market = stock.stock_type === 'FOREIGN' ? 'FOREIGN' : 'DOMESTIC';
 
         const isOperatingTime = this.marketTimeService.isOperatingTime(market);
 
-        console.log('[EmotionService]');
-        console.log('stockCode:', stockCode);
-        console.log('stockType:', stock.stock_type);
-        console.log('market:', market);
-        console.log('isOperatingTime:', isOperatingTime);
-        console.log('currentPrice:', currentPrice);
-        console.log('fluctuationRate:', currentStock.change_rate);
-        console.log('userProfitRate:', userProfitRate);
-        console.log('holdingPeriodDays:', holdingPeriodDays);
-        console.log('tendency:', tendency);
-
-        // 8. 감정 계산
+        // 8. 감정 엔진
         const engine = new EmotionEngine(1.0);
 
         const emotions = engine.updateMarketEmotion({
@@ -105,16 +92,6 @@ export class EmotionService {
             fluctuationRate: currentStock.change_rate,
             sensitivity: 1.0,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            interaction,
-        });
-
-        console.log('[EmotionEngine input]', {
-            isOperatingTime,
-            stc_tendency: tendency.stc_tendency,
-            usr_tendency: tendency.usr_tendency,
-            userProfitRate,
-            holdingPeriodDays,
-            fluctuationRate: currentStock.change_rate,
             interaction,
         });
 

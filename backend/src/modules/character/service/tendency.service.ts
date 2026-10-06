@@ -65,7 +65,7 @@ export class TendencyService {
     }
 
     /**
-     * 최근 등락률의 표준편차를 0~1로 정규화
+     * 최근 등락률의 표준편차 (들쭉날쭉하는 정도)를 0~1로 정규화
      */
     private calculateVolatility(rates: number[]): number {
         if (rates.length < 2) {
@@ -86,6 +86,13 @@ export class TendencyService {
 
     /**
      * 최근 상승/하락 모멘텀
+     * 
+     * momentum	의미
+-1	강한 하락 흐름
+-0.5	하락 흐름
+0	중립
++0.5	상승 흐름
++1	강한 상승 흐름
      */
     private calculateMomentum(rates: number[]): number {
         if (rates.length === 0) {

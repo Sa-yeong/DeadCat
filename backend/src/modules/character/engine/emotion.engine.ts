@@ -26,6 +26,11 @@ export class EmotionEngine {
         // 장외 시간
         if (!isOperatingTime) {
             marketEmotions.push(
+                this.createOutput('sleepy', 'sleep', 0.4, null, isHolding),
+            );
+        }
+        /*if (!isOperatingTime) {
+            marketEmotions.push(
                 this.createOutput('sleepy', 'sleep', 0.3, null, isHolding),
             );
 
@@ -34,7 +39,7 @@ export class EmotionEngine {
                 interaction,
                 isHolding,
             );
-        }
+        }*/
 
         // 장기 보유
         if (
@@ -105,8 +110,11 @@ export class EmotionEngine {
             );
         }
 
+        // sensitivity가 높을수록 더 작은 변동에도 반응하도록 한다.
+        const threshold = 16 / this.sensitivity;
+
         // 큰 변동
-        if (Math.abs(fluctuationRate) >= 16 * this.sensitivity) {
+        if (Math.abs(fluctuationRate) >= threshold) {
             const emotion: EmotionName =
                 fluctuationRate < 0 ? 'panic' : 'euphoria';
 
