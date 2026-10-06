@@ -150,14 +150,14 @@ export class PostController {
      *
      * POST /posts/create
      */
-    //@UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard)
     @Post('posts/create')
     async createPost(
         @Body() body: CreatePostRequestDto,
         @Request() req: AuthenticatedRequest,
     ): Promise<CreatePostResponseDto> {
-        // const userId = String(req.user.id);
-        const userId = '2';
+        const userId = String(req.user.id);
+        //const userId = '2';
 
         return await this.postService.createPost(userId, body);
     }

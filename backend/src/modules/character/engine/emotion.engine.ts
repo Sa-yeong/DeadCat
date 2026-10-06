@@ -115,13 +115,7 @@ export class EmotionEngine {
             );
 
             marketEmotions.push(
-                this.createOutput(
-                    emotion,
-                    'idle',
-                    this.applySensitivity(0.9),
-                    null,
-                    isHolding,
-                ),
+                this.createOutput(emotion, 'idle', 0.9, null, isHolding),
             );
         }
 
@@ -165,7 +159,7 @@ export class EmotionEngine {
             isHolding,
         );
 
-        return this.sortByPriority([...currentEmotions, ...reaction]);
+        return [...reaction, currentEmotion];
     }
 
     /**
@@ -223,7 +217,7 @@ export class EmotionEngine {
                         'sleepy',
                         'surprise',
                         1.0,
-                        400,
+                        2000,
                         isHolding,
                     ),
                 ];
@@ -252,7 +246,7 @@ export class EmotionEngine {
         switch (currentEmotion.emotion) {
             case 'depression':
                 return [
-                    this.createOutput('happy', 'idle', 1.0, 400, isHolding),
+                    this.createOutput('happy', 'idle', 1.0, 2000, isHolding),
                 ];
 
             case 'anxious':
@@ -285,7 +279,7 @@ export class EmotionEngine {
 
             default:
                 return [
-                    this.createOutput('happy', 'idle', 1.0, 400, isHolding),
+                    this.createOutput('happy', 'idle', 1.0, 2000, isHolding),
                 ];
         }
     }

@@ -21,14 +21,15 @@ interface AuthenticatedRequest extends Request {
 export class EmotionController {
     constructor(private readonly emotionService: EmotionService) {}
 
-    @UseGuards(JwtAuthGuard)
+    //  @UseGuards(JwtAuthGuard)
     @Post(':stockCode/emotion')
     async getEmotion(
         @Request() req: AuthenticatedRequest,
         @Param('stockCode') stockCode: string,
         @Body() body: any,
     ) {
-        const userId = String(req.user.id || req.user.sub);
+        // const userId = String(req.user.id || req.user.sub);
+        const userId = '2';
 
         const result = await this.emotionService.calculateEmotion(
             userId,
@@ -46,20 +47,4 @@ export class EmotionController {
             },
         };
     }
-
-    /*   const result = await this.emotionService.calculateEmotion(
-            null,
-            stockCode,
-            body?.interaction,
-        );
-
-        return {
-            success: true,
-            data: {
-                stock_code: stockCode,
-                is_holding: result.isHolding,
-                emotions: result.emotions,
-            },
-        };
-    }*/
 }

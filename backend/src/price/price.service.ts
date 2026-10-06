@@ -146,50 +146,6 @@ export class PriceService {
         );
     }
 
-    /*async writeSinglePrice(
-        code: string,
-        priceData: Partial<StockPrice>,
-        ttlSeconds = 60, // 웹소켓이 끊겨도 60초간 유지
-    ): Promise<void> {
-        const key = priceKey(code);
-        const existingRaw = await this.redis.get(key);
-
-        let updated: CachedPrice;
-
-        if (existingRaw) {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const existing = JSON.parse(existingRaw) as CachedPrice;
-
-            const tradingValue =
-                priceData.trading_value ??
-                existing.trading_value ??
-                existing.trading_value_krw ??
-                0;
-
-            updated = {
-                ...existing,
-                ...priceData,
-                current_price:
-                    priceData.current_price ?? existing.current_price ?? 0,
-                trading_value_krw: tradingValue,
-            };
-        } else {
-            const currentPrice = priceData.current_price ?? 0;
-            const tradingValue = priceData.trading_value ?? 0;
-
-            updated = {
-                current_price: currentPrice,
-                change_rate: priceData.change_rate ?? 0,
-                trading_value: tradingValue,
-                trading_value_krw: tradingValue,
-                accumulated_volume: priceData.accumulated_volume ?? 0,
-            };
-        }
-
-        // Redis 체결가 갱신
-        await this.redis.set(key, JSON.stringify(updated), ttlSeconds);
-    }*/
-
     // 거래대금 내림차순 종목코드 상위 N
     async readRankedCodes(topN: number): Promise<string[]> {
         return this.redis.zrevrange(RANKING_KEY, 0, topN - 1);
