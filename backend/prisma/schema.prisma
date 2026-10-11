@@ -74,6 +74,7 @@ model comments {
   user_id    BigInt
   content    String   @db.VarChar(150)
   write_time DateTime @default(now()) @db.Timestamp(6)
+  type       String   @default("COMMUNITY") @db.VarChar(20)
   posts      posts    @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users      users    @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }
@@ -127,8 +128,8 @@ model holdings {
   mean_price_foreign Decimal?  @db.Decimal(15, 2)
   created_at         DateTime? @db.Timestamp(6)
   is_placed          Boolean?
-  x_position         Float?
-  y_position         Float?
+  x_position         Float?    
+  y_position         Float?   
   stocks             stocks    @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
   users              users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -230,6 +231,7 @@ model posts {
   target_user_id                    BigInt?
   comments                          comments[]
   like_posts                        like_posts[]
+  is_secret                         Boolean      @default(false)
   stocks                            stocks?      @relation(fields: [stock_id], references: [id], onDelete: Cascade)
   users_posts_target_user_idTousers users?       @relation("posts_target_user_idTousers", fields: [target_user_id], references: [id], onDelete: Cascade)
   users_posts_writer_idTousers      users?       @relation("posts_writer_idTousers", fields: [writer_id], references: [id], onUpdate: NoAction, map: "posts_user_id_fkey")
@@ -240,6 +242,7 @@ model posts {
 model reactions {
   id             BigInt           @id @default(autoincrement())
   img            String           @db.VarChar(200)
+  type           String           @unique @db.VarChar(50)
   char_reactions char_reactions[]
   room_reactions room_reactions[]
 }
@@ -265,7 +268,7 @@ model stock_history {
   close_price BigInt
   low_price   BigInt
   high_price  BigInt
-  volume      BigInt?  @default(0) 
+  volume      BigInt?  @default(0)
   stocks      stocks   @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([stock_id, record_date])
@@ -331,35 +334,37 @@ model transaction_history {
 }
 
 model users {
-  id                                                     BigInt                @id @default(autoincrement())
-  login_id                                               String                @unique @db.VarChar(100)
-  login_pw                                               String                @db.VarChar(255)
-  nickname                                               String                @unique @db.VarChar(15)
-  balance                                                BigInt                @default(100000000)
-  profile_img_url                                        String?
-  share_option                                           Boolean               @default(true)
-  affinity                                               affinity[]
-  alarms                                                 alarms[]
-  char_reactions_char_reactions_reactor_idTousers        char_reactions[]      @relation("char_reactions_reactor_idTousers")
-  char_reactions_char_reactions_receiver_idTousers       char_reactions[]      @relation("char_reactions_receiver_idTousers")
-  comments                                               comments[]
-  follow_follow_followee_idTousers                       follow[]              @relation("follow_followee_idTousers")
-  follow_follow_follower_idTousers                       follow[]              @relation("follow_follower_idTousers")
-  have_tags                                              have_tags[]
-  holdings                                               holdings[]
-  interest                                               interest[]
-  inventory                                              inventory[]
-  like_posts                                             like_posts[]
-  orders                                                 orders[]
-  placed                                                 placed[]
-  posts_posts_target_user_idTousers                      posts[]               @relation("posts_target_user_idTousers")
-  posts_posts_writer_idTousers                           posts[]               @relation("posts_writer_idTousers")
-  room_reactions_room_reactions_reactor_idTousers        room_reactions[]      @relation("room_reactions_reactor_idTousers")
-  room_reactions_room_reactions_receiver_idTousers       room_reactions[]      @relation("room_reactions_receiver_idTousers")
-  storage                                                storage[]
-  transaction_history                                    transaction_history[]
-  voting                                                 voting[]
-  wardrobe                                               wardrobe[]
+  id                                               BigInt                @id @default(autoincrement())
+  login_id                                         String                @unique @db.VarChar(100)
+  login_pw                                         String                @db.VarChar(255)
+  nickname                                         String                @unique @db.VarChar(15)
+  balance                                          BigInt                @default(100000000)
+  profile_img_url                                  String?
+  share_option                                     Boolean               @default(true)
+  affinity                                         affinity[]
+  alarms                                           alarms[]
+  char_reactions_char_reactions_reactor_idTousers  char_reactions[]      @relation("char_reactions_reactor_idTousers")
+  char_reactions_char_reactions_receiver_idTousers char_reactions[]      @relation("char_reactions_receiver_idTousers")
+  comments                                         comments[]
+  follow_follow_followee_idTousers                 follow[]              @relation("follow_followee_idTousers")
+  follow_follow_follower_idTousers                 follow[]              @relation("follow_follower_idTousers")
+  have_tags                                        have_tags[]
+  holdings                                         holdings[]
+  interest                                         interest[]
+  inventory                                        inventory[]
+  like_posts                                       like_posts[]
+  orders                                           orders[]
+  placed                                           placed[]
+  attendance_count                                 Int       @default(0)          // 누적 출석 일수
+  last_attendance_date DateTime?                   @db.Date             // 마지막 출석 일자
+  posts_posts_target_user_idTousers                posts[]               @relation("posts_target_user_idTousers")
+  posts_posts_writer_idTousers                     posts[]               @relation("posts_writer_idTousers")
+  room_reactions_room_reactions_reactor_idTousers  room_reactions[]      @relation("room_reactions_reactor_idTousers")
+  room_reactions_room_reactions_receiver_idTousers room_reactions[]      @relation("room_reactions_receiver_idTousers")
+  storage                                          storage[]
+  transaction_history                              transaction_history[]
+  voting                                           voting[]
+  wardrobe                                         wardrobe[]
 }
 
 model vote {

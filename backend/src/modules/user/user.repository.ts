@@ -52,4 +52,41 @@ export class UserRepository {
             return null;
         }
     }
+
+    //팔로잉 팔로워 조회
+    async findRelations(userId: string, type: 'FOLLOWER' | 'FOLLOWING') {
+        const userBigInt = BigInt(userId);
+
+        if (type === 'FOLLOWER') {
+            // 나를 팔로우하는 유저들 (follower_id)
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return await this.prisma.follow.findMany({
+                where: { followee_id: userBigInt },
+                select: {
+                    users_follow_follower_idTousers: {
+                        select: {
+                            id: true,
+                            nickname: true,
+                            profile_img_url: true,
+                        },
+                    },
+                },
+            });
+        } else {
+            // 내가 팔로우하는 유저들 (followee_id)
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return await this.prisma.follow.findMany({
+                where: { follower_id: userBigInt },
+                select: {
+                    users_follow_followee_idTousers: {
+                        select: {
+                            id: true,
+                            nickname: true,
+                            profile_img_url: true,
+                        },
+                    },
+                },
+            });
+        }
+    }
 }

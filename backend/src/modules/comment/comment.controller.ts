@@ -16,7 +16,7 @@ export class CommentController {
     async getMyComments(
         @Request() req: AuthenticatedRequest,
     ): Promise<MyCommentItemDto[]> {
-        const userId = String(req.user!.id);
+        const userId = String(req.user.id);
 
         return await this.commentService.getMyComments(userId);
     }

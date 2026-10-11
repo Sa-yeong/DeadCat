@@ -5,6 +5,7 @@ import {
     ShareOptionResponseDto,
     UpdateShareOptionDto,
 } from './dto/update-share-option.dto';
+import { UserRelationResponseDto } from './dto/user-relation-response.dto';
 
 @Injectable()
 export class UserService {
@@ -47,5 +48,31 @@ export class UserService {
             share_option: updatedUser.share_option,
             message,
         };
+    }
+
+    async getUserRelations(
+        userId: string,
+        type: 'FOLLOWER' | 'FOLLOWING',
+    ): Promise<UserRelationResponseDto[]> {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const relations = await this.userRepository.findRelations(userId, type);
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+        return relations.map((rel) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const targetUser =
+                type === 'FOLLOWER'
+                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      rel.users_follows_follower_idTousers
+                    : rel.users_follows_followee_idTousers;
+
+            return {
+                target_user_id: Number(targetUser.id),
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                nickname: targetUser.nickname,
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                profile_img_url: targetUser.profile_img_url ?? null,
+            };
+        });
     }
 }
