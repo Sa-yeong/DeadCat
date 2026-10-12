@@ -11,6 +11,7 @@ export class ItemsController {
     @Get('items')
     async getUserItems(@Request() req: any) {
         const userId = String(req.user.id || req.user.sub);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return await this.itemsService.getUserItems(userId);
     }
 

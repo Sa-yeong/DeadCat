@@ -28,11 +28,12 @@ import { LikePostModule } from './modules/like-post/like-post.module';
 import { RelationModule } from './modules/relation/relation.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { CompanyInfoModule } from './modules/company-info/company-info.module';
-import { CharacterModule } from './modules/character/emotion.module';
+import { EmotionModule } from './modules/character-engine/emotion.module';
 import { ItemsModule } from './modules/items/items.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { WardrobesModule } from './wardrobes/wardrobes.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { CharactersModule } from './modules/characters/characters.module';
 
 // 루트 모듈: 인프라(@Global) + 공통 전역(응답 래퍼, 예외 필터, JWT) + 도메인 모듈.
 @Module({
@@ -69,11 +70,12 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
         RelationModule,
         CompanyInfoModule,
 
-        CharacterModule,
+        EmotionModule,
         ItemsModule,
         RoomsModule,
         WardrobesModule,
         AttendanceModule,
+        CharactersModule,
     ],
     providers: [
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },

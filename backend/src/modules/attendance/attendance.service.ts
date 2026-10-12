@@ -24,6 +24,7 @@ export class AttendanceService {
         // 이미 오늘 출석했는지 확인
         if (
             user.last_attendance_date &&
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
             user.last_attendance_date.getTime() === today.getTime()
         ) {
             throw new BadRequestException(
@@ -41,6 +42,7 @@ export class AttendanceService {
         }
 
         const rewardQuantity = 1; // 1개 지급
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const newCount = user.attendance_count + 1;
 
         // 트랜잭션 실행 (출석 일수 증가 + 인벤토리 지급)
@@ -53,6 +55,7 @@ export class AttendanceService {
         );
 
         return {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             attendance_day_count: newCount,
             reward_item: {
                 item_id: Number(rewardItem.id),

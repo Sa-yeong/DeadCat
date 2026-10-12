@@ -19,4 +19,4 @@ import { StockHistoryModule } from '../stock-history/stock-history.module';
 
     exports: [EmotionService],
 })
-export class CharacterModule {}
+export class EmotionModule {}
