@@ -51,4 +51,47 @@ export class CharactersRepository {
             }
         });
     }
+
+    // 유저가 해당 주식(캐릭터)을 보유하고 있는지 확인
+    async findHolding(userId: bigint, stockId: bigint) {
+        return await this.prisma.holdings.findUnique({
+            where: {
+                user_id_stock_id: {
+                    user_id: userId,
+                    stock_id: stockId,
+                },
+            },
+        });
+    }
+
+    // 유저가 옷장(wardrobe)에 해당 의상을 보유하고 있는지 확인
+    async findWardrobe(userId: bigint, clothesId: bigint) {
+        return await this.prisma.wardrobe.findUnique({
+            where: {
+                user_id_clothes_id: {
+                    user_id: userId,
+                    clothes_id: clothesId,
+                },
+            },
+        });
+    }
+
+    // holdings 테이블의 장착 의상 정보 업데이트
+    async updateEquippedCostume(
+        userId: bigint,
+        stockId: bigint,
+        clothesId: bigint,
+    ) {
+        return await this.prisma.holdings.update({
+            where: {
+                user_id_stock_id: {
+                    user_id: userId,
+                    stock_id: stockId,
+                },
+            },
+            data: {
+                equipped_clothes_id: clothesId,
+            },
+        });
+    }
 }
