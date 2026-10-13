@@ -1,17 +1,22 @@
+// dto/user-profile.response.dto.ts
 export class UserProfileResponseDto {
     nickname: string;
-    representative_character_code: string | null;
-    representative_character_img: string | null;
+    profile_img_url: string | null;
+    follower_num: number;
+    followee_num: number;
+    share_option: boolean;
 
     constructor(partial: {
         nickname: string;
-        representative_character_code: string | null;
-        representative_character_img: string | null;
+        profile_img_url: string | null;
+        follower_num: number;
+        followee_num: number;
+        share_option: boolean;
     }) {
         this.nickname = partial.nickname;
-        this.representative_character_code =
-            partial.representative_character_code;
-        this.representative_character_img =
-            partial.representative_character_img;
+        this.profile_img_url = partial.profile_img_url;
+        this.follower_num = partial.follower_num;
+        this.followee_num = partial.followee_num;
+        this.share_option = partial.share_option;
     }
 }

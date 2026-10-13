@@ -14,6 +14,7 @@ export class HoldingRepository {
             select: {
                 quantity: true,
                 mean_price_krw: true,
+                created_at: true,
                 stocks: {
                     select: {
                         code: true,
@@ -34,6 +35,31 @@ export class HoldingRepository {
                                 close_price: true,
                             },
                         },
+                    },
+                },
+            },
+        });
+    }
+
+    //보유 종목
+    async findEmotionHolding(userId: string, stockCode: string) {
+        return this.prisma.holdings.findFirst({
+            where: {
+                user_id: BigInt(userId),
+                stocks: {
+                    code: stockCode,
+                },
+            },
+
+            select: {
+                quantity: true,
+                mean_price_krw: true,
+                created_at: true,
+
+                stocks: {
+                    select: {
+                        code: true,
+                        stock_type: true,
                     },
                 },
             },

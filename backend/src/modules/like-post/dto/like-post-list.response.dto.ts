@@ -1,24 +1,27 @@
 export class LikedPostItemDto {
-    post_id: string; // BigInt 대응을 위한 String 처리
-    title: string; // 게시글 제목
+    post_id: string; // BigInt 대응 String
+    content: string; // 게시글 내용
     author_nickname: string; // 작성자 닉네임
     comment_count: number; // 댓글수
     like_count: number; // 좋아요수
     created_at: string; // 작성날짜 (YYYY-MM-DD)
+    source_type?: string; // 출처 구분 (COMMUNITY / GUESTBOOK)
 
     constructor(partial: {
         post_id: string;
-        title: string;
+        content: string;
         author_nickname: string;
         comment_count: number;
         like_count: number;
         created_at: string;
+        source_type?: string;
     }) {
         this.post_id = partial.post_id;
-        this.title = partial.title;
+        this.content = partial.content;
         this.author_nickname = partial.author_nickname;
         this.comment_count = partial.comment_count;
         this.like_count = partial.like_count;
         this.created_at = partial.created_at;
+        this.source_type = partial.source_type;
     }
 }

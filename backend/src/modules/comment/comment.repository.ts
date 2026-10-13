@@ -10,24 +10,6 @@ export class CommentRepository {
             where: {
                 user_id: BigInt(userId),
             },
-            include: {
-                posts: {
-                    include: {
-                        users: {
-                            select: {
-                                nickname: true,
-                            },
-                        },
-
-                        _count: {
-                            select: {
-                                comments: true, // model posts의 comments comments[]
-                                like_posts: true, // model posts의 like_posts like_posts[]
-                            },
-                        },
-                    },
-                },
-            },
             orderBy: {
                 write_time: 'desc',
             },

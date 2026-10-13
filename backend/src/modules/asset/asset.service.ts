@@ -11,7 +11,11 @@ export class AssetService {
     ) {}
 
     async getMyAssetInfo(userId: string): Promise<AssetInfoResponseDto> {
-        const userData = await this.assetRepository.findUserAssetData(userId);
+        // 유저 자산 정보 및 판매수익 합계 동시 조회
+        const [userData, sellingProfitBigInt] = await Promise.all([
+            this.assetRepository.findUserAssetData(userId),
+            this.assetRepository.getSellingProfitSum(userId),
+        ]);
 
         if (!userData) {
             throw new NotFoundException(
@@ -21,48 +25,41 @@ export class AssetService {
 
         const holdings = userData.holdings || [];
 
-        // 1. 보유한 주식 코드들을 모아서 캐시(Redis)에서 현재가 불러오기
+        // 1. 보유 주식 코드 추출 및 현재 시세 조회
         const codes: string[] = holdings.flatMap((h) =>
             h.stocks?.code ? [h.stocks.code] : [],
         );
-
         const cachedPrices = await this.priceService.readPrices(codes);
 
-        // 2. 총 투자금액 (매입금액) 계산: 합산 (수량 * 평단가)
+        // 2. 총 투자금액 (매입금액) 계산
         const totalInvestmentBigInt = holdings.reduce((sum, holding) => {
-            const holdingAmount =
-                BigInt(holding.quantity) * holding.mean_price_krw;
-            return sum + holdingAmount;
+            return sum + BigInt(holding.quantity) * holding.mean_price_krw;
         }, BigInt(0));
 
-        // 3. 총 평가금액 계산: 합산 (수량 * 캐시 현재가)
+        // 3. 총 평가금액 계산
         const totalEvaluationBigInt = holdings.reduce((sum, holding) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const stockCode = holding.stocks?.code ?? '';
             const cachedStock = cachedPrices.get(stockCode);
 
-            let currentPrice = holding.mean_price_krw; // 기본 방어선은 평단가
+            let currentPrice = holding.mean_price_krw;
 
             if (cachedStock && cachedStock.current_price) {
-                //  캐시에 싱싱한 주가가 있다면 그걸 사용
                 currentPrice = BigInt(cachedStock.current_price);
             } else {
-                // 캐시에 없으면 DB 이력으로 2차 방어
                 const latestHistory = holding.stocks?.stock_history?.[0];
                 if (latestHistory?.close_price) {
                     currentPrice = BigInt(latestHistory.close_price);
                 }
             }
 
-            const evaluationAmount = BigInt(holding.quantity) * currentPrice;
-            return sum + evaluationAmount;
+            return sum + BigInt(holding.quantity) * currentPrice;
         }, BigInt(0));
 
-        // 4. 총 평가손익 계산: 총 평가금액 - 총 투자금액
+        // 4. 총 평가손익
         const totalValuationProfitBigInt =
             totalEvaluationBigInt - totalInvestmentBigInt;
 
-        // 5. 총 수익률 계산: (총 평가손익 / 총 투자금액) * 100
+        // 5. 총 수익률
         let valuationReturnRate = 0;
         if (totalInvestmentBigInt > BigInt(0)) {
             const rateBonus =
@@ -74,10 +71,9 @@ export class AssetService {
         return new AssetInfoResponseDto({
             available_cash: String(userData.balance ?? 0),
             total_investment: String(totalInvestmentBigInt),
-            total_evaluation_amount: String(totalEvaluationBigInt),
             total_valuation_profit: String(totalValuationProfitBigInt),
             valuation_return_rate: valuationReturnRate,
-            realized_profit: '0',
+            selling_profit: String(sellingProfitBigInt),
         });
     }
 }
