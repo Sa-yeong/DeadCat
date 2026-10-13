@@ -1,4 +1,4 @@
-import type { InteractionMode, PlacementDto, Quote, RoomSnapshot } from '../types';
+import type { InteractionMode, PlacementDto, Quote, RoomCharacterDto, RoomSnapshot } from '../types';
 import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
 import type { CharacterEngine } from './CharacterEngine';
 import { createHandle, type CharacterHandle } from './CharacterHandle';
@@ -30,17 +30,30 @@ export interface RoomLoopEvents {
 }
 
 const SPEED = 0.9; //   칸/초
+/**
+ * 멈춰 서기 {잠정 값 — 보면서 맞출 것}. 멈춰 있는 동안 렌더러가 idle 동작을 튼다(2026-10-12)
+ *   목적지에 닿으면 REST_MIN~+REST_SPAN 초 쉬고, 걷는 도중에도 WALK_MIN~+WALK_SPAN 초마다 PAUSE_MIN~+PAUSE_SPAN 초 멈췄다 이어 걷는다
+ */
+const REST_MIN = 2.5;
+const REST_SPAN = 5;
+const WALK_MIN = 4;
+const WALK_SPAN = 6;
+const PAUSE_MIN = 1.5;
+const PAUSE_SPAN = 2.5;
+const between = (min: number, span: number) => min + Math.random() * span;
 const PLAN_TRIES = 8; // 목적지를 다시 고르는 횟수 — 막힌 곳만 고르면 잠깐 쉬었다 다시
 const MARGIN = 0.3; //  들어 옮길 때 벽에서 띄우는 거리
 const CHAR_REACH = 0.9; // 칸 — 들고 있는 캐릭터가 이만큼 가까우면 그 캐릭터가 상대
 const FURN_REACH = 0.35; // 칸 — 상호작용 가구 바닥 자리에서 이만큼 안이면 그 가구가 상대
+const SPAWN_GAP = 2; //    칸 — 새로 세울 때 다른 캐릭터와 이만큼은 떨어지게 (안 되면 그냥 세운다)
+const SPAWN_TRIES = 12;
 
 const targetKey = (t: DropTarget | null) => (!t ? '' : t.kind === 'furniture' ? `f${t.placementId}` : `c${t.charId}`);
 
 /**
  * 거실의 **무엇을 할지**를 정한다. 그리는 건 RoomRenderer, 판정은 엔진·자기장·중재자.
- * 시점 mode(주인/방문자)는 모른다. 상호작용 모드(NORMAL/ITEM/PLACEMENT)는 안다 —
- * 같은 클릭이 모드에 따라 스탯 링 / 증여 / (배치 모드에선 무시) 로 갈리기 때문이다.
+ * 시점 mode(주인/방문자)는 모른다. 상호작용 모드(NORMAL/PLACEMENT)는 안다 —
+ * 같은 클릭이 모드에 따라 스탯 링 / (배치 모드에선 무시) 로 갈리기 때문이다.
  */
 export class RoomLoop {
   private readonly renderer: RoomRenderer;
@@ -59,6 +72,8 @@ export class RoomLoop {
   /** 들고 있는 캐릭터를 지금 놓으면 만나는 상대 — 하이라이트 중 */
   private dropTarget: DropTarget | null = null;
   private mode: InteractionMode = 'NORMAL';
+  /** 배치 편집에 들어갈 때의 배치 — 나올 때 이것과 다르면(저장했으면) 캐릭터를 다시 세운다 */
+  private editFrom: PlacementDto[] | null = null;
   private raf = 0;
   private last = 0;
   private fieldTimer = 0;
@@ -85,7 +100,7 @@ export class RoomLoop {
       chargeStart: (id, ms) => this.setCharging(id, true, ms),
       chargeEnd: (id) => this.setCharging(id, false),
       liftStart: (id) => this.onDragStart(id),
-      liftMove: (id, x, y) => this.onDragMove(id, this.renderer.toFloor(x, y), { x, y }),
+      liftMove: (id, x, y) => this.onDragMove(id, this.renderer.grabFloor(x, y), { x, y }), // 커서 끝 = 캐릭터 골반
       liftEnd: (id) => this.onDragEnd(id),
     });
   }
@@ -96,14 +111,41 @@ export class RoomLoop {
    */
   load(snapshot: RoomSnapshot): void {
     this.setPlacements(snapshot.placements);
-    for (const c of snapshot.characters) {
+    this.spawnAll(snapshot.characters);
+  }
+
+  /** 아직 안 선 캐릭터를 빈 칸에 세운다 — 이미 선 캐릭터와도 SPAWN_GAP 만큼 띄운다 */
+  private spawnAll(characters: RoomCharacterDto[]): void {
+    const taken: Pt[] = [...this.handles.values()].map((h) => h.position);
+    for (const c of characters) {
       const def = this.chars.def(c.stockCode);
       if (!def || this.handles.has(c.stockCode)) continue;
-      const h = createHandle(c.stockCode, this.grid.randomFree() ?? { x: ROOM / 2, y: ROOM / 2 });
+      const h = createHandle(c.stockCode, this.spawnPoint(taken) ?? { x: ROOM / 2, y: ROOM / 2 });
       this.handles.set(c.stockCode, h);
       this.renderer.spawn(c.stockCode, def, h.position);
       if (c.ownedClothesId !== null) this.renderer.setOutfit(c.stockCode, c.ownedClothesId);
     }
+  }
+
+  /**
+   * 거실에 세울 캐릭터를 바꾼다 — 캐릭터 탭에서 프리셋을 고르거나 고쳤을 때 (2026-10-12 추가).
+   * 빠진 캐릭터는 치우고, 새로 든 캐릭터는 빈 칸 아무 데나 세운다. 남은 캐릭터는 하던 대로 둔다.
+   * 시세는 새 목록으로 다시 구독한다. 카탈로그에 없는 종목은 세우지 못한다(characterIds 로 알 수 있다)
+   */
+  setRoster(characters: RoomCharacterDto[]): void {
+    const keep = new Set(characters.map((c) => c.stockCode));
+    const removed = [...this.handles.keys()].filter((id) => !keep.has(id));
+    const added = characters.some((c) => !this.handles.has(c.stockCode) && this.chars.def(c.stockCode));
+    if (removed.length === 0 && !added) return;
+    this.gesture.cancel(); // 들고 있던 캐릭터가 빠질 수 있다 — 내려놓고 시작
+    for (const id of removed) {
+      if (this.dropTarget?.kind === 'character' && this.dropTarget.charId === id) this.setDropTarget(null);
+      this.arbiter.forget(id);
+      this.renderer.despawn(id);
+      this.handles.delete(id);
+    }
+    this.spawnAll(characters);
+    if (this.raf) this.feed.subscribe([...this.handles.keys()], (q) => this.onPriceUpdate(q));
   }
 
   /** 실제로 세운 캐릭터 — 오버레이는 이 목록만 보여 준다(못 세운 종목은 시세도 안 온다) */
@@ -131,9 +173,13 @@ export class RoomLoop {
     this.walkOn(placements);
   }
 
-  /** 걷는 칸을 다시 만들고, 걷던 길은 새 가구 기준으로 다시 찾고, 가구에 묻힌 캐릭터는 비켜 세운다 */
+  /**
+   * 걷는 칸을 다시 만들고, 걷던 길은 새 가구 기준으로 다시 찾고, 가구에 묻힌 캐릭터는 비켜 세운다.
+   * 배치 편집 중엔 캐릭터가 숨어 멈춰 있으니 칸만 바꾼다 — 저장하면 다시 세우고(respawn), 취소하면 원래 칸으로 돌아오니 길이 그대로 맞다
+   */
   private walkOn(placements: readonly PlacementDto[]): void {
     this.grid = new WalkGrid(placements, (id) => this.furniture.def(id));
+    if (this.mode === 'PLACEMENT') return;
     for (const h of this.handles.values()) {
       if (h.lifted) continue;
       const dest = h.path.at(-1);
@@ -147,6 +193,33 @@ export class RoomLoop {
     if (this.grid.freeAt(h.position)) return;
     const out = this.grid.nearestFree(h.position);
     if (out) h.path = [out];
+  }
+
+  /** 빈 칸 아무 데나 — 이미 세운 자리(taken)와 SPAWN_GAP 넘게 떨어진 곳을 몇 번 찾아보고, 없으면 아무 빈 칸 */
+  private spawnPoint(taken: Pt[]): Pt | null {
+    let pos: Pt | null = null;
+    for (let n = 0; n < SPAWN_TRIES && !pos; n++) {
+      const p = this.grid.randomFree();
+      if (p && taken.every((t) => Math.hypot(t.x - p.x, t.y - p.y) >= SPAWN_GAP)) pos = p;
+    }
+    pos ??= this.grid.randomFree();
+    if (pos) taken.push(pos);
+    return pos;
+  }
+
+  /**
+   * 배치를 저장하고 나왔다 — 캐릭터를 빈 칸 아무 데나 다시 세운다(블루 아카이브 카페처럼).
+   * 하던 일(걷던 길·쉬는 시간·한 번 하고 끝나는 행동)은 버리고 대기 행동에서 새로 시작한다.
+   * 기분(lastMood)은 행동이 아니라 시세에서 온 상태라 그대로 — 대기 행동도 그 기분의 것으로 돌아간다
+   */
+  private respawn(): void {
+    const taken: Pt[] = [];
+    for (const h of this.handles.values()) {
+      const pos = this.spawnPoint(taken) ?? h.position;
+      Object.assign(h, { position: pos, path: [], rest: 0.5 + Math.random() * 2, pause: 0, held: false, lifted: false, charging: false, awaiting: false });
+      this.renderer.move(h.stockCode, pos); // 숨어 있는 동안 옮기면 렌더러가 카메라 쪽을 보게 세운다
+      this.arbiter.release(h.stockCode);
+    }
   }
 
   /** 다음 목적지와 길 — 지금은 걸어서 닿는 빈 칸 중 무작위 (엔진이 목적지를 고르게 되면 여기로 받는다) */
@@ -183,6 +256,7 @@ export class RoomLoop {
   tick(dt: number): void {
     const now = performance.now();
     this.arbiter.tick(now);
+    if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
       if (h.path.length === 0) {
@@ -191,6 +265,17 @@ export class RoomLoop {
           h.path = this.plan(h);
           if (h.path.length === 0) h.rest = 1;
         }
+        continue;
+      }
+      // 걷다가 잠깐 멈춰 서 있는 중
+      if (h.pause > 0) {
+        h.pause -= dt;
+        continue;
+      }
+      h.walkLeft -= dt;
+      if (h.walkLeft <= 0) {
+        h.walkLeft = between(WALK_MIN, WALK_SPAN);
+        h.pause = between(PAUSE_MIN, PAUSE_SPAN);
         continue;
       }
       // 경유지를 넘어가도 남은 걸음은 다음 구간에 이어 쓴다 — 꺾을 때 멈칫하지 않게
@@ -209,7 +294,7 @@ export class RoomLoop {
           stepLen = 0;
         }
       }
-      if (h.path.length === 0) h.rest = 1.5 + Math.random() * 4;
+      if (h.path.length === 0) h.rest = between(REST_MIN, REST_SPAN);
       this.renderer.move(h.stockCode, h.position);
     }
     this.fieldTimer += dt;
@@ -251,12 +336,22 @@ export class RoomLoop {
 
   /* ── 상호작용 ───────────────────────────────────────────── */
 
+  /**
+   * 배치 모드에선 캐릭터를 숨기고 멈춘다(가구를 옮기는 데 방해되고, 캐릭터와 겹칠 때 처리가 애매해서).
+   * 나올 때 — 저장했으면(배치가 바뀌었으면) 다시 세우고, 취소했으면 있던 자리에서 하던 대로 이어 간다
+   */
   setInteractionMode(m: InteractionMode): void {
+    const was = this.mode;
     this.mode = m;
     this.gesture.cancel();
+    if (m === 'PLACEMENT' && was !== 'PLACEMENT') this.editFrom = this.placements;
+    if (was === 'PLACEMENT' && m !== 'PLACEMENT') {
+      if (this.placements !== this.editFrom) this.respawn();
+      this.editFrom = null;
+    }
     for (const h of this.handles.values()) {
       h.held = false;
-      this.renderer.setCharacterState(h.stockCode, { dim: m === 'PLACEMENT', selected: false });
+      this.renderer.setCharacterState(h.stockCode, { hidden: m === 'PLACEMENT', selected: false });
     }
   }
 

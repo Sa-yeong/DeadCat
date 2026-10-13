@@ -6,7 +6,7 @@ import { C, accentBtn, ghostBtn } from './style';
 
 type IconName =
   | 'att' | 'fare' | 'gb' | 'item' | 'place' | 'close' | 'rotate' | 'store' | 'undo' | 'redo'
-  | 'lock' | 'heart' | 'star' | 'smile' | 'arrow' | 'hanger' | 'left' | 'right';
+  | 'lock' | 'heart' | 'star' | 'smile' | 'arrow' | 'hanger' | 'left' | 'right' | 'char' | 'pencil' | 'plus';
 
 const PATHS: Record<IconName, ReactNode> = {
   att: <><rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 6.5h12M5.5 1.8v2.6M10.5 1.8v2.6M5.8 10l1.6 1.5 3-3" /></>,
@@ -27,6 +27,9 @@ const PATHS: Record<IconName, ReactNode> = {
   hanger: <path d="M8 4.2a1.6 1.6 0 1 1 1.6 1.6c-.9 0-1.6.5-1.6 1.2v.6L1.8 12.1c-.6.4-.3 1.3.4 1.3h11.6c.7 0 1-.9.4-1.3L8 7.6" />,
   left: <path d="M10 3 5 8l5 5" />,
   right: <path d="M6 3l5 5-5 5" />,
+  char: <><circle cx="8" cy="5.4" r="2.9" /><path d="M3 14.2c.5-2.9 2.6-4.6 5-4.6s4.5 1.7 5 4.6" /></>,
+  pencil: <path d="M10.6 2.6l2.8 2.8L5.6 13.2 2.4 13.6l.4-3.2z" />,
+  plus: <path d="M8 3v10M3 8h10" />,
 };
 
 export function Icon({ name, size = 15, fill = false, color = 'currentColor' }: { name: IconName; size?: number; fill?: boolean; color?: string }) {
@@ -54,13 +57,14 @@ export function ItemIcon({ icon, size = 26 }: { icon: 'cookie' | 'coffee' | 'flo
 }
 
 
-/** 화면 가운데 모달 — 배경을 누르거나 닫기 버튼으로 닫힌다 (Esc 는 RoomHud 가 받는다) */
+/** 화면 가운데 모달 — 배경을 누르거나 닫기 버튼으로 닫힌다 (Esc 는 RoomHud 가 받는다). 떠 있는 동안 휠은 방 줌으로 가지 않는다(data-own-wheel) */
 export function Modal({ title, sub, width, onClose, children }: { title: string; sub?: string; width: number; onClose: () => void; children: ReactNode }) {
   return (
     <>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 30 }} />
+      <div data-own-wheel="" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 30 }} />
       <div
         role="dialog"
+        data-own-wheel=""
         aria-modal="true"
         aria-label={title}
         style={{
@@ -101,9 +105,10 @@ export function ConfirmDialog({
 }) {
   return (
     <>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 30 }} onClick={onCancel} />
+      <div data-own-wheel="" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 30 }} onClick={onCancel} />
       <div
         role="alertdialog"
+        data-own-wheel=""
         aria-modal="true"
         aria-label={title}
         style={{

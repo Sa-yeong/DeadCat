@@ -4,7 +4,8 @@ import * as api from './api';
 import { ITEM_MIME } from './hud/dnd';
 import { LoginPrompt } from './hud/LoginPrompt';
 import { RoomHud, type RoomHudApi } from './hud/RoomHud';
-import { MIN_STAGE, MIN_WIDTH, useRoomLayout } from './layout';
+import { ZoomControl } from './hud/ZoomControl';
+import { clampView, FIT_VIEW, MIN_STAGE, MIN_WIDTH, projectionOf, sideSlack, useRoomLayout, ZOOM_MAX, zoomAt, type PanControl, type RoomView } from './layout';
 import { CharacterCatalog, FurnitureCatalog } from './runtime/catalogs';
 import { StubEngine } from './runtime/CharacterEngine';
 import { PlaceholderScene } from './runtime/PlaceholderScene';
@@ -21,6 +22,12 @@ interface Runtime {
   reactionKinds: ReactionKind[];
 }
 
+/** 버튼 줌 애니메이션을 멈춘다 — 휠·끌기·슬라이더가 끼어들면 그쪽이 이긴다 */
+function stopAnim(r: { current: { raf: number; target: number } | null }) {
+  if (r.current) cancelAnimationFrame(r.current.raf);
+  r.current = null;
+}
+
 /**
  * 거실 화면 — /room (내 거실) · /room/:userId (남의 거실)
  *
@@ -32,23 +39,30 @@ interface Runtime {
  * 런타임은 HUD 를 모른다. 캐릭터 클릭은 RoomLoop 이 onPicked 콜백으로만 내보내고,
  * 페이지가 그걸 RoomHud.onSelect 에 잇는다.
  *
- * 3D 는 아직 없다 — RoomRenderer 자리에 평면 더미(PlaceholderScene)를 꽂았다.
- * 3D 가 붙으면 `new PlaceholderScene(...)` 한 줄만 RoomScene 으로 바뀐다.
+ * 그리는 쪽(RoomRenderer)은 둘 — 3D(RoomScene, three.js · 치비 VRM)가 기본이고,
+ * 평면 더미(PlaceholderScene, SVG)는 주소에 `?r=2d` 를 붙이면 쓴다(확인·테스트용).
+ * 3D 는 three.js 를 쓰므로 따로 불러온다(평면 더미만 볼 때는 내려받지 않는다).
+ *
+ * 줌 · 끌기 — 페이지가 시점(RoomView)을 들고, 바뀔 때마다 렌더러에 resize 로 넘긴다.
+ * 1배는 방 전체 구도(layout.ts 규칙), 줌인했을 때만 빈 바닥을 끌어서 둘러본다.
  */
 export function LivingRoomPage() {
   const { userId } = useParams();
   const { search } = useLocation();
   // 더미 전용 — 실제로는 서버가 토큰으로 판정한다. 실 API 로 바꿀 때 api.getRoom 의 인자와 함께 지운다
-  const asGuest = new URLSearchParams(search).has('guest');
+  const params = new URLSearchParams(search);
+  const asGuest = params.has('guest');
+  const use3d = params.get('r') !== '2d';
   // 다른 거실로 옮겨 가면 통째로 새로 만든다 — 이전 거실의 런타임·패널 상태를 끌고 가지 않게
-  return <RoomView key={`${userId ?? 'me'}|${asGuest}`} userId={userId} asGuest={asGuest} />;
+  return <RoomView key={`${userId ?? 'me'}|${asGuest}|${use3d}`} userId={userId} asGuest={asGuest} use3d={use3d} />;
 }
 
-function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: boolean }) {
+function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGuest: boolean; use3d: boolean }) {
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const roomRef = useRef<HTMLDivElement | null>(null);
   const hud = useRef<RoomHudApi | null>(null);
   const L = useRoomLayout(rootRef);
@@ -56,7 +70,9 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [rt, setRt] = useState<Runtime | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-  const [gbOpen, setGbOpen] = useState(false);
+  /** 오른쪽 창(출석·이별 흔적·방명록·아이템·캐릭터)이 열려 있다 — 줌 버튼을 그 왼쪽으로 */
+  const [sideOpen, setSideOpen] = useState(false);
+  const slackRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   /** 내 거실을 비로그인으로 열었다 — 로그인 창을 띄운다 */
   /** 로그인 창 — 화면에 하나만. 내 거실을 비로그인으로 열었을 때와 비로그인이 참여하려 할 때 */
@@ -64,6 +80,16 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
   const followRequest = useRef(0);
   /** 씬 축척이 바뀐 횟수 — HUD 가 런타임에 자리를 다시 묻게 한 번 더 그린다 */
   const [, setSceneVersion] = useState(0);
+  /** 줌 · 끌기 — 1배(FIT_VIEW)가 방 전체 구도 */
+  const [view, setView] = useState<RoomView>(FIT_VIEW);
+  /** 이벤트 처리기가 읽는 지금 시점·레이아웃 — 그린 뒤에 맞춘다 */
+  const viewRef = useRef(view);
+  const layoutRef = useRef(L);
+  const panning = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  /** 버튼 줌 애니메이션 — 도는 중에 또 누르면 목표에서 한 단계 더 */
+  const zoomAnim = useRef<{ raf: number; target: number } | null>(null);
+  /** 휠 줌을 받을 때인가 — 거실을 다 받았고 비공개가 아닐 때 */
+  const wheelOn = useRef(false);
 
   /* ── 진입: 스냅샷 + 카탈로그 → 런타임 ── */
   useEffect(() => {
@@ -74,14 +100,15 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
       const snap = await api.getRoom(userId, asGuest);
       const codes = snap.characters.map((c) => c.stockCode);
       const [charDefs, furnDefs, reactionKinds] = await Promise.all([api.getCharacterDefs(codes), api.getFurnitureDefs(), api.getReactionKinds()]);
-      if (!alive || !svgRef.current) return;
+      const Scene3D = use3d ? (await import('./runtime/RoomScene')).RoomScene : null;
+      if (!alive || !(Scene3D ? canvasRef.current : svgRef.current)) return;
 
       const characters = new CharacterCatalog();
       characters.load(charDefs);
       const furniture = new FurnitureCatalog();
       furniture.load(furnDefs);
       // 축척은 아래 layout effect 가 rt 가 생기자마자(첫 화면을 그리기 전에) 맞춘다
-      renderer = new PlaceholderScene(svgRef.current, furniture);
+      renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
       loop = new RoomLoop({
         renderer,
         engine: new StubEngine(),
@@ -113,20 +140,96 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
       loop?.stop();
       renderer?.dispose();
     };
-  }, [userId, asGuest]);
+  }, [userId, asGuest, use3d]);
 
-  // 창 크기가 바뀌면 방 축척만 다시 — 글자·패널 크기는 그대로.
-  // 그리기 전에 맞춰야 첫 화면이 빈 SVG 로 깜빡이지 않고, 스탯 링·배치 도구가 옛 자리에 남지 않는다
+  // 창 크기 · 줌 · 끌기가 바뀌면 보는 자리만 다시 — 글자·패널 크기는 그대로.
+  // 그리기 전에 맞춰야 첫 화면이 빈 화면으로 깜빡이지 않고, 스탯 링·배치 도구가 옛 자리에 남지 않는다
+  /**
+   * 좌우로 더 끌 수 있는 폭 — 오른쪽 창이 가리는 폭만큼, 양쪽 같게. 창이 열려 있든 아니든 늘 (2026-10-12 도휘 — 가만히 있으면 답답).
+   * 그래서 맨 줌아웃에서도 좌우로는 끌린다. 창 폭은 레이아웃이 정한다(화면 크기를 따라감)
+   */
+  const slack = sideSlack(L);
+  const fitted = clampView(L, view.z, view.tx, view.ty, slack); // 창 크기가 바뀌면 지금 줌을 새 범위 안으로
+  const P = projectionOf(L, fitted);
+  useLayoutEffect(() => {
+    viewRef.current = fitted;
+    slackRef.current = slack;
+    layoutRef.current = L;
+  });
   useLayoutEffect(() => {
     if (!rt) return;
-    rt.renderer.resize(L.scale, L.backY, L.roomWidth, L.stageHeight);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 바깥(씬) 축척을 바꾼 뒤 HUD 가 새 자리를 읽도록 한 번 더 그린다
+    rt.renderer.resize(P.scale, P.ox, P.oy, L.width, L.stageHeight);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 바깥(씬) 시점을 바꾼 뒤 HUD 가 새 자리를 읽도록 한 번 더 그린다
     setSceneVersion((v) => v + 1);
-  }, [rt, L.scale, L.backY, L.roomWidth, L.stageHeight]);
+  }, [rt, P.scale, P.ox, P.oy, L.width, L.stageHeight]);
 
-  const roomLeft = gbOpen ? L.roomLeftOpen : L.roomLeft;
+  /** 줌인했을 때 빈 바닥을 끌어 둘러보기 — 일반 모드는 여기서, 배치 모드는 편집기가 부른다 */
+  const pan: PanControl = {
+    start: (x, y) => {
+      stopZoomAnim();
+      const v = viewRef.current;
+      if (v.z <= 1.001 && slackRef.current <= 0) return false;
+      panning.current = { x, y, tx: v.tx, ty: v.ty };
+      return true;
+    },
+    move: (x, y) => {
+      const s = panning.current;
+      if (s) setView(clampView(layoutRef.current, viewRef.current.z, s.tx + x - s.x, s.ty + y - s.y, slackRef.current));
+    },
+    end: () => {
+      panning.current = null;
+    },
+  };
+  const stopZoomAnim = () => stopAnim(zoomAnim);
+  /** 슬라이더 — 바로 그 배율로 (화면 가운데를 붙잡고) */
+  const zoomTo = (z: number) => {
+    stopZoomAnim();
+    setView((v) => zoomAt(layoutRef.current, v, z, layoutRef.current.width / 2, layoutRef.current.stageHeight / 2, slackRef.current));
+  };
+  /**
+   * − / + 버튼 — 화면 가운데를 붙잡고 0.24초 동안 부드럽게 (휠과 같은 느낌).
+   * 배율은 곱으로 보간해서 확대 속도가 일정해 보이게 한다
+   */
+  const zoomStep = (factor: number) => {
+    const from = viewRef.current;
+    const target = Math.min(ZOOM_MAX, Math.max(1, (zoomAnim.current?.target ?? from.z) * factor));
+    stopZoomAnim();
+    const z0 = from.z;
+    const t0 = performance.now();
+    const DURATION = 240;
+    const step = (t: number) => {
+      const k = Math.min(1, (t - t0) / DURATION);
+      const e = 1 - (1 - k) ** 3; // 빠르게 시작해 천천히 멈춤
+      const L0 = layoutRef.current;
+      setView(zoomAt(L0, from, z0 * (target / z0) ** e, L0.width / 2, L0.stageHeight / 2, slackRef.current));
+      if (k < 1 && zoomAnim.current) zoomAnim.current.raf = requestAnimationFrame(step);
+      else zoomAnim.current = null;
+    };
+    zoomAnim.current = { raf: requestAnimationFrame(step), target };
+  };
+  useEffect(() => () => stopAnim(zoomAnim), []);
 
-  /* ── 방 위 포인터 → 런타임 (좌표는 방 기준) ── */
+  /**
+   * 마우스 휠 — 커서 자리를 붙잡고 확대·축소. 페이지가 같이 스크롤되지 않게 수동 리스너(passive: false).
+   * 방 위만이 아니라 화면 전체(배치 편집기 덮개 포함)에서 받는다 — 단 스스로 스크롤하는 창(오른쪽 창·팝업·하단 바,
+   * data-own-wheel)은 그쪽이 먹고, 거실을 다 받기 전이나 비공개 거실이면 줌하지 않는다
+   */
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!wheelOn.current || (e.target as Element).closest('[data-own-wheel]')) return;
+      e.preventDefault();
+      stopAnim(zoomAnim);
+      const r = el.getBoundingClientRect();
+      const at = { x: e.clientX - r.left, y: e.clientY - r.top };
+      setView((v) => zoomAt(layoutRef.current, v, v.z * Math.exp(-e.deltaY * 0.0015), at.x, at.y, slackRef.current));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  /* ── 방 위 포인터 → 런타임 (좌표는 무대 기준) ── */
   const local = (e: { clientX: number; clientY: number }) => {
     const r = roomRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -135,6 +238,9 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
   // 비공개 거실 — 주인이 아니면 블러만 보이고 아무것도 누를 수 없다(방명록·팔로우 포함).
   // 거실 탐색 검색에서 빼는 것은 서버 몫. 여기는 링크(방명록 닉네임·커뮤니티·팔로우 목록)로 들어온 경우다
   const isPrivate = snapshot?.visibility === 'PRIVATE' && snapshot.mode !== 'OWNER';
+  useLayoutEffect(() => {
+    wheelOn.current = !!snapshot && !!rt && !isPrivate;
+  });
 
   return (
     <div
@@ -150,20 +256,31 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
           // 방 밖에서 손을 떼도 놓기가 들어오게 — 들어 옮기던 캐릭터가 붙은 채 남지 않도록
           e.currentTarget.setPointerCapture(e.pointerId);
           const p = local(e);
+          // 캐릭터가 아닌 곳을 누르면 줌인 상태에서는 방을 끈다. 짧게 누르면 여전히 빈 바닥 누름(스탯 링 닫기)
+          if (!rt.loop.charAt(p.x, p.y)) pan.start(p.x, p.y);
           rt.loop.pointerDown(p.x, p.y);
         }}
         onPointerMove={(e) => {
           if (!rt || !e.isPrimary) return;
           const p = local(e);
+          pan.move(p.x, p.y);
           rt.loop.pointerMove(p.x, p.y);
         }}
         onPointerUp={(e) => {
           if (!rt || !e.isPrimary) return;
           const p = local(e);
+          pan.end();
           rt.loop.pointerUp(p.x, p.y);
         }}
-        onPointerCancel={(e) => e.isPrimary && rt?.loop.pointerCancel()}
-        onLostPointerCapture={() => rt?.loop.pointerCancel()}
+        onPointerCancel={(e) => {
+          if (!e.isPrimary) return;
+          pan.end();
+          rt?.loop.pointerCancel();
+        }}
+        onLostPointerCapture={() => {
+          pan.end();
+          rt?.loop.pointerCancel();
+        }}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes(ITEM_MIME)) e.preventDefault();
         }}
@@ -177,18 +294,22 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
           if (charId && at) hud.current?.onItemDrop(charId, itemId, at);
         }}
         style={{
-          position: 'absolute', left: roomLeft, top: 0, width: L.roomWidth, height: L.stageHeight, transition: 'left 0.35s ease',
+          position: 'absolute', left: 0, top: 0, width: L.width, height: L.stageHeight, cursor: fitted.z > 1.001 || slack > 0 ? 'grab' : undefined,
           filter: isPrivate ? 'blur(6px) brightness(0.6)' : undefined, touchAction: 'none', pointerEvents: isPrivate ? 'none' : undefined,
         }}
       >
-        <svg ref={svgRef} role="img" aria-label="거실 — 가구와 캐릭터 (3D 자리의 평면 더미)" style={{ display: 'block', overflow: 'hidden' }} />
+        {use3d ? (
+          <canvas ref={canvasRef} role="img" aria-label="거실 — 가구와 캐릭터 (3D)" style={{ display: 'block' }} />
+        ) : (
+          <svg ref={svgRef} role="img" aria-label="거실 — 가구와 캐릭터 (평면 더미)" style={{ display: 'block', overflow: 'hidden' }} />
+        )}
       </div>
 
       {!snapshot && !error && <Center>불러오는 중…</Center>}
       {error && <Center>{error}</Center>}
       {isPrivate && <Center>비공개 거실이에요</Center>}
       {snapshot && !isPrivate && snapshot.characters.length === 0 && snapshot.mode === 'OWNER' && (
-        <Center sub="마이페이지에서 거실에 세울 캐릭터를 고를 수 있어요">거실에 세운 캐릭터가 없어요</Center>
+        <Center sub="오른쪽 위 캐릭터 탭에서 거실에 세울 캐릭터를 고를 수 있어요">거실에 세운 캐릭터가 없어요</Center>
       )}
 
       {snapshot && rt && !isPrivate && (
@@ -199,14 +320,14 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
           reactionKinds={rt.reactionKinds}
           quotes={quotes}
           layout={L}
-          roomLeft={roomLeft}
+          pan={pan}
           loop={rt.loop}
           renderer={rt.renderer}
           characters={rt.characters}
           furniture={rt.furniture}
-          onGuestbook={setGbOpen}
+          onSidePanel={setSideOpen}
           onStock={(code) => navigate(`/stocks/${code}`)}
-          onVisit={(id) => navigate(`/room/${id}${asGuest ? '?guest' : ''}`)} // ?guest 는 더미 전용
+          onVisit={(id) => navigate(`/room/${id}${roomQuery(asGuest, use3d)}`)} // ?guest 는 더미 전용
           onFollow={(on) => {
             if (!userId) return;
             const prev = snapshot.owner?.isFollowing ?? false;
@@ -217,13 +338,24 @@ function RoomView({ userId, asGuest }: { userId: string | undefined; asGuest: bo
             api.setFollow(userId, on).catch(() => req === followRequest.current && setFollowing(prev));
           }}
           onPlacementsSaved={(p) => rt.loop.setPlacements(p)}
+          onRoster={(characters) => setSnapshot((s) => (s ? { ...s, characters } : s))}
           loginOpen={needLogin}
           onNeedLogin={() => setNeedLogin(true)}
         />
       )}
+      {snapshot && rt && !isPrivate && (
+        // 오른쪽 창이 열리면 그 왼쪽으로 비켜난다
+        <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.dockTop} onZoom={zoomTo} onStep={zoomStep} />
+      )}
       <LoginPrompt open={needLogin} onClose={() => setNeedLogin(false)} />
     </div>
   );
+}
+
+/** 다른 거실로 갈 때도 미리보기 표시(비로그인 흉내 · 평면 더미)를 이어 간다 */
+function roomQuery(asGuest: boolean, use3d: boolean): string {
+  const parts = [asGuest ? 'guest' : '', use3d ? '' : 'r=2d'].filter(Boolean);
+  return parts.length ? `?${parts.join('&')}` : '';
 }
 
 function Center({ children, sub }: { children: string; sub?: string }) {

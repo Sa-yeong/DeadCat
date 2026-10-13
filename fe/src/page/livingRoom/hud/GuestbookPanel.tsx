@@ -3,27 +3,27 @@ import { ago } from '../../stockDetail/format';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
 import type { OwnerId } from '../api';
-import type { GuestbookPost, ReactionKind, RoomReactions, ViewMode } from '../types';
+import type { GuestbookComment, GuestbookPost, ReactionKind, RoomReactions, ViewMode } from '../types';
+import { PanelHeader } from './SidePanel';
 import { Icon } from './ui';
 import { C, REACTION_COLOR, ghostBtn, solidBtn } from './style';
 
 type Lane = 'text' | 'reaction';
 
 /**
- * 방명록 — 오른쪽에서 밀려 들어오는 패널. 열릴 때 글과 반응을 받는다(스냅샷에 없음).
+ * 방명록 — 오른쪽 창(SidePanel)의 한 탭. 열릴 때 글과 반응을 받는다(스냅샷에 없음).
  *   OWNER   작성창 없음 · 글마다 답글(1단) · 받은 반응은 조회만
- *   VISITOR 작성창 · 거실 전체에 반응 남기기(1인 1개, 다시 누르면 취소)
- *   GUEST   방문자와 똑같이 보이고, 쓰거나 반응하려 하면 로그인 창 (참여는 로그인 뒤에)
+ *   VISITOR 작성창(비밀글 가능) · 글마다 답글(1단, 비밀 가능) · 거실 전체에 반응 남기기(1인 1개, 다시 누르면 취소)
+ *   GUEST   방문자와 똑같이 보이고, 쓰거나 답글·반응하려 하면 로그인 창 (참여는 로그인 뒤에)
+ *
+ * 비밀글 · 비밀 답글 — 볼 수 없는 사람에겐 서버가 내용을 비워(null) 보낸다. 여기는 자물쇠와 안내만 그린다.
+ *   비밀글은 주인 · 쓴 사람, 비밀 답글은 주인 · 답글 쓴 사람 · 원글 쓴 사람. 비밀글에 다는 답글은 늘 비밀
  */
 export function GuestbookPanel({
   open,
   ownerId,
   mode,
   reactionKinds,
-  left,
-  top,
-  width,
-  height,
   onClose,
   onVisit,
   onNeedLogin,
@@ -32,10 +32,6 @@ export function GuestbookPanel({
   ownerId: OwnerId;
   mode: ViewMode;
   reactionKinds: ReactionKind[];
-  left: number;
-  top: number;
-  width: number;
-  height: number;
   onClose: () => void;
   onVisit: (userId: number) => void;
   /** 비로그인이 쓰거나 반응하려 했다 */
@@ -48,7 +44,9 @@ export function GuestbookPanel({
   const [reactions, setReactions] = useState<RoomReactions | null>(null);
   const [replyTo, setReplyTo] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
+  const [secret, setSecret] = useState(false);
   const [reply, setReply] = useState('');
+  const [replySecret, setReplySecret] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   /** 보내는 중 — 같은 글·반응이 두 번 가지 않게. 글과 반응은 따로 막는다(글 보내는 중에도 반응은 눌리게) */
   const [busy, setBusy] = useState<Record<Lane, boolean>>({ text: false, reaction: false });
@@ -56,7 +54,7 @@ export function GuestbookPanel({
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    Promise.all([api.getGuestbook(ownerId), api.getRoomReactions(ownerId)])
+    Promise.all([api.getGuestbook(ownerId, mode), api.getRoomReactions(ownerId)])
       .then(([p, r]) => {
         if (!alive) return;
         setPosts(p);
@@ -67,7 +65,7 @@ export function GuestbookPanel({
     return () => {
       alive = false;
     };
-  }, [open, ownerId]);
+  }, [open, ownerId, mode]);
 
   /** 쓰기 실패는 글자를 지우지 않고 알린다. 같은 줄(글/반응)이 보내는 중이면 무시한다 */
   const attempt = async (lane: Lane, job: () => Promise<void>, msg: string) => {
@@ -88,18 +86,27 @@ export function GuestbookPanel({
     const text = draft.trim();
     if (!text) return;
     void attempt('text', async () => {
-      const p = await api.writeGuestbook(ownerId, text);
+      const p = await api.writeGuestbook(ownerId, text, secret);
       setPosts((list) => [p, ...(list ?? [])]);
       setDraft('');
+      setSecret(false);
     }, '글을 남기지 못했어요');
   };
 
-  const sendReply = (postId: number) => {
+  /** 답글 창 열기/닫기 — 비로그인은 로그인 창 */
+  const toggleReply = (postId: number) => {
+    if (guest) return onNeedLogin();
+    setReplyTo(replyTo === postId ? null : postId);
+    setReply('');
+    setReplySecret(false);
+  };
+
+  const sendReply = (post: GuestbookPost) => {
     const text = reply.trim();
     if (!text) return;
     void attempt('text', async () => {
-      const p = await api.replyGuestbook(postId, text);
-      setPosts((list) => (list ?? []).map((x) => (x.postId === postId ? p : x)));
+      const r = await api.replyGuestbook(post.postId, text, replySecret || post.isSecret);
+      setPosts((list) => (list ?? []).map((x) => (x.postId === post.postId ? { ...x, replies: [...x.replies, r] } : x)));
       setReply('');
       setReplyTo(null);
     }, '답글을 달지 못했어요');
@@ -117,23 +124,8 @@ export function GuestbookPanel({
   };
 
   return (
-    <aside
-      aria-label="방명록"
-      aria-hidden={!open}
-      style={{
-        position: 'absolute', left, top, width, height, zIndex: 20, padding: '0 14px', display: 'flex', flexDirection: 'column',
-        border: `1px solid ${C.line}`, borderRadius: R.panel, background: C.nav,
-        transform: `translateX(${open ? 0 : width + 40}px)`, transition: 'transform 0.35s ease', visibility: open ? 'visible' : 'hidden',
-      }}
-    >
-      <div style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${C.lineSoft}` }}>
-        <h2 style={{ fontSize: 14, fontWeight: 900, letterSpacing: '0.04em' }}>
-          방명록 <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 500, color: C.faint }}>{posts?.length ?? ''}</span>
-        </h2>
-        <button type="button" onClick={onClose} aria-label="방명록 닫기" style={{ ...ghostBtn, width: 30, padding: 0, justifyContent: 'center' }}>
-          <Icon name="close" size={14} />
-        </button>
-      </div>
+    <>
+      <PanelHeader title="방명록" count={posts?.length ?? ''} onClose={onClose} />
 
       {visiting && (
         <div style={{ display: 'flex', gap: 6, padding: '12px 0', borderBottom: `1px solid ${C.lineSoft}` }}>
@@ -148,9 +140,10 @@ export function GuestbookPanel({
             onFocus={guest ? (e) => { e.currentTarget.blur(); onNeedLogin(); } : undefined}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onEnter(write)}
-            placeholder="방명록 남기기"
+            placeholder={secret ? '비밀글 남기기 — 주인과 나만 봐요' : '방명록 남기기'}
             style={input}
           />
+          <SecretToggle on={secret} onToggle={() => (guest ? onNeedLogin() : setSecret((v) => !v))} />
           <button type="button" onClick={write} style={solidBtn}>등록</button>
         </div>
       )}
@@ -169,24 +162,26 @@ export function GuestbookPanel({
               {p.isSecret && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: C.dim }}><Icon name="lock" size={12} />비밀글</span>}
               <span style={{ marginLeft: 'auto', fontSize: 11, color: C.faint }}>{ago(p.writeTime)}</span>
             </div>
-            <p style={{ margin: '6px 0 0 30px', fontSize: 13, lineHeight: 1.5, color: '#DADAD4' }}>{p.content}</p>
+            {p.content === null ? (
+              <p style={{ margin: '6px 0 0 30px', fontSize: 12.5, lineHeight: 1.5, color: C.faint }}>비밀글이에요 — 거실 주인과 쓴 사람만 볼 수 있어요</p>
+            ) : (
+              <p style={{ margin: '6px 0 0 30px', fontSize: 13, lineHeight: 1.5, color: '#DADAD4' }}>{p.content}</p>
+            )}
             <div style={{ marginLeft: 30 }}>
-              {p.replies.map((r) => (
-                <div key={r.commentId} style={{ marginTop: 8, padding: '8px 10px', borderRadius: R.card, background: 'rgba(255,255,255,0.05)', fontSize: 12, lineHeight: 1.5, color: C.text2 }}>
-                  <span style={{ fontWeight: 700, color: C.text }}>{r.nickname}</span> · {r.content}
-                </div>
-              ))}
-              {mode === 'OWNER' && (
+              {p.replies.map((r) => <Reply key={r.commentId} r={r} onVisit={onVisit} />)}
+              {/* 읽을 수 없는 비밀글엔 답글을 달 수 없다 */}
+              {p.content !== null && (
                 <>
-                  <button type="button" onClick={() => { setReplyTo(replyTo === p.postId ? null : p.postId); setReply(''); }}
+                  <button type="button" onClick={() => toggleReply(p.postId)}
                     style={{ ...ghostBtn, height: 24, padding: '0 8px', marginTop: 6, fontSize: 12, color: C.dim }}>
                     {replyTo === p.postId ? '닫기' : '답글'}
                   </button>
                   {replyTo === p.postId && (
                     <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
                       <input aria-label="답글 입력" autoFocus value={reply} maxLength={150} onChange={(e) => setReply(e.target.value)}
-                        onKeyDown={onEnter(() => sendReply(p.postId))} placeholder="답글 달기" style={input} />
-                      <button type="button" onClick={() => sendReply(p.postId)} style={{ ...solidBtn, fontSize: 12 }}>등록</button>
+                        onKeyDown={onEnter(() => sendReply(p))} placeholder={replySecret || p.isSecret ? '비밀 답글 달기' : '답글 달기'} style={input} />
+                      <SecretToggle on={replySecret || p.isSecret} locked={p.isSecret} onToggle={() => setReplySecret((v) => !v)} />
+                      <button type="button" onClick={() => sendReply(p)} style={{ ...solidBtn, fontSize: 12 }}>등록</button>
                     </div>
                   )}
                 </>
@@ -221,6 +216,45 @@ export function GuestbookPanel({
           );
         })}
       </div>
-    </aside>
+    </>
+  );
+}
+
+/** 답글 한 줄 — 비밀 답글은 자물쇠, 볼 수 없으면 안내만 */
+function Reply({ r, onVisit }: { r: GuestbookComment; onVisit: (userId: number) => void }) {
+  return (
+    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: R.card, background: 'rgba(255,255,255,0.05)', fontSize: 12, lineHeight: 1.5, color: C.text2 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6, verticalAlign: 'top' }}>
+        <span style={{ color: C.faint }} aria-hidden="true">↳</span>
+        <button type="button" onClick={() => onVisit(r.userId)} title={`${r.nickname}님의 거실로`}
+          style={{ padding: 0, border: 'none', background: 'none', fontSize: 12, fontWeight: 700, color: C.text, cursor: 'pointer' }}>
+          {r.nickname}
+        </button>
+        {r.isSecret && <span style={{ display: 'inline-flex', color: C.dim }} title="비밀 답글"><Icon name="lock" size={11} /></span>}
+        <span style={{ fontSize: 11, color: C.faint }}>{ago(r.writeTime)}</span>
+      </span>
+      {r.content === null ? <span style={{ color: C.faint }}>비밀 답글이에요</span> : r.content}
+    </div>
+  );
+}
+
+/** 비밀 켜고 끄기 — 자물쇠 버튼. locked 면 켜진 채 고정(비밀글에 다는 답글) */
+function SecretToggle({ on, locked = false, onToggle }: { on: boolean; locked?: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label="비밀로 쓰기"
+      title={locked ? '비밀글에 다는 답글은 비밀로 달려요' : on ? '비밀 — 거실 주인과 나만 봐요' : '비밀로 쓰기'}
+      disabled={locked}
+      onClick={onToggle}
+      style={{
+        ...ghostBtn, flexShrink: 0, height: 30, gap: 4, padding: '0 8px', fontSize: 12,
+        border: `1px solid ${on ? C.accent : 'rgba(255,255,255,0.16)'}`, color: on ? C.text : C.dim, cursor: locked ? 'default' : 'pointer',
+      }}
+    >
+      <Icon name="lock" size={12} />
+      비밀
+    </button>
   );
 }

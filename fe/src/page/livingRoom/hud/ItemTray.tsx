@@ -1,69 +1,67 @@
 import { R } from '../../stockDetail/radius';
 import type { InventoryItem } from '../types';
-import { BottomBar, TrayTile } from './chrome';
 import { ITEM_MIME } from './dnd';
-import { C, accentBtn } from './style';
+import { PanelBody, PanelHeader } from './SidePanel';
+import { C } from './style';
 import { ItemIcon } from './ui';
 
 /**
- * 아이템 모드 하단 트레이 — OWNER 전용.
- * 아이템을 캐릭터에게 **끌어다 놓거나**, 골라 두고 캐릭터를 누른다.
- * 트레이는 씬을 만지지 않는다 — 놓은 자리의 캐릭터는 런타임의 pick 경로가 찾아 준다.
+ * 아이템 — 오른쪽 창의 한 탭(OWNER 전용, 2026-10-12 — 예전의 '아이템 모드'를 없앴다).
+ * 칸을 캐릭터에게 **끌어다 놓아야만** 준다(눌러서 골라 두기 없음). 창을 연 채로 거실은 평소대로 돌아간다.
+ * 창은 씬을 만지지 않는다 — 놓은 자리의 캐릭터는 페이지가 런타임에 묻는다.
  */
-export function ItemTray({
+export function ItemPanel({
   inventory,
-  pending,
-  centerX,
-  top,
-  onPick,
-  onDone,
+  dragging,
+  onDrag,
+  onClose,
 }: {
   inventory: InventoryItem[] | null;
-  pending: number | null;
-  centerX: number;
-  top: number;
-  onPick: (itemId: number | null) => void;
-  onDone: () => void;
+  /** 끌고 있는 아이템 — 그 줄만 표시 */
+  dragging: number | null;
+  onDrag: (itemId: number | null) => void;
+  onClose: () => void;
 }) {
-  const sel = inventory?.find((i) => i.itemId === pending);
   return (
     <>
-      <div style={{ position: 'absolute', left: centerX - 300, top: top - 26, width: 600, textAlign: 'center', fontSize: 13, color: C.text2, pointerEvents: 'none', zIndex: 8 }}>
-        {sel ? `${sel.name} — 줄 캐릭터를 누르거나 끌어다 놓으세요` : '아이템을 캐릭터에게 끌어다 놓으면 호감도가 올라요'}
-      </div>
-      <BottomBar
-        centerX={centerX}
-        top={top}
-        width={640}
-        title="보유 아이템"
-        tools={<button type="button" onClick={onDone} style={{ ...accentBtn, height: 32 }}>완료</button>}
-      >
-        {inventory === null && <span style={{ fontSize: 12, color: C.faint }}>불러오는 중…</span>}
-        {inventory?.map((it) => {
-          const on = it.itemId === pending;
-          const empty = it.quantity <= 0;
-          return (
-            <TrayTile
-              key={it.itemId}
-              on={on}
-              name={it.name}
-              count={it.quantity}
-              gap={2}
-              disabled={empty}
-              icon={<ItemIcon icon={it.icon} />}
-              draggable={!empty}
-              aria-label={`${it.name} ${it.quantity}개, 호감도 +${it.effect}`}
-              title={`호감도 +${it.effect}`}
-              onClick={() => onPick(on ? null : it.itemId)}
-              onDragStart={(e) => {
-                e.dataTransfer.setData(ITEM_MIME, String(it.itemId));
-                e.dataTransfer.effectAllowed = 'copy';
-                onPick(it.itemId);
-              }}
-            />
-          );
-        })}
-      </BottomBar>
+      <PanelHeader title="아이템" sub="캐릭터에게 끌어다 놓으면 호감도가 올라요" onClose={onClose} />
+      <PanelBody>
+        {inventory === null && <span style={{ fontSize: 12.5, color: C.faint }}>불러오는 중…</span>}
+        {inventory?.length === 0 && <span style={{ fontSize: 12.5, color: C.faint }}>가진 아이템이 없어요</span>}
+        {/* 게임 아이템 칸처럼 — 정사각형 칸을 격자로 채운다. 칸엔 그림과 왼쪽 아래 개수만(이름·호감도는 마우스를 올리면) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, alignContent: 'start' }}>
+          {inventory?.map((it) => {
+            const on = it.itemId === dragging;
+            const empty = it.quantity <= 0;
+            return (
+              <div key={it.itemId} style={{ minWidth: 0, opacity: empty ? 0.4 : 1 }}>
+                <div
+                  draggable={!empty}
+                  aria-disabled={empty}
+                  aria-label={`${it.name} ${it.quantity}개, 호감도 +${it.effect} — 캐릭터에게 끌어다 놓기`}
+                  title={empty ? `${it.name} — 다 썼어요` : `${it.name} · 호감도 +${it.effect}`}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(ITEM_MIME, String(it.itemId));
+                    e.dataTransfer.effectAllowed = 'copy';
+                    onDrag(it.itemId);
+                  }}
+                  onDragEnd={() => onDrag(null)}
+                  style={{
+                    position: 'relative', width: '100%', aspectRatio: '1 / 1', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box',
+                    borderRadius: R.card, border: `1px solid ${on ? C.accent : C.lineSoft}`, background: on ? C.chip : C.panel,
+                    cursor: empty ? 'default' : 'grab',
+                  }}
+                >
+                  <ItemIcon icon={it.icon} size={34} />
+                  <span style={{ position: 'absolute', left: 6, bottom: 4, fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: C.text }}>
+                    ×{it.quantity}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </PanelBody>
     </>
   );
 }

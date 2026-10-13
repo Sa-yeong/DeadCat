@@ -7,8 +7,12 @@ export interface CharacterHandle {
   position: Pt;
   /** 남은 경유지 — 마지막이 목적지. 비어 있으면 서 있다 */
   path: Pt[];
-  /** 다음 걸음까지 쉬는 시간(초) */
+  /** 다음 걸음까지 쉬는 시간(초) — 목적지에 닿은 뒤 */
   rest: number;
+  /** 걷다가 잠깐 멈춰 선 남은 시간(초) — 길은 그대로 두고 쉬었다 이어 걷는다 */
+  pause: number;
+  /** 다음 잠깐 멈춤까지 남은 걷는 시간(초) */
+  walkLeft: number;
   /** {직전 기분 보관 여부 미확정} */
   lastMood: Mood | null;
   /** 스탯 링이 열려 있어 멈춰 섰다 */
@@ -22,5 +26,5 @@ export interface CharacterHandle {
 }
 
 export function createHandle(stockCode: string, position: Pt): CharacterHandle {
-  return { stockCode, position, path: [], rest: 1 + Math.random() * 3, lastMood: null, held: false, lifted: false, charging: false, awaiting: false };
+  return { stockCode, position, path: [], rest: 1 + Math.random() * 3, pause: 0, walkLeft: 3 + Math.random() * 6, lastMood: null, held: false, lifted: false, charging: false, awaiting: false };
 }

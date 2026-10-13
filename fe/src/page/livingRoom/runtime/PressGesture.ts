@@ -21,7 +21,8 @@ export interface PressHandlers {
 }
 
 export class PressGesture {
-  private press: { x: number; y: number; id: string | null; timer: number; charging: boolean; lifting: boolean } | null = null;
+  /** x, y = 누른 자리 · lx, ly = 마지막 포인터 자리(들리는 순간 그 자리로 옮긴다) */
+  private press: { x: number; y: number; lx: number; ly: number; id: string | null; timer: number; charging: boolean; lifting: boolean } | null = null;
   private readonly h: PressHandlers;
 
   constructor(h: PressHandlers) {
@@ -31,13 +32,15 @@ export class PressGesture {
   down(x: number, y: number): void {
     this.cancel();
     const id = this.h.hit(x, y);
-    const press = { x, y, id, timer: 0, charging: false, lifting: false };
+    const press = { x, y, lx: x, ly: y, id, timer: 0, charging: false, lifting: false };
     if (id && this.h.canLift(id)) {
       press.charging = true;
       press.timer = window.setTimeout(() => {
         this.stopCharging(press);
         press.lifting = true;
         this.h.liftStart(id);
+        // 들리는 순간 바로 커서 끝에 목이 오게 — 다음 움직임을 기다리면 첫 움직임에 툭 튄다
+        this.h.liftMove(id, press.lx, press.ly);
       }, LONG_PRESS);
       this.h.chargeStart(id, LONG_PRESS);
     }
@@ -55,6 +58,8 @@ export class PressGesture {
   move(x: number, y: number): void {
     const p = this.press;
     if (!p) return;
+    p.lx = x;
+    p.ly = y;
     if (!p.lifting && Math.hypot(x - p.x, y - p.y) > MOVE_TOL) this.stopCharging(p);
     if (p.lifting && p.id) this.h.liftMove(p.id, x, y);
   }

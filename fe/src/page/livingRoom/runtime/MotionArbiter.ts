@@ -53,6 +53,12 @@ export class MotionArbiter {
     this.play(charId, back);
   }
 
+  /** 거실에서 빠진 캐릭터 — 기억도 지운다 */
+  forget(charId: string): void {
+    this.playing.delete(charId);
+    this.idle.delete(charId);
+  }
+
   /** 끝난 한 번 재생을 대기 행동으로 되돌린다 */
   tick(now: number): void {
     for (const [id, cur] of this.playing) {

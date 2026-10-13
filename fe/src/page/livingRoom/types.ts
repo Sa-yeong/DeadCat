@@ -8,9 +8,10 @@
 export type ViewMode = 'OWNER' | 'VISITOR' | 'GUEST';
 export type Visibility = 'PUBLIC' | 'PRIVATE';
 /** 같은 클릭이 모드에 따라 스탯 링 / 증여 / 배치로 갈린다 */
-export type InteractionMode = 'NORMAL' | 'ITEM' | 'PLACEMENT';
+export type InteractionMode = 'NORMAL' | 'PLACEMENT';
 /** 한 번에 하나만 열린다 */
-export type Panel = 'guestbook' | 'attendance' | 'farewell' | 'wardrobe';
+/** 오른쪽 창의 탭 다섯 + 옷 입히기(가운데 팝업) */
+export type Panel = 'attendance' | 'farewell' | 'guestbook' | 'items' | 'characters' | 'wardrobe';
 
 /* ── RoomQuery API 응답 — GET /rooms/me · GET /rooms/:ownerId ───────────── */
 
@@ -87,7 +88,7 @@ export interface CharacterDef {
   outfit: Outfit | null;
 }
 
-export type FurnitureKind = 'box' | 'sofa' | 'chair' | 'armchair' | 'plant' | 'lamp' | 'rug' | 'shelf' | 'beanbag' | 'set';
+export type FurnitureKind = 'box' | 'sofa' | 'chair' | 'armchair' | 'plant' | 'lamp' | 'rug' | 'shelf' | 'beanbag' | 'fountain' | 'set';
 
 /** 여러 조각으로 된 가구의 한 조각 — 자리는 가구 가운데 기준, 회전 0도 기준(칸) */
 export interface FurniturePiece {
@@ -139,21 +140,51 @@ export interface StorageItem {
 
 export interface GuestbookComment {
   commentId: number;
+  userId: number;
   nickname: string;
-  content: string;
+  /** 비밀 답글을 볼 수 없는 사람에겐 서버가 null 로 준다 */
+  content: string | null;
   writeTime: string;
+  /** 거실 주인 · 답글 쓴 사람 · 원글 쓴 사람만 본다. 비밀글에 단 답글은 늘 비밀 {DB 칸 없음 — 추가 필요} */
+  isSecret: boolean;
 }
 
 export interface GuestbookPost {
   postId: number;
   userId: number;
   nickname: string;
-  content: string;
+  /** 비밀글을 볼 수 없는 사람에겐 서버가 null 로 준다 */
+  content: string | null;
   writeTime: string;
-  /** {DB에 비밀글 칸 없음 — 지금은 늘 false} */
+  /** 거실 주인과 쓴 사람만 본다 {DB에 비밀글 칸 없음 — 추가 필요} */
   isSecret: boolean;
-  /** 답글은 1단 (comments 에 부모 칸이 없음) */
+  /** 답글(대댓글)은 1단 — 주인·방문자 모두 단다 (comments 에 부모 칸이 없음) */
   replies: GuestbookComment[];
+}
+
+/* ── 캐릭터 탭 — 거실에 세울 캐릭터 조합(프리셋) {제안 — DB 에 프리셋 테이블 없음, 추가 필요} ── */
+
+/** 거실에 세울 캐릭터 조합 하나 — 이름을 바꿀 수 있고 최대 5명 */
+export interface CharacterPreset {
+  presetId: number;
+  name: string;
+  /** 넣은 순서 그대로. 1~5개. 다 판 종목은 서버가 빼고 준다 */
+  stockCodes: string[];
+}
+
+export interface PresetList {
+  /** 최대 5개, 늘 1개 이상 */
+  presets: CharacterPreset[];
+  /** 지금 거실에 선 프리셋 */
+  activePresetId: number;
+}
+
+/** 보유 종목 한 줄 — 프리셋에 넣을 후보. 이름·그림은 캐릭터 카탈로그에서 */
+export interface HoldingDto {
+  stockCode: string;
+  quantity: number;
+  /** 서버가 보낸 시점의 수익률 % — 수익률순 정렬과 표시용(실시간 아님) */
+  returnRate: number;
 }
 
 export interface ReactionKind {

@@ -6,36 +6,34 @@ import { Icon } from './ui';
 
 /** 거실 HUD 의 고정 띠들 — 상단 버튼 · 모드 버튼 · 모드 안내 · 하단 트레이 껍데기 */
 
-/** 우상단 — 패널 열기. 출석·이별 흔적은 주인만 */
+/**
+ * 우상단 — 오른쪽 창의 탭. 누르면 창이 열리고, 다른 탭을 누르면 내용만 바뀌고, 켜진 탭을 다시 누르면 닫힌다.
+ * 출석 체크 · 이별 흔적 · 아이템 · 캐릭터는 주인만
+ */
 export function TopActions({ mode, openPanel, onOpen }: { mode: ViewMode; openPanel: Panel | null; onOpen: (p: Panel) => void }) {
-  const gbOn = openPanel === 'guestbook';
+  const tabs: [Panel, 'att' | 'fare' | 'gb' | 'item' | 'char', string][] =
+    mode === 'OWNER'
+      ? [['attendance', 'att', '출석 체크'], ['farewell', 'fare', '이별 흔적'], ['guestbook', 'gb', '방명록'], ['items', 'item', '아이템'], ['characters', 'char', '캐릭터']]
+      : [['guestbook', 'gb', '방명록']];
   return (
-    <div style={{ ...floatBar, position: 'absolute', right: 12, top: 14, zIndex: 21 }}>
-      {mode === 'OWNER' && (
-        <>
-          <button type="button" onClick={() => onOpen('attendance')} style={ghostBtn}><Icon name="att" />출석 체크</button>
-          <button type="button" onClick={() => onOpen('farewell')} style={ghostBtn}><Icon name="fare" />이별 흔적</button>
-        </>
-      )}
-      <button
-        type="button"
-        aria-pressed={gbOn}
-        onClick={() => onOpen('guestbook')}
-        style={{ ...ghostBtn, background: gbOn ? C.chip : 'transparent', color: gbOn ? C.text : C.text2 }}
-      >
-        <Icon name="gb" />방명록
-      </button>
+    <div role="toolbar" aria-label="거실 창" style={{ ...floatBar, position: 'absolute', right: 12, top: 14, zIndex: 21 }}>
+      {tabs.map(([p, icon, label]) => {
+        const on = openPanel === p;
+        return (
+          <button key={p} type="button" aria-pressed={on} onClick={() => onOpen(p)} style={{ ...ghostBtn, background: on ? C.chip : 'transparent', color: on ? C.text : C.text2 }}>
+            <Icon name={icon} />{label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-/** 아래 가운데 — 아이템 · 배치 모드로 (주인만) */
-export function ModeDock({ centerX, top, onItem, onPlace }: { centerX: number; top: number; onItem: () => void; onPlace: () => void }) {
-  const btn = { ...solidBtn, flexGrow: 1, justifyContent: 'center', height: 32 } as const;
+/** 아래 가운데 — 배치 모드로 (주인만). 아이템은 오른쪽 창의 탭이 됐다(2026-10-12) */
+export function ModeDock({ centerX, top, onPlace }: { centerX: number; top: number; onPlace: () => void }) {
   return (
-    <nav aria-label="거실 모드" style={{ ...floatBar, position: 'absolute', left: centerX - 96, top, width: 192, gap: 4, padding: 4, transition: 'left 0.35s ease', zIndex: 5 }}>
-      <button type="button" onClick={onItem} style={btn}><Icon name="item" />아이템</button>
-      <button type="button" onClick={onPlace} style={btn}><Icon name="place" />배치</button>
+    <nav aria-label="거실 모드" style={{ ...floatBar, position: 'absolute', left: centerX - 52, top, width: 104, padding: 4, zIndex: 5 }}>
+      <button type="button" onClick={onPlace} style={{ ...solidBtn, flexGrow: 1, justifyContent: 'center', height: 32 }}><Icon name="place" />배치</button>
     </nav>
   );
 }
@@ -73,6 +71,7 @@ export function BottomBar({
 }) {
   return (
     <div
+      data-own-wheel=""
       style={{
         position: 'absolute', left: centerX - width / 2, top, width, height: 80, padding: '0 8px 0 16px', zIndex: 8,
         display: 'flex', alignItems: 'center', gap, border: '1px solid rgba(255,255,255,0.14)', borderRadius: R.panel, background: 'rgba(33,33,38,0.92)',

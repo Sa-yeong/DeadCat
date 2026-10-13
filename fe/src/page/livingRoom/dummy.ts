@@ -6,6 +6,7 @@
 import type {
   AttendanceState,
   CharacterDef,
+  CharacterPreset,
   FarewellCard,
   FurnitureDef,
   GuestbookPost,
@@ -32,6 +33,8 @@ export const CHARACTER_DEFS: CharacterDef[] = [
   { stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', sensitivity: 1.0, acts: ACTS, color: '#F2C38B', outfit: outfit(103, '카카오', '#D69A4F') },
   { stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', sensitivity: 0.5, acts: ACTS, color: '#9FD3C7', outfit: outfit(104, 'NAVER', '#5FA592') },
   { stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', sensitivity: 1.5, acts: ACTS, color: '#F2A0B3', outfit: outfit(105, '엔비디아', '#D66F8A') },
+  { stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', sensitivity: 0.5, acts: ACTS, color: '#B8C7D9', outfit: outfit(106, '현대차', '#7F93AD') },
+  { stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', sensitivity: 1.5, acts: ACTS, color: '#E8A0A0', outfit: outfit(107, '테슬라', '#C86A6A') },
 ];
 
 /* ── 가구 고정값 (Catalog API) ─────────────────────────────────────── */
@@ -65,6 +68,25 @@ export const FURNITURE_DEFS: FurnitureDef[] = [
   { furnitureId: 13, name: '초록 러그', kind: 'rug', w: 3.6, d: 3.6, h: 0, colors: ['#2C3532', 'rgba(159,211,199,0.22)', ''] },
   { furnitureId: 14, name: '갈색 러그', kind: 'rug', w: 4.2, d: 2.4, h: 0, colors: ['#3A2F2B', 'rgba(242,195,139,0.20)', ''] },
   { furnitureId: 15, name: '작은 탁자', kind: 'box', w: 1.0, d: 0.6, h: 0.32, colors: ['#45454D', '#38383F', '#303036'] },
+  // 카페 쪽 (2026-10-12 시안 「높은 벽 줌 테스트」의 30×30 방)
+  // 카페 테이블 세트 — 탁자 양옆 의자 둘이 처음부터 한 덩어리
+  {
+    furnitureId: 16, name: '카페 테이블 세트', kind: 'set', w: 2.4, d: 0.9, h: 1.0, colors: TABLE_C,
+    pieces: [{ kind: 'box', dx: 0, dy: 0, w: 0.9, d: 0.9, h: 0.75, rotation: 0, colors: TABLE_C }, chair(-0.85, 0, 270), chair(0.85, 0, 90)],
+  },
+  { furnitureId: 17, name: '카운터', kind: 'box', w: 6.8, d: 1.0, h: 1.1, colors: ['#4A4A54', '#3A3A44', '#32323A'] },
+  { furnitureId: 18, name: '진열장', kind: 'box', w: 1.0, d: 1.0, h: 2.2, colors: ['#4A5468', '#3E475A', '#353D4E'] },
+  { furnitureId: 19, name: '스툴', kind: 'box', w: 0.5, d: 0.5, h: 0.6, colors: ['#5A4A44', '#4A3D38', '#40342F'] },
+  { furnitureId: 20, name: '분수대', kind: 'fountain', w: 3.0, d: 3.0, h: 1.4, colors: ['#3E5A6E', '#2E3E4C', '#283642'] },
+  { furnitureId: 21, name: '게임기', kind: 'box', w: 1.2, d: 1.2, h: 1.9, colors: ['#4A4558', '#3A364A', '#322F40'] },
+  { furnitureId: 22, name: '화단', kind: 'plant', w: 1.2, d: 2.0, h: 0.6, colors: ['#4E5A78', '#404B66', '#37405A'] },
+  { furnitureId: 23, name: '벤치', kind: 'box', w: 3.6, d: 0.6, h: 0.45, colors: CHAIR_C },
+  { furnitureId: 24, name: '낮은 수납장', kind: 'shelf', w: 0.7, d: 2.2, h: 1.2, colors: ['#3E3E47', '#34343C', '#2C2C33'] },
+  { furnitureId: 25, name: '2인 소파', kind: 'sofa', w: 3.0, d: 1.15, h: 1.0, colors: ['#5C5866', '#4C4856', '#423F4B'], interactive: true },
+  { furnitureId: 26, name: '파란 러그', kind: 'rug', w: 8.2, d: 6.8, h: 0, colors: ['#2A3040', 'rgba(143,179,255,0.20)', ''] },
+  { furnitureId: 27, name: '큰 갈색 러그', kind: 'rug', w: 5.4, d: 5.4, h: 0, colors: ['#3A2F2B', 'rgba(242,195,139,0.20)', ''] },
+  { furnitureId: 28, name: '큰 보라 러그', kind: 'rug', w: 7.6, d: 6.0, h: 0, colors: ['#2F2A42', 'rgba(164,151,255,0.22)', ''] },
+  { furnitureId: 29, name: '분홍 러그', kind: 'rug', w: 5.6, d: 5.4, h: 0, colors: ['#33303A', 'rgba(242,160,179,0.22)', ''] },
 ];
 
 /* ── 내 거실 (RoomQuery API · OWNER) ──────────────────────────────── */
@@ -78,39 +100,84 @@ const pl = (furnitureId: number, x: number, y: number, rotation = 0): PlacementD
   rotation,
 });
 
+/** 30×30 방 — 시안 「높은 벽 줌 테스트」(2026-10-12)의 배치를 카탈로그 가구로 옮긴 것 */
 export const PLACEMENTS: PlacementDto[] = [
-  pl(12, 5.5, 2.65),
-  pl(13, 7.8, 7.2),
-  pl(14, 3.3, 10.4),
-  pl(1, 1.15, 0.3),
-  pl(2, 2.6, 0.6),
-  pl(3, 5.3, 0.6),
-  pl(4, 5.3, 2.45),
-  pl(5, 9.7, 0.35),
-  pl(6, 9.65, 3.75, 180),
-  pl(2, 11.3, 2.8),
-  pl(7, 7.75, 7.1),
-  pl(9, 1.175, 6.5),
-  pl(10, 2.4, 10.0),
-  pl(10, 4.4, 10.4),
-  pl(15, 3.1, 11.1),
-  pl(11, 11.4, 0.6),
-  pl(11, 7.9, 0.5),
-  pl(11, 0.6, 11.4),
-  pl(11, 11.4, 11.4),
-  pl(11, 11.4, 6.2),
+  // 러그
+  pl(12, 6.2, 3.1),
+  pl(26, 19.5, 7.0),
+  pl(13, 11.8, 10.1),
+  pl(27, 3.7, 20.3),
+  pl(28, 23.2, 17.0),
+  pl(29, 10.8, 24.7),
+  // 뒷벽 — 책장 · 스탠드 · 소파 라운지 · TV장 · 카페 카운터
+  pl(1, 1.35, 0.3),
+  pl(2, 2.9, 0.6),
+  pl(3, 6.2, 0.575),
+  pl(4, 6.2, 2.95),
+  pl(5, 11.6, 0.35),
+  pl(17, 19.2, 0.7),
+  pl(18, 23.7, 0.5),
+  pl(19, 17.0, 1.65),
+  pl(19, 18.4, 1.65),
+  pl(19, 19.8, 1.65),
+  pl(19, 21.2, 1.65),
+  pl(16, 16.6, 4.6),
+  pl(16, 19.6, 4.6),
+  pl(16, 22.6, 4.6),
+  pl(16, 16.6, 8.0),
+  pl(16, 19.6, 8.0),
+  pl(16, 22.6, 8.0),
+  // 왼벽 — 책상 세트 · 수납장 · 빈백 라운지
+  pl(9, 1.175, 7.0),
+  pl(24, 0.45, 12.5),
+  pl(10, 2.4, 19.6),
+  pl(10, 4.8, 20.4),
+  pl(15, 3.4, 21.6),
+  pl(24, 0.45, 26.0),
+  // 가운데 — 식탁 세트 · 분수대
+  pl(7, 11.8, 10.2),
+  pl(20, 14.5, 16.0),
+  // 오른쪽 — 소파 라운지 · 창가 화단
+  pl(3, 22.8, 14.975),
+  pl(4, 22.8, 17.45),
+  pl(25, 20.175, 17.5, 270),
+  pl(22, 28.6, 4.0),
+  pl(22, 28.6, 7.0),
+  pl(22, 28.6, 10.0),
+  // 앞쪽 — 벤치 · 게임기
+  pl(23, 10.8, 23.0),
+  pl(23, 10.8, 26.4),
+  pl(21, 24.6, 23.6),
+  pl(21, 26.2, 23.6),
+  pl(21, 27.8, 23.6),
+  // 화분
+  ...([
+    [9.4, 0.5], [14.2, 0.6], [24.9, 0.6], [29.3, 1.0], [29.2, 13.0], [29.2, 21.0], [0.6, 15.6], [0.6, 29.2],
+    [7.6, 29.2], [16.4, 29.2], [29.2, 29.2], [18.0, 12.4], [7.6, 13.6], [26.6, 12.0], [16.6, 21.6], [6.6, 25.4],
+  ] as const).map(([x, y]) => pl(11, x, y)),
 ];
 
-export const OWNER_CHARACTERS: RoomCharacterDto[] = [
+/** 내 보유 종목 전부 — 이 중 지금 프리셋의 종목만 거실에 선다 */
+export const OWNER_HOLDINGS: RoomCharacterDto[] = [
   { stockCode: '005930', quantity: 40, meanPrice: 66500, affinityLevel: 3, affinityScore: 40, ownedClothesId: null, receivedReactionCount: 12 },
   { stockCode: '000660', quantity: 8, meanPrice: 191000, affinityLevel: 4, affinityScore: 87, ownedClothesId: null, receivedReactionCount: 31 },
   { stockCode: '035720', quantity: 25, meanPrice: 44000, affinityLevel: 2, affinityScore: 25, ownedClothesId: null, receivedReactionCount: 5 },
   { stockCode: '035420', quantity: 6, meanPrice: 187500, affinityLevel: 1, affinityScore: 10, ownedClothesId: null, receivedReactionCount: 2 },
   { stockCode: 'NVDA', quantity: 10, meanPrice: 212600, affinityLevel: 5, affinityScore: 100, ownedClothesId: 105, receivedReactionCount: 47 },
+  { stockCode: '005380', quantity: 3, meanPrice: 250300, affinityLevel: 1, affinityScore: 5, ownedClothesId: null, receivedReactionCount: 0 },
+  { stockCode: 'TSLA', quantity: 2, meanPrice: 555600, affinityLevel: 2, affinityScore: 20, ownedClothesId: null, receivedReactionCount: 3 },
 ];
 
+/** 캐릭터 탭의 프리셋 — 처음엔 첫 번째가 거실에 서 있다 */
+export const PRESETS: CharacterPreset[] = [
+  { presetId: 1, name: '내 거실', stockCodes: ['005930', '000660', '035720', '035420', 'NVDA'] },
+  { presetId: 2, name: '반도체 라인', stockCodes: ['000660', 'NVDA', '005930', 'TSLA'] },
+  { presetId: 3, name: '배당 모음', stockCodes: ['005930', '035420', '005380'] },
+];
+export const ACTIVE_PRESET_ID = 1;
+
 /** 처음 시세 — PriceFeedClient 가 여기서 출발해 흔든다 */
-export const START_PRICES: Prices = { '005930': 71400, '000660': 214000, '035720': 42200, '035420': 190000, NVDA: 260400 };
+export const START_PRICES: Prices = { '005930': 71400, '000660': 214000, '035720': 42200, '035420': 190000, NVDA: 260400, '005380': 245000, TSLA: 610000 };
 
 /* ── 남의 거실 (VISITOR·GUEST) ──────────────────────────────────── */
 
@@ -154,11 +221,31 @@ const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString
 export const GUESTBOOK: GuestbookPost[] = [
   { postId: 1, userId: 21, nickname: '주식하는고양이', content: '하이닉스 표정 너무 좋다ㅋㅋ 오늘 날았네요', writeTime: hoursAgo(0.2), isSecret: false, replies: [] },
   { postId: 2, userId: 22, nickname: '밤샘단타', content: '거실 구경 왔다 갑니다. 소파 어디서 구했어요?', writeTime: hoursAgo(1), isSecret: false,
-    replies: [{ commentId: 1, nickname: '나', content: '고마워요! 자주 놀러 오세요', writeTime: hoursAgo(0.8) }] },
-  { postId: 3, userId: 23, nickname: '익명의개미', content: '카카오 언제 웃을까요… 같이 버텨요', writeTime: hoursAgo(3), isSecret: false, replies: [] },
+    replies: [{ commentId: 1, userId: 1, nickname: '나', content: '고마워요! 자주 놀러 오세요', writeTime: hoursAgo(0.8), isSecret: false }] },
+  { postId: 7, userId: 27, nickname: '조용한매수', content: '혹시 하이닉스 평단 얼마에 잡으셨어요? 저도 들어갈까 고민 중이라…', writeTime: hoursAgo(2), isSecret: true,
+    replies: [{ commentId: 2, userId: 1, nickname: '나', content: '19만 원 초반이요. 나눠서 사세요!', writeTime: hoursAgo(1.5), isSecret: true }] },
+  { postId: 3, userId: 23, nickname: '익명의개미', content: '카카오 언제 웃을까요… 같이 버텨요', writeTime: hoursAgo(3), isSecret: false,
+    replies: [
+      { commentId: 3, userId: 28, nickname: '존버장인', content: '저도 카카오 물려 있어요ㅠ', writeTime: hoursAgo(2.5), isSecret: false },
+      { commentId: 4, userId: 23, nickname: '익명의개미', content: '평단 알려 드릴게요, 비밀로', writeTime: hoursAgo(2.2), isSecret: true },
+    ] },
   { postId: 4, userId: 24, nickname: 'NVDA러버', content: '엔비디아 Lv.5 부럽습니다', writeTime: hoursAgo(26), isSecret: false, replies: [] },
   { postId: 5, userId: 25, nickname: '가치투자자', content: '삼성전자 40주 꾸준하시네요', writeTime: hoursAgo(50), isSecret: false, replies: [] },
   { postId: 6, userId: 26, nickname: '첫매수', content: '방 분위기 좋아요. 스탠드 색감 예쁘네요', writeTime: hoursAgo(80), isSecret: false, replies: [] },
+];
+
+/** 남의 거실(밤샘단타, userId 22)의 방명록 — 주인 답글은 22, '나'(1)는 아직 안 씀 */
+export const VISIT_GUESTBOOK: GuestbookPost[] = [
+  { postId: 101, userId: 31, nickname: '반도체한우물', content: '하이닉스 +18% 실화인가요… 축하드려요', writeTime: hoursAgo(0.5), isSecret: false,
+    replies: [{ commentId: 101, userId: 22, nickname: '밤샘단타', content: '운이 좋았어요ㅎㅎ', writeTime: hoursAgo(0.4), isSecret: false }] },
+  { postId: 102, userId: 27, nickname: '조용한매수', content: '엔비디아 언제 사셨는지 여쭤봐도 될까요?', writeTime: hoursAgo(2), isSecret: true,
+    replies: [{ commentId: 102, userId: 22, nickname: '밤샘단타', content: '작년 봄이요. 그때 많이 샀어요', writeTime: hoursAgo(1.6), isSecret: true }] },
+  { postId: 103, userId: 32, nickname: '카카오존버', content: '카카오 같이 버텨요 우리', writeTime: hoursAgo(5), isSecret: false,
+    replies: [
+      { commentId: 103, userId: 33, nickname: '물타기달인', content: '저도 물렸어요ㅠ', writeTime: hoursAgo(4.5), isSecret: false },
+      { commentId: 104, userId: 22, nickname: '밤샘단타', content: '평단 공유해 드릴게요', writeTime: hoursAgo(4), isSecret: true },
+    ] },
+  { postId: 104, userId: 34, nickname: '단타초보', content: '거실 분수대 예뻐요!', writeTime: hoursAgo(30), isSecret: false, replies: [] },
 ];
 
 export const REACTION_KINDS: ReactionKind[] = [

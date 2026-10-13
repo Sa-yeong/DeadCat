@@ -10,7 +10,15 @@ import { GlobalBar } from '../src/page/stockDetail/components/GlobalBar';
 function RoomDevPanel() {
   const nav = useNavigate();
   const { pathname, search } = useLocation();
-  const cur = pathname + search;
+  // 평면 보기 — ?r=2d 를 붙이고 뗀다 (기본은 3D). 보는 사람 바꿔 보기를 눌러도 유지된다
+  const is3d = new URLSearchParams(search).get('r') !== '2d';
+  const with3d = (to: string, on: boolean) => {
+    const [path, q = ''] = to.split('?');
+    const parts = q.split('&').filter((x) => x && x !== 'r=2d');
+    if (!on) parts.push('r=2d');
+    return parts.length ? `${path}?${parts.join('&')}` : path;
+  };
+  const cur = with3d(pathname + search, true);
   const items: [string, string][] = [
     ['내 거실 (OWNER)', '/room'],
     ['남의 거실 (VISITOR)', '/room/22'],
@@ -32,7 +40,7 @@ function RoomDevPanel() {
         <button
           key={to}
           type="button"
-          onClick={() => nav(to)}
+          onClick={() => nav(with3d(to, is3d))}
           style={{
             height: 24, padding: '0 8px', borderRadius: 3, cursor: 'pointer', fontSize: 11,
             border: '1px solid rgba(255,255,255,0.22)', background: cur === to ? '#F2564C' : '#26262B', color: '#EDEDEA',
@@ -41,6 +49,16 @@ function RoomDevPanel() {
           {label}
         </button>
       ))}
+      <button
+        type="button"
+        onClick={() => nav(with3d(cur, !is3d))}
+        style={{
+          height: 24, marginTop: 4, padding: '0 8px', borderRadius: 3, cursor: 'pointer', fontSize: 11,
+          border: '1px solid rgba(255,255,255,0.22)', background: is3d ? '#3D6DF2' : '#26262B', color: '#EDEDEA',
+        }}
+      >
+        {is3d ? '3D 보는 중 → 평면으로' : '평면 보는 중 → 3D로'}
+      </button>
     </div>
   );
 }

@@ -94,6 +94,18 @@ export function shapeOf(def: FurnitureDef, pos: Pt, rotation: number): Shape {
       };
     case 'rug':
       return { parts: [{ ...f, z0: 0, z1: 0.01, colors: c }], blobs: [] };
+    case 'fountain': {
+      // 둥근 분수 — 넓은 수반 · 가운데 기둥 · 작은 수반을 상자로, 물은 납작한 원으로
+      const rad = Math.min(f.x1 - f.x0, f.y1 - f.y0) / 2;
+      const sq = (hw: number, z0: number, z1: number, colors: [string, string, string]): Part => ({ x0: pos.x - hw, x1: pos.x + hw, y0: pos.y - hw, y1: pos.y + hw, z0, z1, colors });
+      return {
+        parts: [sq(rad * 0.95, 0, 0.4, c), sq(0.18, 0.4, def.h - 0.1, darker), sq(rad * 0.45, def.h - 0.1, def.h, c)],
+        blobs: [
+          { x: pos.x, y: pos.y, z: 0.41, r: rad * 0.8, color: '#5A86A0', opacity: 0.9, flat: true },
+          { x: pos.x, y: pos.y, z: def.h + 0.01, r: rad * 0.38, color: '#6E9AB4', opacity: 0.9, flat: true },
+        ],
+      };
+    }
     default:
       return { parts: [all(def.h)], blobs: [] };
   }

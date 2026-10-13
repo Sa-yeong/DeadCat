@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import * as api from '../api';
-import type { RoomLayout } from '../layout';
+import type { PanControl, RoomLayout } from '../layout';
 import type { CharacterCatalog, FurnitureCatalog } from '../runtime/catalogs';
 import type { Pt } from '../runtime/projection';
 import type { RoomLoop } from '../runtime/RoomLoop';
@@ -16,19 +16,22 @@ import type {
   RoomSnapshot,
 } from '../types';
 import { AssetSummary } from './AssetSummary';
-import { ModeBanner, ModeDock, TopActions } from './chrome';
+import { ModeDock, TopActions } from './chrome';
 import { GuestbookPanel } from './GuestbookPanel';
-import { AffinityFlash, ItemTray } from './ItemTray';
-import { AttendanceBoard, FarewellArchive, WardrobeGallery } from './Modals';
+import { CharacterPanel } from './CharacterPanel';
+import { AffinityFlash, ItemPanel } from './ItemTray';
+import { WardrobeGallery } from './Modals';
+import { AttendancePanel, FarewellPanel } from './OwnerPanels';
 import { OwnerProfileHud } from './OwnerProfileHud';
 import { PlacementEditor } from './PlacementEditor';
 import { PressRing } from './PressRing';
+import { SidePanel } from './SidePanel';
 import { StatRing, type BadgeKind } from './StatRing';
 import { useEscape } from './useEscape';
 
 /** 페이지가 런타임 콜백을 이어 붙이는 손잡이 */
 export interface RoomHudApi {
-  /** 캐릭터를 짧게 눌렀다. screen 은 누른 순간 머리 위 자리 — 아이템 모드의 하트 자리로만 쓴다(링은 그릴 때 런타임에 묻는다) */
+  /** 캐릭터를 짧게 눌렀다 (링 자리는 그릴 때 런타임에 묻는다) */
   onSelect(charId: string, screen: Pt): void;
   onEmptyPick(): void;
   /** 캐릭터를 꾹 누르기 시작했다 — 머리 위 게이지가 ms 동안 찬다 */
@@ -42,8 +45,12 @@ export interface RoomHudApi {
 }
 
 /** OWNER 만 여는 것 */
-const OWNER_ONLY: Panel[] = ['attendance', 'farewell', 'wardrobe'];
+const OWNER_ONLY: Panel[] = ['attendance', 'farewell', 'items', 'characters', 'wardrobe'];
+/** 오른쪽 창에 뜨는 탭 — 옷 입히기만 가운데 팝업 */
+type SideTab = Exclude<Panel, 'wardrobe'>;
+const isSide = (p: Panel | null): p is SideTab => p !== null && p !== 'wardrobe';
 const FLASH_MS = 1800;
+const SIDE_LABEL: Record<SideTab, string> = { attendance: '출석 체크', farewell: '이별 흔적', guestbook: '방명록', items: '아이템', characters: '캐릭터' };
 
 interface Flash {
   key: number;
@@ -67,16 +74,17 @@ export function RoomHud({
   reactionKinds,
   quotes,
   layout,
-  roomLeft,
+  pan,
   loop,
   renderer,
   characters: catalog,
   furniture,
-  onGuestbook,
+  onSidePanel,
   onStock,
   onVisit,
   onFollow,
   onPlacementsSaved,
+  onRoster,
   loginOpen,
   onNeedLogin,
 }: {
@@ -87,16 +95,20 @@ export function RoomHud({
   reactionKinds: ReactionKind[];
   quotes: Record<string, Quote>;
   layout: RoomLayout;
-  roomLeft: number;
+  /** 줌인했을 때 빈 바닥 끌기 — 배치 편집기에 넘긴다 */
+  pan: PanControl;
   loop: RoomLoop;
   renderer: RoomRenderer;
   characters: CharacterCatalog;
   furniture: FurnitureCatalog;
-  onGuestbook: (open: boolean) => void;
+  /** 오른쪽 창이 열리고 닫힐 때 — 페이지가 줌 버튼을 비켜 놓는다 */
+  onSidePanel: (open: boolean) => void;
   onStock: (stockCode: string) => void;
   onVisit: (userId: number) => void;
   onFollow: (on: boolean) => void;
   onPlacementsSaved: (p: PlacementDto[]) => void;
+  /** 거실에 선 캐릭터가 바뀌었다(캐릭터 탭) — 페이지가 스냅샷을 맞춘다 */
+  onRoster: (characters: RoomCharacterDto[]) => void;
   /** 로그인 창은 페이지가 하나만 띄운다 — 떠 있는 동안 여기 Esc 는 쉰다 */
   loginOpen: boolean;
   onNeedLogin: () => void;
@@ -105,6 +117,10 @@ export function RoomHud({
   const owner = mode === 'OWNER';
   const [interaction, setInteraction] = useState<InteractionMode>('NORMAL');
   const [openPanel, setOpenPanel] = useState<Panel | null>(null);
+  /** 오른쪽 창에 마지막으로 띄운 탭 — 닫히며 미끄러져 나가는 동안에도 내용이 남아 있게 */
+  const [sideTab, setSideTab] = useState<SideTab>('guestbook');
+  /** 탭을 열 때마다 올라간다 — 출석·이별 흔적은 열 때마다 새로 받게 key 로 쓴다 */
+  const [openSeq, setOpenSeq] = useState(0);
   /** 링을 띄운 캐릭터. 자리는 그릴 때마다 런타임에 묻는다 — 창 크기가 바뀌어도 따라가게 */
   const [selected, setSelected] = useState<string | null>(null);
   // 런타임이 세운 캐릭터만 — 못 세운 종목은 시세도 안 오므로 거실 자산에서도 뺀다
@@ -114,11 +130,12 @@ export function RoomHud({
   });
   const [wardrobeFor, setWardrobeFor] = useState<string | null>(null);
   const [inventory, setInventory] = useState<InventoryItem[] | null>(null);
-  const [picked, setPicked] = useState<number | null>(null);
+  /** 끌고 있는 아이템 — 트레이에서 그 칸을 표시만 한다 */
+  const [dragging, setDragging] = useState<number | null>(null);
   const [flash, setFlash] = useState<Flash | null>(null);
   /** 들기 게이지 — 누를 때마다 key 가 바뀌어 처음부터 다시 찬다 */
   const [charge, setCharge] = useState<{ charId: string; ms: number; key: number } | null>(null);
-  /** 상호작용 모드가 바뀔 때마다 올라간다 — 지난 아이템 모드에서 보낸 보유 목록·증여 응답은 버린다 */
+  /** 보유 목록을 새로 받을 때마다 올라간다 — 그 전에 보낸 증여의 응답은 보유 수를 다시 깎지 않는다(새 목록에 이미 반영) */
   const itemSession = useRef(0);
 
   /**
@@ -129,8 +146,6 @@ export function RoomHud({
   const guest = mode === 'GUEST';
   const askLogin = onNeedLogin;
 
-  /** 골라 둔 아이템 — 다 쓴 아이템은 골라 둔 것으로 치지 않는다 */
-  const pendingItem = picked !== null && (inventory?.find((i) => i.itemId === picked)?.quantity ?? 0) > 0 ? picked : null;
 
   /* ── 모드 · 패널 전환 ── */
 
@@ -140,45 +155,63 @@ export function RoomHud({
   };
 
   const switchInteraction = (m: InteractionMode) => {
-    if (m !== interaction) itemSession.current++;
     setInteraction(m);
     loop.setInteractionMode(m);
     setSelected(null);
-    setPicked(null);
+    setDragging(null);
   };
 
-  /** 패널 열기 — 모드 허용 판정 + 패널은 하나만. 방명록은 다시 누르면 닫힌다 */
-  const open = (panel: Panel, charId?: string) => {
-    // 패널 버튼은 일반 모드에서만 보인다 — 아이템·배치 모드에서 여기로 오는 길은 없다
-    if (!owner && OWNER_ONLY.includes(panel)) return;
-    if (panel === 'wardrobe') setWardrobeFor(charId ?? chars[0]?.stockCode ?? null);
-    else deselect();
-    setOpenPanel((cur) => (cur === panel && panel === 'guestbook' ? null : panel));
-  };
-  const closePanel = () => {
-    // 방명록이 닫히면 방이 옆으로 미끄러진다 — 링이 제자리에 남아 어긋나 보이지 않게 같이 닫는다
-    if (openPanel === 'guestbook') deselect();
-    setOpenPanel(null);
-  };
-
-  // 방명록이 열리고 닫힐 때만 페이지가 방을 옮긴다
-  const gbOpen = openPanel === 'guestbook';
-  useEffect(() => {
-    onGuestbook(gbOpen);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gbOpen]);
-
-  const enterItem = () => {
-    setOpenPanel(null);
-    switchInteraction('ITEM');
-    // 모드를 빠르게 들락거리면 늦게 온 옛 응답이 새 응답을 덮지 않게
-    const req = itemSession.current;
+  /** 아이템 탭을 열 때마다 보유 목록을 새로 받는다 — 빠르게 여닫으면 늦게 온 옛 응답이 새 응답을 덮지 않게 */
+  const loadInventory = () => {
+    const req = ++itemSession.current;
+    setInventory(null);
     const done = (inv: InventoryItem[]) => req === itemSession.current && setInventory(inv);
     void api.getInventory().then(done, () => done([]));
   };
+
+  /**
+   * 창 열기 — 모드 허용 판정 + 창은 하나만.
+   * 오른쪽 창의 탭은 다른 탭을 누르면 내용만 바뀌고, 켜진 탭을 다시 누르면 닫힌다
+   */
+  const open = (panel: Panel, charId?: string) => {
+    if (!owner && OWNER_ONLY.includes(panel)) return;
+    if (panel === 'wardrobe') {
+      setWardrobeFor(charId ?? chars[0]?.stockCode ?? null);
+      setOpenPanel('wardrobe');
+      return;
+    }
+    if (openPanel === panel) return setOpenPanel(null);
+    if (!isSide(openPanel)) deselect(); // 창이 새로 열릴 때만 링을 닫는다(탭만 바꿀 땐 그대로)
+    if (panel === 'items') loadInventory();
+    setSideTab(panel);
+    setOpenSeq((n) => n + 1);
+    setOpenPanel(panel);
+  };
+  const closePanel = () => setOpenPanel(null);
+
+  // 오른쪽 창이 열리고 닫힐 때 — 페이지가 줌 버튼을 창 왼쪽으로 비킨다
+  const sideOpen = isSide(openPanel);
+  useEffect(() => {
+    onSidePanel(sideOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideOpen]);
+
   const enterPlacement = () => {
     setOpenPanel(null);
     switchInteraction('PLACEMENT');
+  };
+
+  /**
+   * 캐릭터 탭에서 거실 조합이 바뀌었다 — 런타임에 세우고, 오버레이는 실제로 선 캐릭터만 들고 있는다.
+   * 빠진 캐릭터의 스탯 링·옷 입히기는 닫는다
+   */
+  const applyRoster = (next: RoomCharacterDto[]) => {
+    loop.setRoster(next);
+    const placed = new Set(loop.characterIds);
+    setChars(next.filter((c) => placed.has(c.stockCode)));
+    if (selected && !placed.has(selected)) setSelected(null);
+    setCharge((c) => (c && !placed.has(c.charId) ? null : c));
+    onRoster(next);
   };
 
   /* ── 증여 ── */
@@ -187,7 +220,7 @@ export function RoomHud({
     const session = itemSession.current;
     const r = await api.giveItem(charId, itemId).catch(() => null);
     if (!r) return;
-    // 호감도는 서버에 반영됐으니 그대로 받는다. 보유 수·하트는 아이템 모드를 나갔다 왔으면 새로 받은 목록이 맞다
+    // 호감도는 서버에 반영됐으니 그대로 받는다. 보유 수·하트는 그 사이 아이템 탭을 다시 열어 새로 받았으면 새 목록이 맞다
     setChars((list) => list.map((c) => (c.stockCode === charId ? { ...c, affinityScore: r.affinityScore, affinityLevel: r.affinityLevel } : c)));
     if (session !== itemSession.current) return;
     setInventory((inv) => (inv ?? []).map((i) => (i.itemId === itemId ? { ...i, quantity: i.quantity - 1 } : i)));
@@ -203,11 +236,7 @@ export function RoomHud({
   /* ── 런타임에서 오는 것 (페이지가 이어 준다) ── */
 
   useImperativeHandle(ref, () => ({
-    onSelect(charId, screen) {
-      if (interaction === 'ITEM') {
-        if (pendingItem !== null) void give(charId, pendingItem, screen);
-        return;
-      }
+    onSelect(charId) {
       if (interaction !== 'NORMAL') return;
       if (selected === charId) deselect();
       else setSelected(charId);
@@ -224,25 +253,16 @@ export function RoomHud({
     onLifted(charId) {
       if (selected === charId) setSelected(null);
     },
+    // 아이템은 끌어다 놓아야만 준다 — 캐릭터를 누르는 건 지급이 아니다(2026-10-12 도휘)
     onItemDrop(charId, itemId, screen) {
-      if (interaction !== 'ITEM') return;
-      setPicked(itemId);
+      if (!owner || interaction !== 'NORMAL') return;
+      setDragging(null);
       void give(charId, itemId, screen);
     },
   }));
 
-  // Esc — 창 → 링 → 아이템 모드 순으로 닫는다. 로그인 창은 자기가 받고, 배치 모드는 편집기가 받는다
-  useEscape(
-    loginOpen || interaction === 'PLACEMENT'
-      ? null
-      : openPanel
-        ? closePanel
-        : selected
-          ? deselect
-          : interaction === 'ITEM'
-            ? () => switchInteraction('NORMAL')
-            : null,
-  );
+  // Esc — 창 → 링 순으로 닫는다. 로그인 창은 자기가 받고, 배치 모드는 편집기가 받는다
+  useEscape(loginOpen || interaction === 'PLACEMENT' ? null : openPanel ? closePanel : selected ? deselect : null);
 
   const onBadge = (kind: BadgeKind) => {
     if (!selected) return;
@@ -255,7 +275,7 @@ export function RoomHud({
   const selAt = selected ? loop.screenOf(selected) : null;
   // 누르는 동안 캐릭터는 멈춰 서 있으니 누른 순간의 머리 위가 곧 지금 자리다
   const chargeAt = charge ? loop.screenOf(charge.charId) : null;
-  const centerX = roomLeft + layout.roomWidth / 2;
+  const centerX = layout.width / 2;
   const barTop = layout.stageHeight - 92;
   const normal = interaction === 'NORMAL';
 
@@ -268,12 +288,12 @@ export function RoomHud({
       )}
 
       {normal && <TopActions mode={mode} openPanel={openPanel} onOpen={open} />}
-      {normal && owner && <ModeDock centerX={centerX} top={layout.dockTop} onItem={enterItem} onPlace={enterPlacement} />}
+      {normal && owner && <ModeDock centerX={centerX} top={layout.dockTop} onPlace={enterPlacement} />}
 
       {normal && selected && sel && selDef && selAt && (
         <StatRing
           key={selected}
-          x={roomLeft + selAt.x}
+          x={selAt.x}
           y={selAt.y}
           mode={mode}
           character={sel}
@@ -293,23 +313,17 @@ export function RoomHud({
         />
       )}
 
-      {interaction === 'ITEM' && (
-        <>
-          <ModeBanner title="아이템" hint="지급하는 순간에만 호감도 게이지가 보여요" />
-          <ItemTray inventory={inventory} pending={pendingItem} centerX={centerX} top={barTop} onPick={setPicked} onDone={() => switchInteraction('NORMAL')} />
-        </>
-      )}
-      {chargeAt && charge && <PressRing key={charge.key} x={roomLeft + chargeAt.x} y={chargeAt.y} ms={charge.ms} />}
-      {flash && <AffinityFlash key={flash.key} x={roomLeft + flash.at.x} y={flash.at.y} delta={flash.delta} score={flash.score} level={flash.level} />}
+      {chargeAt && charge && <PressRing key={charge.key} x={chargeAt.x} y={chargeAt.y} ms={charge.ms} />}
+      {flash && <AffinityFlash key={flash.key} x={flash.at.x} y={flash.at.y} delta={flash.delta} score={flash.score} level={flash.level} />}
 
       {interaction === 'PLACEMENT' && (
         <PlacementEditor
           renderer={renderer}
           catalog={furniture}
           initial={loop.currentPlacements}
-          roomLeft={roomLeft}
-          roomWidth={layout.roomWidth}
+          width={layout.width}
           stageHeight={layout.stageHeight}
+          pan={pan}
           barTop={barTop}
           onPreview={(p) => loop.previewPlacements(p)}
           onExit={(saved) => {
@@ -320,18 +334,24 @@ export function RoomHud({
         />
       )}
 
-      <GuestbookPanel
-        open={gbOpen}
-        ownerId={ownerId}
-        mode={mode}
-        reactionKinds={reactionKinds}
-        {...layout.panel}
-        onClose={closePanel}
-        onVisit={onVisit}
-        onNeedLogin={askLogin}
-      />
-      {openPanel === 'attendance' && <AttendanceBoard onClose={closePanel} onClaimed={() => setInventory(null)} />}
-      {openPanel === 'farewell' && <FarewellArchive onClose={closePanel} />}
+      <SidePanel open={sideOpen} label={SIDE_LABEL[sideTab]} {...layout.panel}>
+        {sideTab === 'guestbook' && (
+          <GuestbookPanel
+            open={sideOpen}
+            ownerId={ownerId}
+            mode={mode}
+            reactionKinds={reactionKinds}
+            onClose={closePanel}
+            onVisit={onVisit}
+            onNeedLogin={askLogin}
+          />
+        )}
+        {/* 주인 탭은 열 때마다 새로 받는다 — 닫히며 미끄러져 나가는 동안엔 그대로 둔다 */}
+        {owner && sideTab === 'attendance' && <AttendancePanel key={openSeq} onClose={closePanel} onClaimed={() => setInventory(null)} />}
+        {owner && sideTab === 'farewell' && <FarewellPanel key={openSeq} onClose={closePanel} />}
+        {owner && sideTab === 'items' && <ItemPanel inventory={inventory} dragging={dragging} onDrag={setDragging} onClose={closePanel} />}
+        {owner && sideTab === 'characters' && <CharacterPanel key={openSeq} catalog={catalog} onRoom={applyRoster} onClose={closePanel} />}
+      </SidePanel>
       {openPanel === 'wardrobe' && wardrobeFor && (
         <WardrobeGallery
           characters={chars}

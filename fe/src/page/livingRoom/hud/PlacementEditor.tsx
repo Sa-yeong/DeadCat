@@ -22,6 +22,7 @@ import { C, accentBtn, ghostBtn } from './style';
 import { ConfirmDialog, Icon } from './ui';
 import { useEscape } from './useEscape';
 import { useHistory } from './useHistory';
+import type { PanControl } from '../layout';
 
 /**
  * 배치 편집 세션 — OWNER 전용, 대상은 **가구만**.
@@ -33,9 +34,9 @@ export function PlacementEditor({
   renderer,
   catalog,
   initial,
-  roomLeft,
-  roomWidth,
+  width,
   stageHeight,
+  pan,
   barTop,
   onPreview,
   onExit,
@@ -43,9 +44,11 @@ export function PlacementEditor({
   renderer: RoomRenderer;
   catalog: FurnitureCatalog;
   initial: readonly PlacementDto[];
-  roomLeft: number;
-  roomWidth: number;
+  /** 무대 가로 */
+  width: number;
   stageHeight: number;
+  /** 줌인했을 때 빈 바닥을 끌어 둘러보기 */
+  pan: PanControl;
   barTop: number;
   /** 편집 중 배치가 바뀌었다 — 캐릭터가 지금 가구를 피해 걷도록 런타임에 알린다(저장 전) */
   onPreview: (placements: readonly PlacementDto[]) => void;
@@ -167,7 +170,11 @@ export function PlacementEditor({
     const id = renderer.pickFurniture(p.x, p.y);
     select(id);
     const pl = id === null ? undefined : placementOf(id);
-    if (id === null || !pl) return;
+    if (id === null || !pl) {
+      // 빈 바닥 — 줌인했으면 방을 끌어 둘러본다
+      if (pan.start(p.x, p.y)) overlay.current?.setPointerCapture(e.pointerId);
+      return;
+    }
     const fl = renderer.toFloor(p.x, p.y);
     const start = { x: pl.positionX, y: pl.positionY };
     drag.current = { id, offset: { x: fl.x - start.x, y: fl.y - start.y }, start, last: start };
@@ -176,6 +183,8 @@ export function PlacementEditor({
   };
 
   const onMove = (e: React.PointerEvent) => {
+    const p = local(e);
+    pan.move(p.x, p.y);
     if (!doc || saving) return;
     // 버튼이 떼어졌는데 놓기를 못 받았다(우클릭 메뉴 등) — 끌기를 끝낸다
     if (drag.current && e.buttons === 0) {
@@ -198,6 +207,7 @@ export function PlacementEditor({
   };
 
   const endDrag = () => {
+    pan.end();
     const d = drag.current;
     drag.current = null;
     setDragging(false);
@@ -251,7 +261,7 @@ export function PlacementEditor({
   const selPl = selected !== null ? placementOf(selected) : undefined;
   const selDef = selPl ? def(selPl.furnitureId) : undefined;
   const iconBtn: React.CSSProperties = { ...ghostBtn, width: 32, height: 32, padding: 0, justifyContent: 'center' };
-  const centerX = roomLeft + roomWidth / 2;
+  const centerX = width / 2;
   const stock = doc?.storage ?? [];
 
   return (
@@ -274,7 +284,7 @@ export function PlacementEditor({
           e.preventDefault();
           place(id, floorAt(e));
         }}
-        style={{ position: 'absolute', left: roomLeft, top: 0, width: roomWidth, height: stageHeight, zIndex: 4, cursor: holding !== null ? 'copy' : 'default', touchAction: 'none', transition: 'left 0.35s ease' }}
+        style={{ position: 'absolute', left: 0, top: 0, width, height: stageHeight, zIndex: 4, cursor: holding !== null ? 'copy' : 'default', touchAction: 'none' }}
       />
 
       <ModeBanner
@@ -283,7 +293,7 @@ export function PlacementEditor({
       />
 
       {anchor && selDef && (
-        <div style={{ position: 'absolute', left: roomLeft + anchor.x - 120, top: anchor.y - 46, width: 240, display: 'flex', justifyContent: 'center', zIndex: 9 }}>
+        <div style={{ position: 'absolute', left: anchor.x - 120, top: anchor.y - 46, width: 240, display: 'flex', justifyContent: 'center', zIndex: 9 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 3, border: `1px solid ${C.line}`, borderRadius: R.card, background: C.panel }}>
             <span style={{ padding: '0 8px', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{selDef.name}</span>
             <button type="button" onClick={rotate} disabled={!canRotate || saving} title={canRotate ? undefined : '돌릴 자리가 없어요'} style={{ ...ghostBtn, opacity: canRotate ? 1 : 0.4, cursor: canRotate ? 'pointer' : 'default' }}><Icon name="rotate" />회전</button>
@@ -295,7 +305,7 @@ export function PlacementEditor({
       <BottomBar
         centerX={centerX}
         top={barTop}
-        width={Math.min(760, roomWidth + 120)}
+        width={Math.min(760, width - 120)}
         title="보관함"
         gap={12}
         tools={

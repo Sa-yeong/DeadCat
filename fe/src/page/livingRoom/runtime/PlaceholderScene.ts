@@ -1,8 +1,10 @@
 import type { ActName, CharacterDef } from '../types';
 import { wornOutfit, type FurnitureCatalog } from './catalogs';
 import type { DropTarget, RoomRenderer } from './RoomRenderer';
-import { Projection, ROOM, type Pt } from './projection';
+import { CHAR } from './characterSize';
+import { Projection, ROOM, VIEW, type Pt } from './projection';
 import { shapeOf, type Part } from './furnitureShape';
+import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
 
 /**
  * **평면 더미 렌더러** — 3D(RoomScene)가 붙기 전까지 RoomRenderer 자리를 맡는다.
@@ -11,7 +13,6 @@ import { shapeOf, type Part } from './furnitureShape';
  * playAct 는 기록만 한다 — 마우스를 올리면 툴팁으로 지금 행동이 보인다.
  */
 const NS = 'http://www.w3.org/2000/svg';
-const WALL_H = 30; // 화면 위를 뚫고 나가도록 넉넉하게
 const ACCENT = '#F2564C';
 const OUTLINE_ID = 'lr-drop-outline';
 
@@ -28,7 +29,7 @@ interface CharNode {
   title: SVGTitleElement;
   selected: boolean;
   lifted: boolean;
-  dim: boolean;
+  hidden: boolean;
 }
 
 interface FurnNode {
@@ -62,7 +63,7 @@ function inside(p: Pt, poly: Pt[]): boolean {
 export class PlaceholderScene implements RoomRenderer {
   private readonly svg: SVGSVGElement;
   private readonly furniture: FurnitureCatalog;
-  private proj = new Projection(50, 200);
+  private proj = new Projection(30, 600, 100);
   private readonly shell: SVGGElement;
   private readonly rugs: SVGGElement;
   private readonly objects: SVGGElement;
@@ -80,7 +81,7 @@ export class PlaceholderScene implements RoomRenderer {
     svg.replaceChildren();
     const defs = el('defs');
     const grad = el('linearGradient', { id: 'lr-wall-fade', x1: 0, y1: 0, x2: 0, y2: 1 });
-    grad.append(el('stop', { offset: 0, 'stop-color': '#000', 'stop-opacity': 0.5 }), el('stop', { offset: 0.75, 'stop-color': '#000', 'stop-opacity': 0 }));
+    grad.append(el('stop', { offset: 0, 'stop-color': '#000', 'stop-opacity': SHELL.fadeTop }), el('stop', { offset: SHELL.fadeTo, 'stop-color': '#000', 'stop-opacity': 0 }));
     // 놓을 수 있는 상대의 테두리 — 모양을 2.5px 부풀린 흰 실루엣을 뒤에 깐다
     const outline = el('filter', { id: OUTLINE_ID, x: '-20%', y: '-20%', width: '140%', height: '140%' });
     outline.append(
@@ -101,8 +102,8 @@ export class PlaceholderScene implements RoomRenderer {
 
   /* ── 크기 ─────────────────────────────────────────────── */
 
-  resize(scale: number, backY: number, width: number, height: number): void {
-    this.proj = new Projection(scale, backY);
+  resize(scale: number, ox: number, oy: number, width: number, height: number): void {
+    this.proj = new Projection(scale, ox, oy);
     this.svg.setAttribute('width', String(width));
     this.svg.setAttribute('height', String(height));
     this.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -123,23 +124,25 @@ export class PlaceholderScene implements RoomRenderer {
     const g = this.shell;
     g.replaceChildren();
     const T = this.proj.slab;
-    // 바닥 두께 · 벽
+    // 바닥 두께 · 벽 · 걸레받이
     g.append(
-      this.poly([p(0, ROOM), p(ROOM, ROOM), p(ROOM, ROOM, -T), p(0, ROOM, -T)], '#18181B', 'rgba(255,255,255,0.10)'),
-      this.poly([p(ROOM, ROOM), p(ROOM, 0), p(ROOM, 0, -T), p(ROOM, ROOM, -T)], '#141417', 'rgba(255,255,255,0.10)'),
-      this.poly([p(0, 0), p(ROOM, 0), p(ROOM, 0, WALL_H), p(0, 0, WALL_H)], '#303038', 'none'),
-      this.poly([p(0, 0), p(0, ROOM), p(0, ROOM, WALL_H), p(0, 0, WALL_H)], '#2A2A31', 'none'),
-      this.poly([p(0, 0.01), p(ROOM, 0.01), p(ROOM, 0.01, 0.9), p(0, 0.01, 0.9)], '#2A2A31', 'none'),
-      this.poly([p(0.01, 0), p(0.01, ROOM), p(0.01, ROOM, 0.9), p(0.01, 0, 0.9)], '#25252B', 'none'),
+      this.poly([p(0, ROOM), p(ROOM, ROOM), p(ROOM, ROOM, -T), p(0, ROOM, -T)], SHELL.slabFront, SHELL.slabEdge),
+      this.poly([p(ROOM, ROOM), p(ROOM, 0), p(ROOM, 0, -T), p(ROOM, ROOM, -T)], SHELL.slabRight, SHELL.slabEdge),
+      this.poly([p(0, 0), p(ROOM, 0), p(ROOM, 0, WALL_H), p(0, 0, WALL_H)], SHELL.backWall, 'none'),
+      this.poly([p(0, 0), p(0, ROOM), p(0, ROOM, WALL_H), p(0, 0, WALL_H)], SHELL.leftWall, 'none'),
+      this.poly([p(0, 0.01), p(ROOM, 0.01), p(ROOM, 0.01, SHELL.baseH), p(0, 0.01, SHELL.baseH)], SHELL.backBase, 'none'),
+      this.poly([p(0.01, 0), p(0.01, ROOM), p(0.01, ROOM, SHELL.baseH), p(0.01, 0, SHELL.baseH)], SHELL.leftBase, 'none'),
+      // 벽 두께 — 윗면 · 열린 쪽 끝 단면
+      this.poly([p(-WALL_T, -WALL_T, WALL_H), p(ROOM, -WALL_T, WALL_H), p(ROOM, 0, WALL_H), p(0, 0, WALL_H)], SHELL.backTop, SHELL.wallEdge),
+      this.poly([p(-WALL_T, -WALL_T, WALL_H), p(0, 0, WALL_H), p(0, ROOM, WALL_H), p(-WALL_T, ROOM, WALL_H)], SHELL.leftTop, SHELL.wallEdge),
+      this.poly([p(ROOM, -WALL_T, -T), p(ROOM, 0, -T), p(ROOM, 0, WALL_H), p(ROOM, -WALL_T, WALL_H)], SHELL.backEnd, SHELL.wallEdge),
+      this.poly([p(-WALL_T, ROOM, -T), p(0, ROOM, -T), p(0, ROOM, WALL_H), p(-WALL_T, ROOM, WALL_H)], SHELL.leftEnd, SHELL.wallEdge),
     );
     const line = (a: Pt, b: Pt, stroke: string, w = 1.5) =>
       el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke, 'stroke-width': w });
-    g.append(
-      line(p(0, 0.02, 0.9), p(ROOM, 0.02, 0.9), 'rgba(255,255,255,0.14)'),
-      line(p(0.02, 0, 0.9), p(0.02, ROOM, 0.9), 'rgba(255,255,255,0.14)'),
-      line(p(0, 0.02, 3.4), p(ROOM, 0.02, 3.4), 'rgba(255,255,255,0.10)'),
-      line(p(0.02, 0, 3.4), p(0.02, ROOM, 3.4), 'rgba(255,255,255,0.10)'),
-    );
+    for (const m of SHELL.moldings) {
+      g.append(line(p(0, 0.02, m.z), p(ROOM, 0.02, m.z), m.stroke), line(p(0.02, 0, m.z), p(0.02, ROOM, m.z), m.stroke));
+    }
     // 위로 갈수록 어둡게 — 벽 윗부분에 HUD 가 얹힌다
     const top = p(0, 0, WALL_H).y;
     const bot = p(0, 0, 0).y;
@@ -149,33 +152,23 @@ export class PlaceholderScene implements RoomRenderer {
     g.append(clip);
     fade.setAttribute('clip-path', 'url(#lr-walls)');
     g.append(fade);
-    // 벽 장식 — DB 에 없는 고정 소품 (창·TV·선반·액자)
-    const back = (x0: number, x1: number, z0: number, z1: number, fill: string, stroke = 'rgba(255,255,255,0.18)') =>
-      this.poly([p(x0, 0.01, z0), p(x1, 0.01, z0), p(x1, 0.01, z1), p(x0, 0.01, z1)], fill, stroke);
-    const left = (y0: number, y1: number, z0: number, z1: number, fill: string, stroke = 'rgba(255,255,255,0.18)') =>
-      this.poly([p(0.01, y0, z0), p(0.01, y1, z0), p(0.01, y1, z1), p(0.01, y0, z1)], fill, stroke);
-    g.append(
-      back(4.0, 6.6, 1.3, 4.6, '#2C3550', 'rgba(255,255,255,0.20)'),
-      line(p(5.3, 0.02, 1.3), p(5.3, 0.02, 4.6), 'rgba(255,255,255,0.18)', 2),
-      line(p(4.0, 0.02, 2.95), p(6.6, 0.02, 2.95), 'rgba(255,255,255,0.18)', 2),
-      back(8.6, 10.8, 1.1, 2.5, '#16161A'),
-      back(8.4, 11.0, 3.6, 3.68, '#4A4A54', 'rgba(255,255,255,0.12)'),
-      back(8.8, 9.5, 3.68, 4.3, '#3A3550', 'rgba(255,255,255,0.14)'),
-      back(9.9, 10.6, 3.68, 4.1, '#3A4A44', 'rgba(255,255,255,0.14)'),
-      back(0.6, 2.4, 3.2, 3.27, '#4A4A54', 'rgba(255,255,255,0.12)'),
-      back(11.2, 11.9, 1.6, 4.4, '#2C3550'),
-      left(2.6, 4.4, 1.6, 2.9, '#3A3550'),
-      left(4.8, 5.9, 2.0, 2.9, '#2F4440'),
-      left(8.4, 10.6, 1.4, 3.6, '#2C3550'),
-      line(p(0.02, 9.5, 1.4), p(0.02, 9.5, 3.6), 'rgba(255,255,255,0.18)', 2),
-    );
-    // 바닥 타일
+    // 벽 소품 — DB 에 없는 고정 소품 (창·TV·선반·액자). 벽에서 살짝 띄운다
+    const onWall = (wall: 'back' | 'left', a: number, z: number, off: number) => (wall === 'back' ? p(a, off, z) : p(off, a, z));
+    for (const w of WALL_PANELS) {
+      const q = (a: number, z: number) => onWall(w.wall, a, z, 0.01);
+      g.append(this.poly([q(w.a0, w.z0), q(w.a1, w.z0), q(w.a1, w.z1), q(w.a0, w.z1)], w.fill, w.stroke));
+    }
+    for (const l of WALL_LINES) g.append(line(onWall(l.wall, l.a0, l.z0, 0.02), onWall(l.wall, l.a1, l.z1, 0.02), l.stroke, 2));
+    // 바닥 타일 — 색마다 경로 하나로(30×30 칸을 줌·끌기 때마다 다시 그리므로)
+    const d = ['', ''];
     for (let i = 0; i < ROOM; i++) {
       for (let j = 0; j < ROOM; j++) {
-        g.append(this.poly([p(i, j), p(i + 1, j), p(i + 1, j + 1), p(i, j + 1)], (i + j) % 2 ? '#27272C' : '#2B2B31', 'rgba(255,255,255,0.035)'));
+        const q = [p(i, j), p(i + 1, j), p(i + 1, j + 1), p(i, j + 1)];
+        d[(i + j) % 2] += `M${q.map((v) => `${v.x.toFixed(1)},${v.y.toFixed(1)}`).join('L')}Z`;
       }
     }
-    g.append(this.poly([p(0, 0), p(ROOM, 0), p(ROOM, ROOM), p(0, ROOM)], 'none', 'rgba(255,255,255,0.14)'));
+    for (const k of [0, 1]) g.append(el('path', { d: d[k], fill: SHELL.tiles[k], stroke: SHELL.tileLine, 'stroke-width': 1 }));
+    g.append(this.poly([p(0, 0), p(ROOM, 0), p(ROOM, ROOM), p(0, ROOM)], 'none', SHELL.floorEdge));
   }
 
   /* ── 가구 ─────────────────────────────────────────────── */
@@ -308,11 +301,19 @@ export class PlaceholderScene implements RoomRenderer {
     figure.append(body, head);
     g.append(shadow, figure, title);
     this.objects.append(g);
-    const c: CharNode = { def, pos, act: 'idle', g, figure, head, body, shadow, title, selected: false, lifted: false, dim: false };
+    const c: CharNode = { def, pos, act: 'idle', g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false };
     this.chars.set(charId, c);
     this.drawChar(c);
     this.orderDirty = true;
     this.scheduleReorder();
+  }
+
+  despawn(charId: string): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    if (this.dropTarget?.kind === 'character' && this.dropTarget.charId === charId) this.dropTarget = null;
+    c.g.remove();
+    this.chars.delete(charId);
   }
 
   move(charId: string, pos: Pt): void {
@@ -352,24 +353,25 @@ export class PlaceholderScene implements RoomRenderer {
     return this.chars.get(t.charId)?.figure ?? null;
   }
 
-  setCharacterState(charId: string, s: { selected?: boolean; lifted?: boolean; dim?: boolean }): void {
+  setCharacterState(charId: string, s: { selected?: boolean; lifted?: boolean; hidden?: boolean }): void {
     const c = this.chars.get(charId);
     if (!c) return;
     if (s.selected !== undefined) c.selected = s.selected;
     if (s.lifted !== undefined) c.lifted = s.lifted;
-    if (s.dim !== undefined) c.dim = s.dim;
+    if (s.hidden !== undefined) c.hidden = s.hidden;
     this.drawChar(c);
   }
 
-  /** 캐릭터 크기는 방 축척을 따른다 — 기준 1칸 66px 에서 키 80px */
+  /** 캐릭터 크기는 방 축척을 따른다 — 도형은 머리 끝 78px 기준으로 그려 두고, 머리 끝이 CHAR.hudAbove 칸이 되게 키운다 */
   private get k(): number {
-    return this.proj.scale / 66;
+    return (this.proj.scale * CHAR.hudAbove) / 78;
   }
 
   private drawChar(c: CharNode): void {
     const k = this.k;
     const foot = this.proj.p(c.pos.x, c.pos.y);
-    const lift = c.lifted ? 22 * k : 0;
+    // 들리면 골반(몸통 아래쪽 = 발에서 18k 위)이 CHAR.grab 높이에 오게 — 커서 끝이 골반에 온다
+    const lift = c.lifted ? CHAR.grab * VIEW.Z * this.proj.scale - 18 * k : 0;
     c.shadow.setAttribute('cx', String(foot.x));
     c.shadow.setAttribute('cy', String(foot.y));
     c.shadow.setAttribute('rx', String((c.lifted ? 11 : 16) * k));
@@ -384,7 +386,7 @@ export class PlaceholderScene implements RoomRenderer {
     c.head.setAttribute('r', String(19 * k));
     c.head.setAttribute('stroke', c.selected ? ACCENT : 'none');
     c.head.setAttribute('stroke-width', String(3));
-    c.g.setAttribute('opacity', c.dim ? '0.35' : '1');
+    c.g.setAttribute('display', c.hidden ? 'none' : 'inline');
     c.title.textContent = `${c.def.stockName} · ${c.act}`;
   }
 
@@ -392,7 +394,7 @@ export class PlaceholderScene implements RoomRenderer {
     const k = this.k;
     const list = [...this.chars.entries()].sort((a, b) => Projection.depth(b[1].pos.x, b[1].pos.y) - Projection.depth(a[1].pos.x, a[1].pos.y));
     for (const [id, c] of list) {
-      if (c.dim || id === except) continue;
+      if (c.hidden || id === except) continue;
       const f = this.proj.p(c.pos.x, c.pos.y);
       if (x >= f.x - 21 * k && x <= f.x + 21 * k && y >= f.y - 80 * k && y <= f.y + 5 * k) return id;
     }
@@ -408,6 +410,11 @@ export class PlaceholderScene implements RoomRenderer {
 
   toFloor(x: number, y: number): Pt {
     return this.proj.toFloor(x, y);
+  }
+
+  grabFloor(x: number, y: number): Pt {
+    // 높이 h 칸은 화면에서 h·Z·축척 px 위 — 목이 커서에 오려면 발은 그만큼 아래
+    return this.proj.toFloor(x, y + CHAR.grab * VIEW.Z * this.proj.scale);
   }
 
   /* ── 그리는 순서 — 뒤에서 앞으로 ─────────────────────────── */
