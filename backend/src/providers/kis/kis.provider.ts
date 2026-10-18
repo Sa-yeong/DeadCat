@@ -39,10 +39,12 @@ export interface KisVolumeSummaryResponse {
     rt_cd: string;
     msg_cd: string;
     msg1: string;
+
     output?: {
         // 현재가 조회 응답
         acml_vol: string;
         acml_tr_pbmn: string;
+        stck_prpr?: string;
     };
     output2?: Array<{
         // 분봉 시계열 응답
@@ -270,6 +272,7 @@ export class KisProvider {
                     err.response?.status,
                     err.response?.data,
                 );
+                // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
                 return Promise.reject(err);
             },
         );
@@ -416,6 +419,13 @@ export class KisProvider {
                     `국내 시세 0/빈값 (${code}) — 종목코드/거래상태 확인 필요`,
                 );
             }
+
+            /*this.logger.log(
+                `[국내 시세 확인] ${code} ${JSON.stringify({
+                    current_price: o.stck_prpr,
+                    trading_value: o.acml_tr_pbmn,
+                })}`,
+            );*/
             return price;
         });
     }
@@ -787,12 +797,23 @@ export class KisProvider {
                 })
                 .reverse();
 
+            // 1. 현재가(stck_prpr) 안전하게 파싱
+            const currentPriceFallback = Number(
+                priceData.output?.stck_prpr ?? 0,
+            );
+            const volume = Number(priceData.output?.acml_vol ?? 0);
+
+            // 2. KIS가 내려주는 거래대금을 먼저 시도하되, 없거나 0이면 추정치 계산
+            const rawTradingValue = Number(priceData.output?.acml_tr_pbmn ?? 0);
+            const totalTradingValue =
+                rawTradingValue > 0
+                    ? rawTradingValue
+                    : currentPriceFallback * volume;
+
             return {
                 stock_code: stockCode,
-                total_volume: Number(priceData.output?.acml_vol ?? 0),
-                total_trading_value: Number(
-                    priceData.output?.acml_tr_pbmn ?? 0,
-                ),
+                total_volume: volume,
+                total_trading_value: totalTradingValue, // 수정된 값 사용
                 volume_graph: volumeGraph,
             };
         });
@@ -846,21 +867,6 @@ export class KisProvider {
                 FILL: '',
             };
 
-            // 실제 KIS 요청값 확인용 로그
-            /*this.logger.log(
-                `[KIS 해외분봉 요청] ` +
-                    `URL=${chartUrl}, ` +
-                    `TR_ID=${trId}, ` +
-                    `EXCD=${excd}, ` +
-                    `SYMB=${symb}, ` +
-                    `NMIN=1, ` +
-                    `PINC=1, ` +
-                    `NEXT="", ` +
-                    `NREC=120, ` +
-                    `KEYB="", ` +
-                    `FILL=""`,
-            );*/
-
             try {
                 // KIS 해외주식 분봉 API 호출
                 const response = await firstValueFrom(
@@ -891,6 +897,7 @@ export class KisProvider {
                 }
 
                 // output1: 현재 종목의 전체 거래량/거래대금
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 const output1 = chartData.output1 ?? {};
 
                 // output2: 분봉 데이터

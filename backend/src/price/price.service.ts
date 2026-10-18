@@ -47,6 +47,7 @@ export class PriceService {
     constructor(private readonly redis: RedisService) {}
 
     // 시세 적재
+
     async writePrices(
         entries: { code: string; price: StockPrice; rankingScore: number }[],
         ttlSeconds: number,
@@ -56,7 +57,7 @@ export class PriceService {
                 ...price,
                 trading_value_krw: Math.round(rankingScore),
             };
-            // 웹소켓 쪽 메모리 값도 갱신 — 다음 체결 반영 때 거래대금 등을 덮어쓰지 않게
+
             this.latest.set(code, { ...this.latest.get(code), ...cached });
             await this.redis.set(
                 priceKey(code),
@@ -64,10 +65,53 @@ export class PriceService {
                 ttlSeconds,
             );
         }
+
         await this.redis.zadd(
             RANKING_KEY,
             entries.map((e) => [e.rankingScore, e.code]),
         );
+    }
+
+    async writeDomesticTradingValues(
+        entries: {
+            code: string;
+            price: StockPrice;
+            rankingScore: number;
+        }[],
+        ttlSeconds: number,
+    ): Promise<void> {
+        for (const { code, price, rankingScore } of entries) {
+            let base = this.latest.get(code);
+
+            if (!base) {
+                const raw = await this.redis.get(priceKey(code));
+
+                base = raw
+                    ? (JSON.parse(raw) as CachedPrice)
+                    : {
+                          current_price: price.current_price,
+                          change_rate: price.change_rate,
+                          trading_value: 0,
+                          accumulated_volume: 0,
+                          trading_value_krw: 0,
+                      };
+            }
+
+            const updated: CachedPrice = {
+                ...base,
+                trading_value: price.trading_value,
+                accumulated_volume: price.accumulated_volume,
+                trading_value_krw: Math.round(rankingScore),
+            };
+
+            this.latest.set(code, updated);
+
+            await this.redis.set(
+                priceKey(code),
+                JSON.stringify(updated),
+                ttlSeconds,
+            );
+        }
     }
 
     // ── 웹소켓 실시간 시세 쓰기 ──────────────────────────────────────
@@ -101,6 +145,7 @@ export class PriceService {
                       trading_value_krw: 0,
                   };
         }
+
         this.latest.set(code, { ...base, ...priceData });
         this.dirty.add(code);
         if (!this.flushTimer) {
@@ -118,6 +163,7 @@ export class PriceService {
         for (const code of codes) {
             const v = this.latest.get(code);
             if (!v) continue;
+
             try {
                 await this.redis.set(
                     priceKey(code),

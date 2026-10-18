@@ -82,6 +82,7 @@ export class StocksService {
         const metas = await this.repo.findStocksByCodes(codes);
         const metaByCode = new Map(metas.map((m) => [m.code, m]));
         const prices = await this.price.readPrices(codes);
+
         const favoriteSet = userId
             ? await this.favorites.findFavoriteStockCodes(userId)
             : new Set<string>();
@@ -91,7 +92,8 @@ export class StocksService {
             const meta = metaByCode.get(code);
             let price = prices.get(code);
             // 캐시에 시세가 없으면(Redis 초기화 직후 등) DB 마지막 종가로 대신한다
-            if (!price && meta) price = (await this.fallbackPrice(meta.id)) ?? undefined;
+            if (!price && meta)
+                price = (await this.fallbackPrice(meta.id)) ?? undefined;
             if (!meta || !price) continue; // 메타/시세 둘 다 없는 종목만 제외
             rows.push({
                 rank: rows.length + 1,
@@ -592,7 +594,6 @@ export class StocksService {
                   )
                 : this.kisProvider.getOrderbook(stockCode),
         );
-
 
         // DTO 객체 변환
         const asks = orderbook.asks.map(

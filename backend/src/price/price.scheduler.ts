@@ -9,7 +9,9 @@ import {
 } from '../providers/kis/kis.provider';
 import { PriceService } from './price.service';
 
-const POLL_CRON = '*/30 * * * * *';
+//const POLL_CRON = '*/30 * * * * *';
+
+const POLL_CRON = '0 * * * * *'; // 매 1분마다 실행으로 변경
 const PRICE_TTL_SECONDS = 100;
 const DEFAULT_USD_KRW = 1350;
 const VOLUME_SUMMARY_TTL_SECONDS = 300;
@@ -354,11 +356,16 @@ export class PriceScheduler implements OnModuleInit {
             );
 
             // 국내: 랭킹만 업데이트 (현재가는 웹소켓 담당)
-            await this.price.writePricesRankingOnly(
+            /*await this.price.writePricesRankingOnly(
                 domesticEntries.map((e) => ({
                     code: e.code,
                     rankingScore: e.rankingScore,
                 })),
+            );*/
+            // 국내: REST 거래대금 캐시 반영 + 랭킹 업데이트
+            await this.price.writeDomesticTradingValues(
+                domesticEntries,
+                PRICE_TTL_SECONDS,
             );
 
             // 해외: 현재가도 같이 업데이트 (웹소켓이 미국 장 시간에만 동작)

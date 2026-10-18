@@ -8,6 +8,8 @@ import { CharactersRepository } from './characters.repository';
 import { CostumeResponseDto } from './dto/costume-response.dto';
 import { UpdateCharacterPlacementDto } from './dto/update-placement.dto';
 import { UpdateCostumeDto } from './dto/update-costume.dto';
+import { CreatePresetDto } from './dto/create-preset.dto';
+import { UpdatePresetDto } from './dto/update-preset.dto';
 
 @Injectable()
 export class CharactersService {
@@ -123,6 +125,121 @@ export class CharactersService {
             code: 'success',
             message: '거실 캐릭터 배치가 성공적으로 업데이트되었습니다.',
             placed_count: stockIds.length,
+        };
+    }
+
+    async getPresets(userIdStr: string) {
+        const userId = BigInt(userIdStr);
+        const presets =
+            await this.charactersRepository.findPresetsByUserId(userId);
+
+        return presets.map((preset) => ({
+            preset_id: Number(preset.id),
+            preset_name: preset.preset_name,
+            stocks: preset.preset_items.map((item) => ({
+                stock_id: Number(item.stocks.id),
+                stock_name: item.stocks.name,
+                character_img_url: item.stocks.characters?.img_url ?? '',
+            })),
+        }));
+    }
+
+    // 19. 프리셋 생성
+    async createPreset(userIdStr: string, dto: CreatePresetDto) {
+        const userId = BigInt(userIdStr);
+        const stockIds = dto.stock_ids.map((id) => BigInt(id));
+
+        // 유저가 보유하지 않은 주식이 포함되어 있는지 검증
+        if (stockIds.length > 0) {
+            const holdCount = await this.charactersRepository.countUserHoldings(
+                userId,
+                stockIds,
+            );
+            if (holdCount !== stockIds.length) {
+                throw new BadRequestException(
+                    '보유하지 않은 주식이 포함되어 있어 배치할 수 없습니다.',
+                );
+            }
+        }
+
+        const created = await this.charactersRepository.createPreset(
+            userId,
+            dto.preset_name,
+            stockIds,
+        );
+
+        return {
+            code: 'success',
+            preset_id: Number(created.id),
+        };
+    }
+
+    // 20. 프리셋 수정
+    async updatePreset(
+        userIdStr: string,
+        presetIdStr: string,
+        dto: UpdatePresetDto,
+    ) {
+        const userId = BigInt(userIdStr);
+        const presetId = BigInt(presetIdStr);
+        const stockIds = dto.stock_ids.map((id) => BigInt(id));
+
+        // 프리셋 존재 여부 및 본인 소유 확인
+        const preset = await this.charactersRepository.findPresetById(presetId);
+        if (!preset) {
+            throw new NotFoundException('존재하지 않는 프리셋입니다.');
+        }
+        if (preset.user_id !== userId) {
+            throw new ForbiddenException(
+                '해당 프리셋을 수정할 권한이 없습니다.',
+            );
+        }
+
+        // 유저 소유 주식 검증
+        if (stockIds.length > 0) {
+            const holdCount = await this.charactersRepository.countUserHoldings(
+                userId,
+                stockIds,
+            );
+            if (holdCount !== stockIds.length) {
+                throw new BadRequestException(
+                    '보유하지 않은 주식이 포함되어 있어 배치할 수 없습니다.',
+                );
+            }
+        }
+
+        await this.charactersRepository.updatePreset(
+            presetId,
+            dto.preset_name,
+            stockIds,
+        );
+
+        return {
+            code: 'success',
+            message: '프리셋이 성공적으로 수정되었습니다.',
+        };
+    }
+
+    // 21. 프리셋 삭제
+    async deletePreset(userIdStr: string, presetIdStr: string) {
+        const userId = BigInt(userIdStr);
+        const presetId = BigInt(presetIdStr);
+
+        const preset = await this.charactersRepository.findPresetById(presetId);
+        if (!preset) {
+            throw new NotFoundException('존재하지 않는 프리셋입니다.');
+        }
+        if (preset.user_id !== userId) {
+            throw new ForbiddenException(
+                '해당 프리셋을 삭제할 권한이 없습니다.',
+            );
+        }
+
+        await this.charactersRepository.deletePreset(presetId);
+
+        return {
+            code: 'success',
+            message: '프리셋이 삭제되었습니다.',
         };
     }
 }
