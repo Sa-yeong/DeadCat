@@ -224,7 +224,7 @@ export class RoomLoop {
       const pos = this.spawnPoint(taken) ?? h.position;
       Object.assign(h, { position: pos, path: [], rest: 0.5 + Math.random() * 2, pause: 0, held: false, lifted: false, charging: false, awaiting: false });
       this.renderer.move(h.stockCode, pos); // 숨어 있는 동안 옮기면 렌더러가 카메라 쪽을 보게 세운다
-      this.renderer.cancel(h.stockCode);
+      this.stopActing(h);
       this.engine.interrupt(h.stockCode);
     }
   }
@@ -266,6 +266,8 @@ export class RoomLoop {
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
+      // 엔진 모션 중엔 제자리 — 단, 가구 위에 내려놓아 비켜 나오는 중이면 마저 나온다
+      if (h.acting && this.grid.freeAt(h.position)) continue;
       if (h.path.length === 0) {
         h.rest -= dt;
         if (h.rest <= 0) {
@@ -328,16 +330,32 @@ export class RoomLoop {
 
   /**
    * 엔진 명령 → 렌더러. 모션 이름이 곧 클립 이름이다 {잠정 — 팀원 명령 모양 대기}.
-   * 끝나면 마지막 모션 이름으로 엔진에 알린다. 들렸거나 치워졌으면 렌더러가 버리고 끝 신호도 없다
+   * 트는 동안 제자리에 세우고, 끝나면 마지막 모션 이름으로 엔진에 알린다.
+   * 들려 있으면 받지 않는다(엔진은 들 때 interrupt 를 받았다). 렌더러는 지금 요청의 끝만 알려 준다 —
+   * 새 요청이 앞 요청을 밀어내면 앞 요청의 끝 신호는 오지 않는다
    */
   private onCommand(cmd: EngineCommand): void {
-    if (!this.handles.has(cmd.characterId)) return;
+    const h = this.handles.get(cmd.characterId);
+    if (!h) return;
+    if (cmd.kind === 'stop') {
+      this.stopActing(h);
+      return;
+    }
+    if (h.lifted) return;
     const n = cmd.motions.length;
     const steps: MotionStep[] = cmd.motions.map((clip, i) => ({ clip, loop: i === n - 1 && cmd.loop === true }));
     const last = cmd.motions[n - 1];
-    this.renderer.play(cmd.characterId, steps, () => {
-      if (last !== undefined) this.engine.motionFinished(cmd.characterId, last);
+    h.acting = true;
+    this.renderer.play(h.stockCode, steps, () => {
+      h.acting = false;
+      if (last !== undefined) this.engine.motionFinished(h.stockCode, last);
     });
+  }
+
+  /** 엔진 모션을 멈추고 다시 걷게 한다 — 끝 신호는 없다 */
+  private stopActing(h: CharacterHandle): void {
+    h.acting = false;
+    this.renderer.cancel(h.stockCode);
   }
 
   /* ── 상호작용 ───────────────────────────────────────────── */
@@ -405,6 +423,7 @@ export class RoomLoop {
     h.lifted = true;
     h.path = [];
     h.held = false;
+    h.acting = false; // 틀던 엔진 모션은 아래 setCharacterState 에서 렌더러가 버린다
     this.renderer.setCharacterState(charId, { lifted: true, selected: false }); // 틀던 엔진 모션은 렌더러가 버린다
     this.engine.interrupt(charId);
     this.events.onLifted(charId);

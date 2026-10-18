@@ -20,8 +20,10 @@ export interface CharacterHandle {
   charging: boolean;
   /** 들린 캐릭터가 이 캐릭터 위에 와 있다(하이라이트 중) — 멈춰 기다린다 */
   awaiting: boolean;
+  /** 엔진 모션을 트는 중 — 제자리에 멈춰 선다. 끝나거나 멈추면 하던 길을 이어 걷는다 */
+  acting: boolean;
 }
 
 export function createHandle(stockCode: string, position: Pt): CharacterHandle {
-  return { stockCode, position, path: [], rest: 1 + Math.random() * 3, pause: 0, walkLeft: 3 + Math.random() * 6, held: false, lifted: false, charging: false, awaiting: false };
+  return { stockCode, position, path: [], rest: 1 + Math.random() * 3, pause: 0, walkLeft: 3 + Math.random() * 6, held: false, lifted: false, charging: false, awaiting: false, acting: false };
 }

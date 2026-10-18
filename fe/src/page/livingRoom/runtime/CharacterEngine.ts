@@ -17,10 +17,14 @@ export type Emotion = string;
 
 /**
  * 엔진 → 런타임 명령. {잠정 — 팀원 정의 대기}
- * motions 를 순서대로 튼다. 모션 이름 = 모션 파일 이름(public/characters/chibi/motions/{이름}.vrma).
- * loop 이면 마지막 모션을 반복한다(끝 신호가 오지 않는다).
+ *   play  motions 를 순서대로 튼다. 모션 이름 = 모션 파일 이름(public/characters/chibi/motions/{이름}.vrma).
+ *         loop 이면 마지막 모션을 반복한다(끝 신호가 오지 않는다 — 그만둘 때는 stop).
+ *         트는 동안 캐릭터는 제자리에 선다.
+ *   stop  하던 모션을 멈추고 평소(걷기·대기)로 돌아간다. 끝 신호는 없다
  */
-export type EngineCommand = { kind: 'play'; characterId: string; motions: string[]; loop?: boolean };
+export type EngineCommand =
+  | { kind: 'play'; characterId: string; motions: string[]; loop?: boolean }
+  | { kind: 'stop'; characterId: string };
 
 export interface CharacterEngine {
   /** 캐릭터가 거실에 추가됐다 */

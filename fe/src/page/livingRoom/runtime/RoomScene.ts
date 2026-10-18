@@ -1213,6 +1213,9 @@ export class RoomScene implements RoomRenderer {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     for (const c of this.chars.values()) {
+      // 받던 엔진 모션 · 모델을 기다리던 요청을 버린다 — 거실을 나간 뒤 엔진에 끝 신호가 가지 않게
+      this.dropEngine(c);
+      c.setReady(false);
       if (c.vrm) VRMUtils.deepDispose(c.vrm.scene);
     }
     this.scene.traverse((n) => {
