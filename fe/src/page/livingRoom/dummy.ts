@@ -25,16 +25,14 @@ import type {
 /** 고유 의상 — 캐릭터당 1벌, 호감도 MAX 에서 해금 */
 const outfit = (clothesId: number, stockName: string, color: string): Outfit => ({ clothesId, name: `${stockName} 고유 의상`, unlockLevel: 5, color });
 
-const ACTS = { VERY_GOOD: 'surprise', GOOD: 'idle', NEUTRAL: 'idle', BAD: 'tired', VERY_BAD: 'depression' } as const;
-
 export const CHARACTER_DEFS: CharacterDef[] = [
-  { stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', sensitivity: 1.0, acts: ACTS, color: '#C9C1F7', outfit: outfit(101, '삼성전자', '#7E6FD8') },
-  { stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', sensitivity: 1.5, acts: ACTS, color: '#8FB3FF', outfit: outfit(102, 'SK하이닉스', '#4F78D6') },
-  { stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', sensitivity: 1.0, acts: ACTS, color: '#F2C38B', outfit: outfit(103, '카카오', '#D69A4F') },
-  { stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', sensitivity: 0.5, acts: ACTS, color: '#9FD3C7', outfit: outfit(104, 'NAVER', '#5FA592') },
-  { stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', sensitivity: 1.5, acts: ACTS, color: '#F2A0B3', outfit: outfit(105, '엔비디아', '#D66F8A') },
-  { stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', sensitivity: 0.5, acts: ACTS, color: '#B8C7D9', outfit: outfit(106, '현대차', '#7F93AD') },
-  { stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', sensitivity: 1.5, acts: ACTS, color: '#E8A0A0', outfit: outfit(107, '테슬라', '#C86A6A') },
+  { stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7', outfit: outfit(101, '삼성전자', '#7E6FD8') },
+  { stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF', outfit: outfit(102, 'SK하이닉스', '#4F78D6') },
+  { stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B', outfit: outfit(103, '카카오', '#D69A4F') },
+  { stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', color: '#9FD3C7', outfit: outfit(104, 'NAVER', '#5FA592') },
+  { stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3', outfit: outfit(105, '엔비디아', '#D66F8A') },
+  { stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9', outfit: outfit(106, '현대차', '#7F93AD') },
+  { stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0', outfit: outfit(107, '테슬라', '#C86A6A') },
 ];
 
 /* ── 가구 고정값 (Catalog API) ─────────────────────────────────────── */

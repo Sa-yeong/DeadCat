@@ -67,21 +67,11 @@ export interface RoomSnapshot {
 
 /* ── Catalog API — 종목·가구 고정값. 스냅샷에 싣지 않고 따로 받아 캐시 ─────── */
 
-/** 감정 구간 {메커니즘 미확정 — 잠정 5단계} */
-export type Mood = 'VERY_GOOD' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'VERY_BAD';
-
-/** 행동 이름. DB event_activity.act 가 원천 */
-export type ActName = string;
-
 export interface CharacterDef {
   stockCode: string;
   stockName: string;
   /** 썸네일·3D 모델 공용 경로 (DB characters.img_url) */
   imgUrl: string;
-  /** 예민 1.5 · 기본 1.0 · 무던 0.5 */
-  sensitivity: number;
-  /** 감정별 행동 — event_activity (종목, 감정) → act */
-  acts: Partial<Record<Mood, ActName>>;
   /** 평면 더미에서 쓰는 색. 3D가 붙으면 쓰지 않는다 */
   color: string;
   /** 이 캐릭터의 고유 의상 — 캐릭터당 1벌. 종목 고정값이라 카탈로그에 싣는다 {제안 — 서버 카탈로그 응답에 추가 필요} */

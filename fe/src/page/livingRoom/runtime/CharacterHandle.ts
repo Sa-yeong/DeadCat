@@ -1,7 +1,6 @@
-import type { Mood } from '../types';
 import type { Pt } from './projection';
 
-/** 캐릭터 한 명의 런타임 상태. 위치는 클라가 정한다 — 스냅샷에 없고 저장하지 않는다 */
+/** 캐릭터 한 명의 런타임 상태. 위치는 클라가 정한다 — 스냅샷에 없고 저장하지 않는다. 감정은 들지 않는다(엔진 몫) */
 export interface CharacterHandle {
   stockCode: string;
   position: Pt;
@@ -13,8 +12,6 @@ export interface CharacterHandle {
   pause: number;
   /** 다음 잠깐 멈춤까지 남은 걷는 시간(초) */
   walkLeft: number;
-  /** {직전 기분 보관 여부 미확정} */
-  lastMood: Mood | null;
   /** 스탯 링이 열려 있어 멈춰 섰다 */
   held: boolean;
   /** 길게 눌러 들려 있다 */
@@ -26,5 +23,5 @@ export interface CharacterHandle {
 }
 
 export function createHandle(stockCode: string, position: Pt): CharacterHandle {
-  return { stockCode, position, path: [], rest: 1 + Math.random() * 3, pause: 0, walkLeft: 3 + Math.random() * 6, lastMood: null, held: false, lifted: false, charging: false, awaiting: false };
+  return { stockCode, position, path: [], rest: 1 + Math.random() * 3, pause: 0, walkLeft: 3 + Math.random() * 6, held: false, lifted: false, charging: false, awaiting: false };
 }

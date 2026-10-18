@@ -1,6 +1,6 @@
-import type { ActName, CharacterDef } from '../types';
+import type { CharacterDef } from '../types';
 import { wornOutfit, type FurnitureCatalog } from './catalogs';
-import type { DropTarget, RoomRenderer } from './RoomRenderer';
+import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
 import { CHAR } from './characterSize';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
 import { shapeOf, type Part } from './furnitureShape';
@@ -10,16 +10,17 @@ import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
  * **평면 더미 렌더러** — 3D(RoomScene)가 붙기 전까지 RoomRenderer 자리를 맡는다.
  * 아트보드 H안처럼 방을 SVG로 그리고 캐릭터는 도형(머리·몸·그림자)으로 세운다.
  * HUD 동작(스탯 링, 아이템 증여, 가구 배치)을 눌러 보는 것이 목적이라 표정·모션은 그리지 않는다.
- * playAct 는 기록만 한다 — 마우스를 올리면 툴팁으로 지금 행동이 보인다.
+ * 엔진 모션(play)은 그리지 않고 단계 이름만 툴팁에 보인다 — 마우스를 올리면 지금 단계가 보인다.
  */
 const NS = 'http://www.w3.org/2000/svg';
 const ACCENT = '#F2564C';
 const OUTLINE_ID = 'lr-drop-outline';
+/** 평면 더미엔 모션 파일이 없어 한 번 틀고 끝나는 단계를 이만큼 기다렸다 끝낸다(ms) */
+const ENGINE_STEP_MS = 1500;
 
 interface CharNode {
   def: CharacterDef;
   pos: Pt;
-  act: ActName;
   g: SVGGElement;
   /** 머리+몸 — 하이라이트 외곽선이 그림자까지 두르지 않게 따로 묶는다 */
   figure: SVGGElement;
@@ -30,6 +31,10 @@ interface CharNode {
   selected: boolean;
   lifted: boolean;
   hidden: boolean;
+  /** 엔진 단계 타이머(없으면 0) — 새 요청·취소·들림·치우기에 지운다 */
+  engineTimer: number;
+  /** 지금 엔진 단계 클립 — 툴팁용(없으면 '') */
+  clip: string;
 }
 
 interface FurnNode {
@@ -301,7 +306,7 @@ export class PlaceholderScene implements RoomRenderer {
     figure.append(body, head);
     g.append(shadow, figure, title);
     this.objects.append(g);
-    const c: CharNode = { def, pos, act: 'idle', g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false };
+    const c: CharNode = { def, pos, g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false, engineTimer: 0, clip: '' };
     this.chars.set(charId, c);
     this.drawChar(c);
     this.orderDirty = true;
@@ -312,6 +317,7 @@ export class PlaceholderScene implements RoomRenderer {
     const c = this.chars.get(charId);
     if (!c) return;
     if (this.dropTarget?.kind === 'character' && this.dropTarget.charId === charId) this.dropTarget = null;
+    window.clearTimeout(c.engineTimer); // 치우면 엔진 요청도 버린다(onFinish 없음)
     c.g.remove();
     this.chars.delete(charId);
   }
@@ -325,12 +331,42 @@ export class PlaceholderScene implements RoomRenderer {
     this.scheduleReorder();
   }
 
-  playAct(charId: string, act: ActName): void {
+  /**
+   * 엔진 모션. 평면 더미는 그리지 않고 단계 이름을 툴팁에 보이며 시간만 흘려 약속(onFinish)을 지킨다.
+   * 반복으로 끝나는 마지막 단계는 끝나지 않는다 · 들려 있으면 받지 않는다 — 3D(RoomScene)와 같은 규칙
+   */
+  play(charId: string, steps: MotionStep[], onFinish: () => void): void {
     const c = this.chars.get(charId);
     if (!c) return;
-    c.act = act;
-    c.g.dataset.act = act;
-    c.title.textContent = `${c.def.stockName} · ${act}`;
+    window.clearTimeout(c.engineTimer);
+    c.engineTimer = 0;
+    if (c.lifted) return;
+    const run = (i: number) => {
+      if (i >= steps.length) {
+        c.engineTimer = 0;
+        this.setClip(c, '');
+        onFinish();
+        return;
+      }
+      this.setClip(c, steps[i].clip);
+      if (i === steps.length - 1 && steps[i].loop) return; // 반복 — 끝나지 않는다
+      c.engineTimer = window.setTimeout(() => run(i + 1), ENGINE_STEP_MS);
+    };
+    c.engineTimer = window.setTimeout(() => run(0), 0); // onFinish 는 늘 비동기로
+  }
+
+  /** 엔진 모션을 멈춘다 — onFinish 없음 */
+  cancel(charId: string): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    window.clearTimeout(c.engineTimer);
+    c.engineTimer = 0;
+    this.setClip(c, '');
+  }
+
+  private setClip(c: CharNode, clip: string): void {
+    c.clip = clip;
+    c.title.textContent = clip ? `${c.def.stockName} · ${clip}` : c.def.stockName;
   }
 
   setOutfit(charId: string, clothesId: number | null): void {
@@ -359,6 +395,7 @@ export class PlaceholderScene implements RoomRenderer {
     if (s.selected !== undefined) c.selected = s.selected;
     if (s.lifted !== undefined) c.lifted = s.lifted;
     if (s.hidden !== undefined) c.hidden = s.hidden;
+    if (c.lifted && (c.engineTimer || c.clip)) this.cancel(charId); // 들리면 엔진 모션을 버린다(3D 와 같은 규칙) — 반복 중인 마지막 단계도
     this.drawChar(c);
   }
 
@@ -387,7 +424,7 @@ export class PlaceholderScene implements RoomRenderer {
     c.head.setAttribute('stroke', c.selected ? ACCENT : 'none');
     c.head.setAttribute('stroke-width', String(3));
     c.g.setAttribute('display', c.hidden ? 'none' : 'inline');
-    c.title.textContent = `${c.def.stockName} · ${c.act}`;
+    c.title.textContent = c.clip ? `${c.def.stockName} · ${c.clip}` : c.def.stockName;
   }
 
   pick(x: number, y: number, except?: string): string | null {
@@ -441,9 +478,11 @@ export class PlaceholderScene implements RoomRenderer {
   }
 
   dispose(): void {
+    for (const c of this.chars.values()) window.clearTimeout(c.engineTimer); // 거실을 나간 뒤 onFinish 가 오지 않게
     cancelAnimationFrame(this.raf);
     this.svg.replaceChildren();
     this.chars.clear();
     this.furn.clear();
   }
 }
+

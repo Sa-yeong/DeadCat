@@ -1,9 +1,7 @@
 import type { InteractionMode, PlacementDto, Quote, RoomCharacterDto, RoomSnapshot } from '../types';
 import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
-import type { CharacterEngine } from './CharacterEngine';
+import type { CharacterEngine, EngineCommand, EngineFactory } from './CharacterEngine';
 import { createHandle, type CharacterHandle } from './CharacterHandle';
-import { MotionArbiter } from './MotionArbiter';
-import { MotionTable } from './MotionTable';
 import { WalkGrid } from './occupancy';
 import { findPath } from './pathfinding';
 import { syncPlacements } from './placementSync';
@@ -12,7 +10,7 @@ import type { PriceFeedClient } from './PriceFeedClient';
 import { ProximityField } from './ProximityField';
 import { ROOM, type Pt } from './projection';
 import { footprint } from './furnitureShape';
-import type { DropTarget, RoomRenderer } from './RoomRenderer';
+import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
 
 export interface RoomLoopEvents {
   /** 짧게 누름 — 페이지가 RoomHud.onSelect 에 잇는다. 화면 좌표는 방 기준 */
@@ -25,7 +23,7 @@ export interface RoomLoopEvents {
   onLiftChargeEnd(charId: string): void;
   /** 캐릭터를 길게 눌러 들었다 — 그 캐릭터에 열린 스탯 링은 닫는다 (추가) */
   onLifted(charId: string): void;
-  /** 시세가 왔다 — HUD 의 거실 자산·수익률용 (추가, 제안) */
+  /** 시세가 왔다 — HUD 의 거실 자산·수익률용 (추가, 제안). 감정은 시세로 계산하지 않는다 — 엔진이 백엔드에서 받는다 */
   onQuotes(q: Record<string, Quote>): void;
 }
 
@@ -51,7 +49,10 @@ const SPAWN_TRIES = 12;
 const targetKey = (t: DropTarget | null) => (!t ? '' : t.kind === 'furniture' ? `f${t.placementId}` : `c${t.charId}`);
 
 /**
- * 거실의 **무엇을 할지**를 정한다. 그리는 건 RoomRenderer, 판정은 엔진·자기장·중재자.
+ * 거실에서 **언제 무슨 일이 일어났는지**를 엔진에 알리고, 엔진 명령을 렌더러로 넘긴다 (2026-10-18 역할 분리).
+ *   여기   근접 판정(자기장) · 들기/놓기 · 걷기 · 배치 — 감정을 계산하거나 기억하지 않는다
+ *   엔진   감정 · 상호작용 판단 · 쿨다운 (CharacterEngine)
+ *   렌더러 그리기 · 재생 — 재생기는 렌더러 하나, 순서는 들림 > 엔진 모션 > 걷기·대기
  * 시점 mode(주인/방문자)는 모른다. 상호작용 모드(NORMAL/PLACEMENT)는 안다 —
  * 같은 클릭이 모드에 따라 스탯 링 / (배치 모드에선 무시) 로 갈리기 때문이다.
  */
@@ -62,7 +63,6 @@ export class RoomLoop {
   private readonly furniture: FurnitureCatalog;
   private readonly feed: PriceFeedClient;
   private readonly events: RoomLoopEvents;
-  private readonly arbiter: MotionArbiter;
   private readonly field = new ProximityField();
   private readonly gesture: PressGesture;
 
@@ -80,19 +80,19 @@ export class RoomLoop {
 
   constructor(deps: {
     renderer: RoomRenderer;
-    engine: CharacterEngine;
+    /** 엔진을 만든다 — 명령 통로를 넘겨준다. 팀원 엔진이 붙기 전에는 NullEngine */
+    createEngine: EngineFactory;
     characters: CharacterCatalog;
     furniture: FurnitureCatalog;
     feed: PriceFeedClient;
     events: RoomLoopEvents;
   }) {
     this.renderer = deps.renderer;
-    this.engine = deps.engine;
+    this.engine = deps.createEngine((cmd) => this.onCommand(cmd));
     this.chars = deps.characters;
     this.furniture = deps.furniture;
     this.feed = deps.feed;
     this.events = deps.events;
-    this.arbiter = new MotionArbiter((id, act) => this.renderer.playAct(id, act));
     this.gesture = new PressGesture({
       hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.renderer.pick(x, y)),
       canLift: () => this.mode === 'NORMAL',
@@ -123,6 +123,7 @@ export class RoomLoop {
       const h = createHandle(c.stockCode, this.spawnPoint(taken) ?? { x: ROOM / 2, y: ROOM / 2 });
       this.handles.set(c.stockCode, h);
       this.renderer.spawn(c.stockCode, def, h.position);
+      this.engine.addCharacter(c.stockCode);
       if (c.ownedClothesId !== null) this.renderer.setOutfit(c.stockCode, c.ownedClothesId);
     }
   }
@@ -140,8 +141,8 @@ export class RoomLoop {
     this.gesture.cancel(); // 들고 있던 캐릭터가 빠질 수 있다 — 내려놓고 시작
     for (const id of removed) {
       if (this.dropTarget?.kind === 'character' && this.dropTarget.charId === id) this.setDropTarget(null);
-      this.arbiter.forget(id);
-      this.renderer.despawn(id);
+      this.engine.deleteCharacter(id);
+      this.renderer.despawn(id); // 틀던 엔진 모션도 같이 버린다
       this.handles.delete(id);
     }
     this.spawnAll(characters);
@@ -161,6 +162,11 @@ export class RoomLoop {
   /** 가구를 다시 놓는다 — 배치 저장 뒤에 페이지가 부른다. 없어진 가구는 씬에서 지운다 (추가) */
   setPlacements(placements: PlacementDto[]): void {
     syncPlacements(this.renderer, this.placements, placements);
+    // 엔진에도 놓인 가구를 알린다 {잠정 — 배치 id. 가구 종류를 어떻게 넘길지 팀원 답 대기}
+    const was = new Set(this.placements.map((p) => p.placementId));
+    const now = new Set(placements.map((p) => p.placementId));
+    for (const id of was) if (!now.has(id)) this.engine.deleteFurniture(String(id));
+    for (const id of now) if (!was.has(id)) this.engine.addFurniture(String(id));
     this.placements = placements.map((p) => ({ ...p }));
     this.walkOn(placements);
   }
@@ -209,8 +215,8 @@ export class RoomLoop {
 
   /**
    * 배치를 저장하고 나왔다 — 캐릭터를 빈 칸 아무 데나 다시 세운다(블루 아카이브 카페처럼).
-   * 하던 일(걷던 길·쉬는 시간·한 번 하고 끝나는 행동)은 버리고 대기 행동에서 새로 시작한다.
-   * 기분(lastMood)은 행동이 아니라 시세에서 온 상태라 그대로 — 대기 행동도 그 기분의 것으로 돌아간다
+   * 하던 일(걷던 길·쉬는 시간·엔진 모션)은 버리고 대기에서 새로 시작한다 — 가구에 앉아 있던 캐릭터도 옮겨지니
+   * 엔진에도 하던 상호작용을 그만두라고 알린다
    */
   private respawn(): void {
     const taken: Pt[] = [];
@@ -218,7 +224,8 @@ export class RoomLoop {
       const pos = this.spawnPoint(taken) ?? h.position;
       Object.assign(h, { position: pos, path: [], rest: 0.5 + Math.random() * 2, pause: 0, held: false, lifted: false, charging: false, awaiting: false });
       this.renderer.move(h.stockCode, pos); // 숨어 있는 동안 옮기면 렌더러가 카메라 쪽을 보게 세운다
-      this.arbiter.release(h.stockCode);
+      this.renderer.cancel(h.stockCode);
+      this.engine.interrupt(h.stockCode);
     }
   }
 
@@ -236,6 +243,7 @@ export class RoomLoop {
   start(): void {
     if (this.raf) return;
     this.feed.subscribe([...this.handles.keys()], (q) => this.onPriceUpdate(q));
+    this.engine.start();
     this.last = performance.now();
     const step = (t: number) => {
       this.tick(Math.min(0.1, (t - this.last) / 1000));
@@ -250,12 +258,11 @@ export class RoomLoop {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.feed.unsubscribe();
+    this.engine.dispose();
     this.gesture.cancel();
   }
 
   tick(dt: number): void {
-    const now = performance.now();
-    this.arbiter.tick(now);
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
@@ -300,38 +307,37 @@ export class RoomLoop {
     this.fieldTimer += dt;
     if (this.fieldTimer > 0.5) {
       this.fieldTimer = 0;
-      const list = [...this.handles.values()].map((h) => ({ id: h.stockCode, x: h.position.x, y: h.position.y }));
+      // 들린 캐릭터는 판정에서 뺀다 — 놓은 자리에서 새로 마주친다
+      const list = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.stockCode, x: h.position.x, y: h.position.y }));
       for (const e of this.field.evaluate(list)) this.onFieldEnter(e.a, e.b);
     }
   }
 
+  /** 시세 — HUD(거실 자산·수익률)로만 넘긴다. 감정은 엔진 몫이다 */
   onPriceUpdate(quotes: Record<string, Quote>): void {
-    const now = performance.now();
-    for (const h of this.handles.values()) {
-      const q = quotes[h.stockCode];
-      const def = this.chars.def(h.stockCode);
-      if (!q || !def) continue;
-      const { mood, changed } = this.engine.update(q.changeRate, def.sensitivity, h.lastMood);
-      h.lastMood = mood;
-      if (!changed) continue;
-      const act = this.chars.act(h.stockCode, mood);
-      // 기분의 행동이 한 번 하고 끝나는 것(놀람 등)이면, 끝난 뒤엔 옛 기분의 대기가 아니라 기본 대기로 돌아간다
-      if (MotionTable.lookup(act).kind !== 'idle') this.arbiter.setIdle(h.stockCode, 'idle');
-      // 들려 있는 동안엔 기분만 기억한다 — 내려놓을 때 그 기분의 행동으로 돌아간다
-      if (!h.lifted) this.arbiter.submit(h.stockCode, act, now);
-    }
     this.events.onQuotes(quotes);
   }
 
+  /** 두 캐릭터가 가까워졌다 — 판정은 여기, 무엇을 할지는 엔진. 링이 열려 멈춰 선 캐릭터는 알리지 않는다 */
   onFieldEnter(charId: string, otherId: string): void {
     const a = this.handles.get(charId);
     const b = this.handles.get(otherId);
-    const da = this.chars.def(charId);
-    const db = this.chars.def(otherId);
-    if (!a || !b || !da || !db || a.held || b.held || a.lifted || b.lifted || !a.lastMood || !b.lastMood) return;
-    const now = performance.now();
-    this.arbiter.submit(charId, this.engine.encounter(b.lastMood, da.sensitivity), now);
-    this.arbiter.submit(otherId, this.engine.encounter(a.lastMood, db.sensitivity), now);
+    if (!a || !b || a.held || b.held || a.lifted || b.lifted) return;
+    this.engine.encounter(charId, otherId);
+  }
+
+  /**
+   * 엔진 명령 → 렌더러. 모션 이름이 곧 클립 이름이다 {잠정 — 팀원 명령 모양 대기}.
+   * 끝나면 마지막 모션 이름으로 엔진에 알린다. 들렸거나 치워졌으면 렌더러가 버리고 끝 신호도 없다
+   */
+  private onCommand(cmd: EngineCommand): void {
+    if (!this.handles.has(cmd.characterId)) return;
+    const n = cmd.motions.length;
+    const steps: MotionStep[] = cmd.motions.map((clip, i) => ({ clip, loop: i === n - 1 && cmd.loop === true }));
+    const last = cmd.motions[n - 1];
+    this.renderer.play(cmd.characterId, steps, () => {
+      if (last !== undefined) this.engine.motionFinished(cmd.characterId, last);
+    });
   }
 
   /* ── 상호작용 ───────────────────────────────────────────── */
@@ -399,8 +405,8 @@ export class RoomLoop {
     h.lifted = true;
     h.path = [];
     h.held = false;
-    this.renderer.setCharacterState(charId, { lifted: true, selected: false });
-    this.arbiter.submit(charId, 'lifted', performance.now());
+    this.renderer.setCharacterState(charId, { lifted: true, selected: false }); // 틀던 엔진 모션은 렌더러가 버린다
+    this.engine.interrupt(charId);
     this.events.onLifted(charId);
   }
 
@@ -417,7 +423,7 @@ export class RoomLoop {
    * 지금 놓으면 만나는 상대 — 가장 가까운 하나.
    *   다른 캐릭터: 포인터가 그 캐릭터 위에 있거나(가장 먼저), 발밑끼리 CHAR_REACH 안
    *   상호작용 가구: 포인터가 그 가구 위에 있거나, 들고 있는 캐릭터 발밑이 가구 바닥 자리에서 FURN_REACH 안
-   * 무엇과 상호작용하는지(앉기 등)는 아직 없다 — 지금은 하이라이트만 {엔진·모션 확정 후}
+   * 놓으면 가구는 엔진에 알리고(visitFurniture), 캐릭터는 다음 근접 판정이 알린다(onFieldEnter)
    */
   private findDropTarget(h: CharacterHandle, screen?: Pt): DropTarget | null {
     const found: { t: DropTarget; d: number }[] = [];
@@ -469,13 +475,13 @@ export class RoomLoop {
     if (!h) return;
     h.lifted = false;
     h.rest = 1 + Math.random() * 2;
-    // 놓았다 — 하이라이트를 끈다. 상대와의 상호작용(앉기·인사 등)은 아직 없다 {엔진·모션 확정 후 여기서}
+    const target = this.dropTarget;
     this.setDropTarget(null);
     this.stepAside(h); // 가구 위에 내려놓았으면 내려온다
     this.renderer.setCharacterState(charId, { lifted: false });
-    // 들림을 먼저 풀어야 한다 — 들린 채 감정 행동을 내면 순위에 밀려 버려진다
-    this.arbiter.release(charId);
-    if (h.lastMood) this.arbiter.submit(charId, this.chars.act(charId, h.lastMood), performance.now());
+    // 놓은 상대 — 가구는 여기서 알린다. 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
+    // 놓았다는 것 자체를 엔진에 알릴지(endDrag 짝)는 팀원 답 대기 — 지금은 interrupt 만
+    if (target?.kind === 'furniture') this.engine.visitFurniture(charId, String(target.placementId));
   }
 
   /* ── 포인터 → 위 진입점들. 좌표는 방 기준 px ─────────────────────── */

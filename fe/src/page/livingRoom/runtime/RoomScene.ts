@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionProxy, type VRMAnimation } from '@pixiv/three-vrm-animation';
-import type { ActName, CharacterDef } from '../types';
+import type { CharacterDef } from '../types';
 import { wornOutfit, type FurnitureCatalog } from './catalogs';
 import { shapeOf, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
-import type { DropTarget, RoomRenderer } from './RoomRenderer';
+import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
 import { CHAR } from './characterSize';
 import { Swing } from './swing';
 import { ROOM_ASSETS } from './roomAssets';
@@ -54,9 +54,24 @@ const TURN_RATE = 10;
  *          pickup40 버둥거림 반복 / pickup60 40프레임 버둥거리다 20프레임 동안 축 처지고 마지막 프레임 유지
  * 무엇을 틀지는 렌더러가 캐릭터 상태로 정한다 — 들림 → pickup, 방금 움직였음 → walk, 그 밖 → idle.
  * 동작 파일을 받기 전이면 기본 자세(REST_POSE, 'rest').
- * (감정 행동 playAct 는 아직 기록만 — 감정 모션이 생기면 여기에 더한다)
+ * 엔진 모션(play)은 같은 재생기로 튼다(2026-10-18 — 재생기는 캐릭터마다 하나). 순서: 들림 > 엔진 모션 > 걷기·대기
  */
-type Pose = 'rest' | 'idle' | 'walk' | 'pickup';
+type Pose = 'rest' | 'idle' | 'walk' | 'pickup' | 'engine'; // 'engine' = 엔진이 맡긴 모션을 트는 중 — wantPose 가 idle·walk 로 바꾸지 않는다
+/**
+ * 엔진 모션 파일 자리. 클립 이름 = 파일 이름(확장자 빼고). 없는 파일은 건너뛴다.
+ * 미리보기 한 장(vite.preview-room.config.ts)은 아직 이 폴더를 넣지 않는다 — 모션 파일이 생기면 그쪽도 넣을 것
+ */
+const MOTION_URL = (clip: string) => `${import.meta.env.BASE_URL}characters/chibi/motions/${clip}.vrma`;
+
+/** 엔진 요청 하나 — 몇 번째 단계를 틀고 있는지, 끝나면 부를 것 */
+interface EngineRun {
+  token: number;
+  steps: MotionStep[];
+  /** 지금 단계 — 파일을 받는 중이면 action 이 null */
+  i: number;
+  action: THREE.AnimationAction | null;
+  onFinish: () => void;
+}
 /** 마지막으로 움직인 뒤 이만큼 지나면 멈춘 것으로 본다(ms) — 걷는 동안 매 프레임 move 가 온다 */
 const STILL_MS = 150;
 /** 동작이 바뀔 때 섞는 시간(초) — 집어 들 때는 들기 동작이 바로 보이게 짧게 */
@@ -123,9 +138,10 @@ interface FurnNode {
 }
 
 interface CharNode {
+  /** 이 캐릭터의 id(spawn 때 받은 것) — 치워졌는지 확인할 때 종목 코드를 id 로 가정하지 않게 */
+  id: string;
   def: CharacterDef;
   pos: Pt;
-  act: ActName;
   clothesId: number | null;
   group: THREE.Group;
   figure: THREE.Group;
@@ -146,6 +162,14 @@ interface CharNode {
   pose: Pose;
   /** 마지막으로 걸은 시각(performance.now) — 멈춘 걸 알아보는 데 쓴다 */
   movedAt: number;
+  /** 엔진이 맡긴 모션(없으면 null) · 요청 번호(새 요청·취소마다 올라감 — 늦게 온 파일·신호를 버리는 데) · 클립별 동작 */
+  engine: EngineRun | null;
+  engineToken: number;
+  /** 클립마다 동작 두 벌 — 같은 클립을 이어 틀거나 사라지는 중에 다시 틀 때 번갈아 써서 섞이게 */
+  engineActions: Map<string, [THREE.AnimationAction, THREE.AnimationAction]>;
+  /** 모델·기본 동작을 다 받았는가(true) / 못 받았거나 치워졌는가(false). 그 전에 온 엔진 요청은 이걸 기다린다 */
+  whenReady: Promise<boolean>;
+  setReady: (ok: boolean) => void;
   /** 들고 있을 때 대롱대롱(swing.ts) — VRMA 자세 위에 얹는 기울기 */
   swing: Swing;
   /** VRM 테두리 — 메시마다 같은 뼈를 쓰는 복제본 하나씩(선택 = 강조색, 드롭 하이라이트 = 흰색) */
@@ -189,7 +213,8 @@ export class RoomScene implements RoomRenderer {
   private readonly rimWhite = rimMaterial('#FFFFFF', this.rimWidth.white, 'rim-white');
   private readonly rimAccent = rimMaterial(ACCENT, this.rimWidth.accent, 'rim-accent');
   private readonly loader = new GLTFLoader().register((p) => new VRMLoaderPlugin(p)).register((p) => new VRMAnimationLoaderPlugin(p));
-  /** 몸 동작 파일 — 한 번 받아 두고, 캐릭터마다 자기 뼈에 맞춘 클립을 만든다 */
+  /** 엔진 모션 파일 — 클립 이름별로 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 없는 파일은 null */
+  private readonly engineFiles = new Map<string, Promise<VRMAnimation | null>>();
   /** 동작 파일 — 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 들기는 비교 시험 중이라 둘(pickup40 · pickup60) */
   private motionFiles: Promise<Partial<Record<'idle' | 'walk' | 'pickup40' | 'pickup60', VRMAnimation>>> | null = null;
   /** 모델 파일 — 한 번 받아 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서) */
@@ -632,15 +657,20 @@ export class RoomScene implements RoomRenderer {
     const group = new THREE.Group();
     group.add(shadow, figure);
     this.charLayer.add(group);
+    let setReady: (ok: boolean) => void = () => {};
+    const whenReady = new Promise<boolean>((ok) => (setReady = ok));
     const c: CharNode = {
-      def, pos, act: 'idle', clothesId: null, group, figure, body, head, shadow, ring, hull, materials: mats,
-      holder, vrm: null, mixer: null, actions: {}, pose: 'rest', movedAt: 0, swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
+      id: charId, whenReady, setReady, def, pos, clothesId: null, group, figure, body, head, shadow, ring, hull, materials: mats,
+      holder, vrm: null, mixer: null, actions: {}, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
     this.invalidate();
-    this.attachModel(charId, c).catch((e: unknown) => console.warn('[RoomScene] 캐릭터 모델을 못 불러와 도형으로 둡니다', e));
+    this.attachModel(charId, c).catch((e: unknown) => {
+      console.warn('[RoomScene] 캐릭터 모델을 못 불러와 도형으로 둡니다', e);
+      c.setReady(false);
+    });
   }
 
   /**
@@ -652,6 +682,8 @@ export class RoomScene implements RoomRenderer {
     if (!c) return;
     this.chars.delete(charId);
     if (this.dropTarget?.kind === 'character' && this.dropTarget.charId === charId) this.dropTarget = null;
+    this.dropEngine(c); // 치우면 엔진 요청도 버린다(onFinish 없음)
+    c.setReady(false); // 모델을 기다리던 요청도 풀어 준다
     c.mixer?.stopAllAction();
     for (const r of c.rims) r.removeFromParent();
     if (c.vrm) VRMUtils.deepDispose(c.vrm.scene);
@@ -715,7 +747,10 @@ export class RoomScene implements RoomRenderer {
     this.drawChar(c);
     this.invalidate();
     // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다
-    this.attachMotions(c, vrm).catch((e: unknown) => console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e));
+    this.attachMotions(c, vrm).catch((e: unknown) => {
+      console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e);
+      c.setReady(false);
+    });
   }
 
   /** 몸 동작 파일을 받아(처음 한 번) 이 캐릭터의 뼈에 맞춘 클립을 만든다. 기본 자세를 잡은 뒤라 동작이 빠지면 그 자세로 돌아온다 */
@@ -752,9 +787,12 @@ export class RoomScene implements RoomRenderer {
       pickup.setLoop(THREE.LoopOnce, 1);
       pickup.clampWhenFinished = true;
     }
+    // 한 번 틀고 끝나는 동작이 끝나면 재생기가 알려 준다 — 엔진 모션이면 다음 단계로
+    mixer.addEventListener('finished', (e) => this.onActionFinished(c, e.action as THREE.AnimationAction));
     c.mixer = mixer;
     c.actions = { idle: idle ?? undefined, walk: walk ?? undefined, pickup: pickup ?? undefined };
     c.pose = 'rest';
+    c.setReady(true); // 이제 엔진 모션을 틀 수 있다
   }
 
   /**
@@ -824,23 +862,133 @@ export class RoomScene implements RoomRenderer {
     c.figure.position.z -= p.z;
   }
 
-  /** 지금 상태에 맞는 동작 — 들림 → pickup, 방금 걸었음 → walk, 그 밖 → idle */
+  /** 지금 상태에 맞는 동작 — 들림 → pickup, 엔진 모션 → engine, 방금 걸었음 → walk, 그 밖 → idle */
   private wantPose(c: CharNode, now: number): Pose {
-    if (c.lifted) return 'pickup';
+    if (c.lifted) return 'pickup'; // 엔진 요청은 들리는 순간 setCharacterState 가 버렸다
+    if (c.engine?.action) return 'engine'; // 파일을 받는 동안은 하던 동작(idle·walk) 그대로
     return now - c.movedAt < STILL_MS ? 'walk' : 'idle';
   }
 
   /** 동작을 바꾼다 — 이전 것은 빼고 새 것은 처음부터. 집어 들 때마다 들기 동작을 처음부터 다시 튼다 */
   private setPose(c: CharNode, pose: Pose): void {
     const fade = pose === 'pickup' ? PICKUP_FADE_S : POSE_FADE_S;
-    for (const [name, act] of Object.entries(c.actions) as [Pose, THREE.AnimationAction][]) {
-      // isRunning() 은 끝나서 멈춘(마지막 프레임 유지) pickup 을 '안 도는 중'으로 본다 — 그래서 놓아도 그 자세가 남았었다.
-      // 믹서에 걸려 있기만 하면(isScheduled) 빼야 한다
-      if (name !== pose && act.isScheduled()) act.fadeOut(fade);
-    }
-    const next = pose === 'rest' ? undefined : c.actions[pose];
+    // 'engine' 은 engineStep 이 직접 틀고 여기로 오지 않는다(wantPose 가 engine 을 내면 이미 c.pose === 'engine')
+    const next = pose === 'rest' || pose === 'engine' ? undefined : c.actions[pose];
+    this.fadeOthers(c, next, fade); // 엔진 모션도 같이 내려놓는다
     if (next) next.reset().setEffectiveWeight(1).fadeIn(fade).play();
     c.pose = pose;
+  }
+
+  /**
+   * keep 말고 재생기에 걸린 동작을 전부 내린다(기본 동작 + 엔진 모션).
+   * isRunning() 은 끝나서 멈춘(마지막 프레임 유지) 동작을 '안 도는 중'으로 본다 — 그래서 놓아도 그 자세가 남았었다.
+   * 믹서에 걸려 있기만 하면(isScheduled) 빼야 한다
+   */
+  private fadeOthers(c: CharNode, keep: THREE.AnimationAction | undefined, fade: number): void {
+    for (const act of [...Object.values(c.actions), ...[...c.engineActions.values()].flat()]) {
+      if (act && act !== keep && act.isScheduled()) act.fadeOut(fade);
+    }
+  }
+
+  /* ── 엔진 모션 — 약속은 RoomRenderer.play · cancel 주석 ── */
+
+  play(charId: string, steps: MotionStep[], onFinish: () => void): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    if (c.lifted) return; // 들려 있는 동안 온 요청은 받지 않는다(onFinish 없음)
+    const token = ++c.engineToken; // 앞 요청은 여기서 끝 — onFinish 없이
+    c.engine = { token, steps, i: -1, action: null, onFinish };
+    void this.engineStep(c, token, 0);
+  }
+
+  cancel(charId: string): void {
+    const c = this.chars.get(charId);
+    if (c?.engine) this.dropEngine(c); // 다음 프레임에 wantPose 가 idle·walk 로 섞어 돌아간다
+  }
+
+  /** 엔진 요청을 버린다 — onFinish 를 부르지 않는다. 늦게 오는 파일·끝 신호는 요청 번호로 걸러진다 */
+  private dropEngine(c: CharNode): void {
+    c.engine = null;
+    c.engineToken++;
+  }
+
+  /** i 번째 단계를 튼다. 다 끝났으면 onFinish. 파일을 받는 동안 다른 요청이 오면 조용히 그만둔다 */
+  private async engineStep(c: CharNode, token: number, i: number): Promise<void> {
+    await Promise.resolve(); // onFinish 는 늘 비동기로 — 부른 쪽이 play 를 다 마친 뒤에 오게
+    const run = c.engine;
+    if (!run || run.token !== token) return;
+    if (i >= run.steps.length) {
+      c.engine = null; // 다음 프레임에 wantPose 가 idle·walk 로 섞어 돌아간다
+      run.onFinish();
+      return;
+    }
+    run.i = i;
+    const step = run.steps[i];
+    const action = await this.engineAction(c, step.clip);
+    if (c.engine !== run || run.token !== token) return;
+    if (!action) return this.engineStep(c, token, i + 1); // 건너뛴 까닭은 engineAction 이 남긴다
+    // 반복은 마지막 단계에서만 — 반복이면 끝나지 않는다(끝 신호 없음 — 반복 모션을 언제 끝낼지는 엔진과 미정)
+    if (i === run.steps.length - 1 && step.loop) action.setLoop(THREE.LoopRepeat, Infinity);
+    else {
+      action.setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true; // 다음 단계와 섞이는 동안 마지막 자세를 붙잡는다
+    }
+    run.action = action;
+    this.fadeOthers(c, action, POSE_FADE_S);
+    action.reset().setEffectiveWeight(1).fadeIn(POSE_FADE_S).play(); // 쉬고 있던 쪽이라 0 부터 올려도 튀지 않는다
+    c.pose = 'engine';
+    this.invalidate();
+  }
+
+  /** 한 번 틀고 끝나는 동작이 끝났다 — 지금 엔진 단계의 것이면 다음 단계로 */
+  private onActionFinished(c: CharNode, action: THREE.AnimationAction): void {
+    const run = c.engine;
+    if (run && run.action === action) void this.engineStep(c, run.token, run.i + 1);
+  }
+
+  /**
+   * 클립 이름 → 이 캐릭터 뼈에 맞춘 동작. 파일은 한 번만 받고, 동작은 캐릭터마다 클립당 두 벌 만든다.
+   * 두 벌 중 지금 화면에 안 걸린 쪽을 준다(같은 클립을 이어 틀어도 앞 것이 사라지며 새 것이 섞여 들어옴).
+   * 모델·기본 동작을 아직 받는 중이면 기다린다. 못 받았으면 null(건너뜀) — 까닭은 여기서 남긴다
+   */
+  private async engineAction(c: CharNode, clip: string): Promise<THREE.AnimationAction | null> {
+    if (!(await c.whenReady)) {
+      console.warn(`[RoomScene] 캐릭터 모델·동작이 없어 엔진 모션을 건너뜁니다: ${c.id} ${clip}`);
+      return null;
+    }
+    // 쉬는 쪽 먼저 — 둘 다 걸려 있으면(아주 빠르게 세 번 이어 틀 때) 지금 트는 것이 아닌 쪽
+    const busy = (a: THREE.AnimationAction) => a.enabled && a.getEffectiveWeight() > 0;
+    const pick = ([a, b]: [THREE.AnimationAction, THREE.AnimationAction]) =>
+      !busy(a) ? a : !busy(b) ? b : a === c.engine?.action ? b : a;
+    const have = c.engineActions.get(clip);
+    if (have) return pick(have);
+    let file = this.engineFiles.get(clip);
+    if (!file) {
+      file = (async () => {
+        try {
+          const r = await fetch(MOTION_URL(clip));
+          if (!r.ok) return null;
+          const g = await this.loader.parseAsync(await r.arrayBuffer(), '');
+          return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0] ?? null;
+        } catch {
+          return null;
+        }
+      })();
+      this.engineFiles.set(clip, file);
+    }
+    const anim = await file;
+    if (!anim) {
+      console.warn(`[RoomScene] 엔진 모션 파일이 없어 건너뜁니다: ${clip}`);
+      return null;
+    }
+    const vrm = c.vrm;
+    if (!vrm || !c.mixer || this.chars.get(c.id) !== c) return null; // 받는 사이 치워졌다 — 요청도 이미 버려졌다
+    const made = c.engineActions.get(clip); // 기다리는 사이 다른 단계가 먼저 만들었을 수 있다
+    if (made) return pick(made);
+    const one = createVRMAnimationClip(anim, vrm);
+    const pair: [THREE.AnimationAction, THREE.AnimationAction] = [c.mixer.clipAction(one), c.mixer.clipAction(one.clone())];
+    c.engineActions.set(clip, pair);
+    return pair[0];
   }
 
   /**
@@ -891,11 +1039,6 @@ export class RoomScene implements RoomRenderer {
     this.invalidate();
   }
 
-  playAct(charId: string, act: ActName): void {
-    const c = this.chars.get(charId);
-    if (c) c.act = act; // 아직 동작을 기록만 한다 — 치비 모션(VRMA)이 오면 여기서 튼다
-  }
-
   setOutfit(charId: string, clothesId: number | null): void {
     const c = this.chars.get(charId);
     if (!c) return;
@@ -911,6 +1054,8 @@ export class RoomScene implements RoomRenderer {
     if (s.selected !== undefined) c.selected = s.selected;
     if (s.lifted !== undefined) c.lifted = s.lifted;
     if (s.hidden !== undefined) c.hidden = s.hidden;
+    // 들리면 엔진 요청을 바로 버린다(onFinish 없음). 다음 프레임이 아니라 지금 버려서, 파일을 받던 요청이 그 사이 시작되는 일도 없다(engineStep 이 요청 번호로 걸러 냄)
+    if (c.lifted && c.engine) this.dropEngine(c);
     this.drawChar(c);
     this.invalidate();
   }
@@ -1015,10 +1160,10 @@ export class RoomScene implements RoomRenderer {
   }
 
   /** 미리보기·테스트용 — 캐릭터마다 지금 동작·화면 자리·상태 */
-  inspect(): { id: string; act: ActName; screen: Pt; lifted: boolean; selected: boolean; outlined: boolean; clothesId: number | null; model: boolean }[] {
+  inspect(): { id: string; clip: string | null; screen: Pt; lifted: boolean; selected: boolean; outlined: boolean; clothesId: number | null; model: boolean }[] {
     return [...this.chars.entries()].map(([id, c]) => ({
       id,
-      act: c.act,
+      clip: c.engine?.action ? c.engine.steps[c.engine.i].clip : null,
       screen: this.screenOf(id)!,
       lifted: c.lifted,
       selected: c.selected,
@@ -1084,3 +1229,4 @@ export class RoomScene implements RoomRenderer {
     delete (this.canvas as HTMLCanvasElement & { roomScene?: RoomScene }).roomScene;
   }
 }
+

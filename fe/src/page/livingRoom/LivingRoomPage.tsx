@@ -7,7 +7,7 @@ import { RoomHud, type RoomHudApi } from './hud/RoomHud';
 import { ZoomControl } from './hud/ZoomControl';
 import { clampView, FIT_VIEW, MIN_STAGE, MIN_WIDTH, projectionOf, sideSlack, useRoomLayout, ZOOM_MAX, zoomAt, type PanControl, type RoomView } from './layout';
 import { CharacterCatalog, FurnitureCatalog } from './runtime/catalogs';
-import { StubEngine } from './runtime/CharacterEngine';
+import { NullEngine } from './runtime/CharacterEngine';
 import { PlaceholderScene } from './runtime/PlaceholderScene';
 import { PriceFeedClient } from './runtime/PriceFeedClient';
 import { RoomLoop } from './runtime/RoomLoop';
@@ -111,7 +111,7 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
       renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
       loop = new RoomLoop({
         renderer,
-        engine: new StubEngine(),
+        createEngine: () => new NullEngine(), // 팀원 엔진이 오면 여기만 바꾼다
         characters,
         furniture,
         feed: new PriceFeedClient(),
