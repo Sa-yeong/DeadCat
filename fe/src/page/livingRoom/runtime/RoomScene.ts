@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionProxy, type VRMAnimation } from '@pixiv/three-vrm-animation';
 import type { CharacterDef } from '../types';
@@ -20,6 +21,7 @@ import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
  *   그래서 바닥 좌표(toFloor)·HUD 자리(screenOf)·캐릭터 클릭은 평면 더미와 같은 식(Projection)을 쓰고,
  *   가구 클릭만 실제 3D 모양에 광선을 쏴서 판정한다.
  * 색 — 면마다 아트보드의 [윗면, 앞면, 옆면] 3색을 그대로 칠한다(조명 계산 없음). 조명은 VRM 캐릭터용으로만 켜 둔다.
+ *   예외 — 카탈로그에 3D 모델(glb)이 있는 가구(슬롯머신 등)는 그 모델을 세운다. 모델은 금속·광택 재질이라 조명 + 반사 환경을 받는다.
  * 좌표 — 방 좌표 (x, y, z) 를 three 의 (X, Y, Z) = (x, z, y) 로 둔다. 1칸 = 1.
  *
  * 캐릭터 — 치비 VRM(지금은 다섯 종목 모두 같은 모델, roomAssets.ts). 모델을 받기 전·못 받았을 땐 도형(캡슐 + 구)으로 선다.
@@ -126,6 +128,34 @@ function paint(style: string): { color: THREE.Color; opacity: number } {
   return { color: new THREE.Color(style), opacity: 1 };
 }
 
+/**
+ * 슬롯머신 한 판(초) {잠정 — 보면서 맞출 것}. 레버를 당겼다 놓으면 릴 셋이 돌다가 왼쪽부터 차례로 선다.
+ * 레버 · 릴은 모델 안의 Lever · Reel_L/M/R 노드를 X축으로 돌린다(build_slot.py — 레버 +100° 가 끝까지 당긴 모양,
+ * 릴은 둘레 6칸이라 k×60° 면 k번 그림이 정면 — reel_symbols.py)
+ */
+const SLOT = {
+  pull: 0.22,
+  back: 0.4,
+  leverMax: (100 * Math.PI) / 180,
+  reelStart: 0.18,
+  /** 릴마다 서는 시각과 그때까지 도는 바퀴 수 */
+  reelStop: [1.1, 1.5, 1.9],
+  turns: [3, 4, 5],
+  /** 설 때 살짝 튕기는 정도(라디안) · 시간 */
+  bounce: 0.14,
+  bounceT: 0.25,
+} as const;
+const easeIn = (u: number) => u * u;
+const easeOutCubic = (u: number) => 1 - (1 - u) ** 3;
+const easeOutBack = (u: number, k = 1.6) => 1 + (k + 1) * (u - 1) ** 3 + k * (u - 1) ** 2;
+const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
+
+interface SlotRun {
+  t: number;
+  lever: THREE.Object3D | null;
+  reels: { node: THREE.Object3D; from: number; to: number; t1: number }[];
+}
+
 interface FurnNode {
   furnitureId: number;
   pos: Pt;
@@ -135,6 +165,13 @@ interface FurnNode {
   meshes: THREE.Mesh[];
   /** 드롭 하이라이트 외곽선 — 켤 때만 만든다 */
   hull: THREE.Group | null;
+  /** 다시 지을 때마다 올라간다 — 늦게 도착한 모델이 옛 모양에 붙지 않게 */
+  build: number;
+  /** 3D 모델을 세웠으면 그 배율(모델 1m → 칸)과 외곽선 재질 — 외곽선은 캐릭터처럼 모양을 부풀려 그린다 */
+  model: { scale: number } | null;
+  rim: { width: { value: number }; mat: THREE.MeshBasicMaterial } | null;
+  /** 슬롯머신 한 판이 도는 중(pullLever) */
+  anim: SlotRun | null;
 }
 
 interface CharNode {
@@ -213,6 +250,14 @@ export class RoomScene implements RoomRenderer {
   private readonly rimWhite = rimMaterial('#FFFFFF', this.rimWidth.white, 'rim-white');
   private readonly rimAccent = rimMaterial(ACCENT, this.rimWidth.accent, 'rim-accent');
   private readonly loader = new GLTFLoader().register((p) => new VRMLoaderPlugin(p)).register((p) => new VRMAnimationLoaderPlugin(p));
+  /** 가구 모델(glb) — VRM 확장 없이 받는다. 주소별로 한 번 받아 원본을 두고, 놓을 때마다 복제한다 */
+  private readonly furnLoader = new GLTFLoader();
+  private readonly furnModels = new Map<string, Promise<THREE.Object3D | null>>();
+  private readonly modelSources: THREE.Object3D[] = [];
+  /** 모델 원본의 도형 — 복제본이 같이 쓰므로 가구를 다시 지을 때 지우지 않는다 */
+  private readonly modelGeos = new Set<THREE.BufferGeometry>();
+  /** 모델 가구용 반사 환경 — 처음 모델을 받을 때 만든다 */
+  private envMap: THREE.Texture | null = null;
   /** 엔진 모션 파일 — 클립 이름별로 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 없는 파일은 null */
   private readonly engineFiles = new Map<string, Promise<VRMAnimation | null>>();
   /** 동작 파일 — 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 들기는 비교 시험 중이라 둘(pickup40 · pickup60) */
@@ -291,6 +336,11 @@ export class RoomScene implements RoomRenderer {
     for (const c of this.chars.values()) {
       if (!c.vrm) continue;
       this.animate(c, dt);
+      live = true;
+    }
+    for (const f of this.furn.values()) {
+      if (!f.anim) continue;
+      this.animateSlot(f, dt);
       live = true;
     }
     this.render();
@@ -459,7 +509,7 @@ export class RoomScene implements RoomRenderer {
     if (!def) return;
     let f = this.furn.get(placementId);
     if (!f) {
-      f = { furnitureId, pos, rotation, group: new THREE.Group(), meshes: [], hull: null };
+      f = { furnitureId, pos, rotation, group: new THREE.Group(), meshes: [], hull: null, build: 0, model: null, rim: null, anim: null };
       this.furnLayer.add(f.group);
       this.furn.set(placementId, f);
     }
@@ -477,6 +527,7 @@ export class RoomScene implements RoomRenderer {
     if (!f) return;
     this.clearGroup(f.group);
     f.group.removeFromParent();
+    f.rim?.mat.dispose();
     this.furn.delete(placementId);
     if (this.highlighted === placementId) this.highlightFurniture(null);
     this.invalidate();
@@ -488,6 +539,9 @@ export class RoomScene implements RoomRenderer {
     this.clearGroup(f.group);
     f.meshes = [];
     f.hull = null;
+    f.model = null;
+    f.anim = null; // 다시 지으면 새 복제본이라 돌던 노드가 없어진다
+    const build = ++f.build;
     const isRug = def.kind === 'rug';
     const shape = shapeOf(def, f.pos, f.rotation);
     for (const pt of shape.parts) {
@@ -510,6 +564,141 @@ export class RoomScene implements RoomRenderer {
     for (const m of f.meshes) m.userData.placementId = placementId;
     for (const m of f.meshes) m.userData.rug = isRug;
     if (isRug) f.group.traverse((o) => o.layers.set(GROUND_LAYER));
+    // 모델이 있으면 받는 동안은 위 상자로 두고, 받으면 바꿔 끼운다
+    if (def.model) void this.attachFurnitureModel(placementId, f, def.model, def.h, build);
+  }
+
+  /**
+   * 가구 모델(glb)을 상자와 바꿔 끼운다 — 못 받으면 상자 그대로.
+   * 키(h 칸)에 맞춰 고르게 늘리고 바닥 자리 가운데에 세운다. 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y) — 등이 뒷벽 쪽(shapeOf 와 같은 규칙)
+   */
+  private async attachFurnitureModel(placementId: number, f: FurnNode, url: string, height: number, build: number): Promise<void> {
+    const src = await this.furnitureModel(url);
+    if (!src || this.disposed || this.furn.get(placementId) !== f || f.build !== build) return;
+    const box = new THREE.Box3().setFromObject(src);
+    const scale = height / Math.max(box.max.y - box.min.y, 1e-3);
+    const obj = src.clone(true);
+    obj.scale.setScalar(scale);
+    obj.position.set(-((box.min.x + box.max.x) / 2) * scale, -box.min.y * scale, -((box.min.z + box.max.z) / 2) * scale);
+    const holder = new THREE.Group();
+    holder.add(obj);
+    holder.position.copy(v3(f.pos.x, f.pos.y, 0));
+    holder.rotation.y = -(f.rotation * Math.PI) / 180;
+    this.clearGroup(f.group);
+    f.meshes = [];
+    f.hull = null;
+    obj.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.userData.placementId = placementId;
+      m.userData.rug = false;
+      m.renderOrder = BODY_ORDER; // 외곽선(RIM_ORDER)이 깊이를 안 남기니 모델이 뒤에 그려 안쪽을 덮는다
+      f.meshes.push(m);
+    });
+    f.group.add(holder);
+    f.model = { scale };
+    if (this.highlighted === placementId) this.highlightFurniture(placementId);
+    if (this.dropTarget?.kind === 'furniture' && this.dropTarget.placementId === placementId) this.applyDropTarget();
+    this.invalidate();
+  }
+
+  /**
+   * 가구 모델 원본 — 주소마다 한 번 받는다. 모델은 금속·광택 재질이라 반사 환경을 준다
+   * (방에는 캐릭터용 조명만 있고 비칠 주변이 없어서, 안 주면 금속 부분이 거의 검게 나온다)
+   */
+  private furnitureModel(url: string): Promise<THREE.Object3D | null> {
+    let p = this.furnModels.get(url);
+    if (!p) {
+      p = (async () => {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) throw new Error(`${r.status} ${url}`);
+          const g = await this.furnLoader.parseAsync(await r.arrayBuffer(), '');
+          if (this.disposed) return null;
+          const env = this.environment();
+          g.scene.traverse((o) => {
+            const m = o as THREE.Mesh;
+            if (!m.isMesh) return;
+            this.modelGeos.add(m.geometry);
+            for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+              if (mat instanceof THREE.MeshStandardMaterial) mat.envMap = env;
+            }
+          });
+          g.scene.updateMatrixWorld(true);
+          this.modelSources.push(g.scene);
+          return g.scene;
+        } catch (e) {
+          console.warn('[RoomScene] 가구 모델을 못 불러와 상자로 둡니다', url, e);
+          return null;
+        }
+      })();
+      this.furnModels.set(url, p);
+    }
+    return p;
+  }
+
+  /**
+   * 슬롯머신 한 판 — 레버를 당겼다 놓고, 릴 셋이 돌다가 왼쪽부터 차례로 선다(서는 그림은 무작위).
+   * 지금은 미리보기 버튼만 부른다 {잠정 — 캐릭터가 당기는 상호작용(엔진 명령)이 정해지면 RoomRenderer 약속으로 올린다}.
+   * 모델을 아직 못 받았거나 Lever · Reel_* 이 없으면 false. 도는 중이면 새로 시작하지 않는다
+   */
+  pullLever(placementId: number): boolean {
+    const f = this.furn.get(placementId);
+    if (!f?.model || f.anim) return false;
+    const lever = f.group.getObjectByName('Lever') ?? null;
+    const nodes = ['Reel_L', 'Reel_M', 'Reel_R'].map((n) => f.group.getObjectByName(n)).filter((o): o is THREE.Object3D => !!o);
+    if (!lever && nodes.length === 0) return false;
+    const turn = 2 * Math.PI;
+    const reels = nodes.map((node, i) => {
+      const from = node.rotation.x % turn;
+      node.rotation.x = from;
+      // 앞면이 아래로 굴러가는 쪽(+X)으로 몇 바퀴 돌고 k번 그림에서 선다
+      const k = Math.floor(Math.random() * 6);
+      const least = from + SLOT.turns[i] * turn;
+      let to = Math.floor(least / turn) * turn + (k * Math.PI) / 3;
+      if (to < least) to += turn;
+      return { node, from, to, t1: SLOT.reelStop[i] };
+    });
+    f.anim = { t: 0, lever, reels };
+    this.invalidate();
+    return true;
+  }
+
+  private animateSlot(f: FurnNode, dt: number): void {
+    const a = f.anim!;
+    a.t += dt;
+    const t = a.t;
+    if (a.lever) {
+      const pulled = t < SLOT.pull ? easeIn(clamp01(t / SLOT.pull)) : 1 - easeOutBack(clamp01((t - SLOT.pull) / SLOT.back));
+      a.lever.rotation.x = SLOT.leverMax * pulled;
+    }
+    let done = t >= SLOT.pull + SLOT.back;
+    for (const r of a.reels) {
+      if (t < r.t1) {
+        r.node.rotation.x = r.from + (r.to - r.from) * easeOutCubic(clamp01((t - SLOT.reelStart) / (r.t1 - SLOT.reelStart)));
+        done = false;
+      } else if (t < r.t1 + SLOT.bounceT) {
+        // 서는 순간 살짝 넘었다 돌아온다
+        const u = (t - r.t1) / SLOT.bounceT;
+        r.node.rotation.x = r.to + SLOT.bounce * Math.sin(Math.PI * u) * (1 - u);
+        done = false;
+      } else r.node.rotation.x = r.to;
+    }
+    if (done) {
+      if (a.lever) a.lever.rotation.x = 0;
+      f.anim = null;
+    }
+  }
+
+  private environment(): THREE.Texture {
+    if (!this.envMap) {
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      const room = new RoomEnvironment();
+      this.envMap = pm.fromScene(room, 0.04).texture;
+      room.dispose();
+      pm.dispose();
+    }
+    return this.envMap;
   }
 
   /** 높이가 있는 상자 — [윗면, 앞면, 옆면] 3색 + 옅은 모서리 선 */
@@ -1081,6 +1270,23 @@ export class RoomScene implements RoomRenderer {
       const f = this.furn.get(t.placementId);
       if (f) {
         const hull = new THREE.Group();
+        if (f.model) {
+          // 모델 — 캐릭터 외곽선과 같은 방식(모양을 법선 쪽으로 부풀린 뒷면). 두께는 모델 좌표로 바꿔 준다
+          f.rim ??= (() => {
+            const width = { value: 0 };
+            return { width, mat: rimMaterial('#FFFFFF', width, `rim-furn-${t.placementId}`) };
+          })();
+          f.rim.width.value = e / f.model.scale;
+          f.group.updateMatrixWorld(true);
+          const inv = f.group.matrixWorld.clone().invert();
+          for (const m of f.meshes) {
+            const r = new THREE.Mesh(m.geometry, f.rim.mat);
+            r.matrixAutoUpdate = false;
+            r.matrix.multiplyMatrices(inv, m.matrixWorld);
+            r.renderOrder = RIM_ORDER;
+            hull.add(r);
+          }
+        }
         for (const m of f.meshes) {
           const pt = m.userData.part as Part | undefined;
           const blob = m.userData.blob as { r: number; flat: boolean } | undefined;
@@ -1204,6 +1410,7 @@ export class RoomScene implements RoomRenderer {
 
   /** 캐릭터의 선택 테·외곽선은 머리·몸 도형을 같이 쓴다 — 지우지 않는다 */
   private isSharedGeometry(geo: THREE.BufferGeometry): boolean {
+    if (this.modelGeos.has(geo)) return true;
     for (const c of this.chars.values()) if (geo === c.head.geometry || geo === c.body.geometry) return true;
     return false;
   }
@@ -1223,6 +1430,20 @@ export class RoomScene implements RoomRenderer {
       geo?.dispose();
     });
     for (const c of this.chars.values()) for (const m of Object.values(c.materials)) m.dispose();
+    // 가구 모델 원본(장면 밖에 둔 것) · 외곽선 재질 · 반사 환경
+    for (const src of this.modelSources) {
+      src.traverse((n) => {
+        const m = n as THREE.Mesh;
+        if (!m.isMesh) return;
+        m.geometry.dispose();
+        for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+          for (const v of Object.values(mat)) if (v instanceof THREE.Texture && v !== this.envMap) v.dispose();
+          mat.dispose();
+        }
+      });
+    }
+    for (const f of this.furn.values()) f.rim?.mat.dispose();
+    this.envMap?.dispose();
     for (const m of [...this.meshMats.values(), ...this.lineMats.values(), this.hullMat, this.ringMat, this.rimWhite, this.rimAccent]) m.dispose();
     for (const o of this.owned) o.dispose();
     this.chars.clear();

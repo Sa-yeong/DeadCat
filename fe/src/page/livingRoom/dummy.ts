@@ -19,6 +19,10 @@ import type {
   RoomCharacterDto,
   StorageItem,
 } from './types';
+import { FURNITURE_MODELS } from './runtime/furnitureAssets';
+
+/** 슬롯머신 단계 — 1 낡은 것 · 2 수리한 것 · 3 제일 좋은 것. {잠정 — 단계를 저장할 곳이 서버에 없어 고정값} */
+const SLOT_TIER: 1 | 2 | 3 = 2;
 
 /* ── 종목 고정값 (Catalog API) ─────────────────────────────────────── */
 
@@ -85,6 +89,8 @@ export const FURNITURE_DEFS: FurnitureDef[] = [
   { furnitureId: 27, name: '큰 갈색 러그', kind: 'rug', w: 5.4, d: 5.4, h: 0, colors: ['#3A2F2B', 'rgba(242,195,139,0.20)', ''] },
   { furnitureId: 28, name: '큰 보라 러그', kind: 'rug', w: 7.6, d: 6.0, h: 0, colors: ['#2F2A42', 'rgba(164,151,255,0.22)', ''] },
   { furnitureId: 29, name: '분홍 러그', kind: 'rug', w: 5.6, d: 5.4, h: 0, colors: ['#33303A', 'rgba(242,160,179,0.22)', ''] },
+  // 슬롯머신 — 3D 는 glb 모델(2026-10-27 도휘). 바닥 2×2칸, 키는 캐릭터와 같은 2.5칸
+  { furnitureId: 30, name: '슬롯머신', kind: 'box', w: 2, d: 2, h: 2.5, colors: ['#5A2A2A', '#3A1E22', '#2E181C'], interactive: true, model: FURNITURE_MODELS[`slot${SLOT_TIER}`] },
 ];
 
 /* ── 내 거실 (RoomQuery API · OWNER) ──────────────────────────────── */
@@ -153,6 +159,8 @@ export const PLACEMENTS: PlacementDto[] = [
     [9.4, 0.5], [14.2, 0.6], [24.9, 0.6], [29.3, 1.0], [29.2, 13.0], [29.2, 21.0], [0.6, 15.6], [0.6, 29.2],
     [7.6, 29.2], [16.4, 29.2], [29.2, 29.2], [18.0, 12.4], [7.6, 13.6], [26.6, 12.0], [16.6, 21.6], [6.6, 25.4],
   ] as const).map(([x, y]) => pl(11, x, y)),
+  // 뒷벽 — 진열장과 오른쪽 구석 화분 사이에 슬롯머신(정면이 방 쪽). 다른 배치 번호가 밀리지 않게 맨 끝에 둔다
+  pl(30, 26.6, 1.0),
 ];
 
 /** 내 보유 종목 전부 — 이 중 지금 프리셋의 종목만 거실에 선다 */

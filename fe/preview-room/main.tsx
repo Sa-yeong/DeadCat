@@ -1,10 +1,44 @@
 /** 단일 HTML 미리보기 전용 엔트리 — 라우터 없이 거실 화면만 렌더. 앱에는 들어가지 않는다 */
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import '../src/styles/dc.css';
 import { LivingRoomPage } from '../src/page/livingRoom/LivingRoomPage';
 import { GlobalBar } from '../src/page/stockDetail/components/GlobalBar';
+import { FURNITURE_DEFS } from '../src/page/livingRoom/dummy';
+import { FURNITURE_MODELS } from '../src/page/livingRoom/runtime/furnitureAssets';
+import type { FurnitureDef } from '../src/page/livingRoom/types';
+
+/** 슬롯머신 단계 바꿔 보기(2026-10-27) — 미리보기에서만. 단계를 저장할 곳이 서버에 없어 앱은 dummy.ts 의 고정값을 쓴다 */
+const SLOT_ID = 30;
+const TIERS = [1, 2, 3] as const;
+type Tier = (typeof TIERS)[number];
+const slotUrl = (t: Tier) => FURNITURE_MODELS[`slot${t}`];
+const slotDef = () => FURNITURE_DEFS.find((d) => d.furnitureId === SLOT_ID);
+/** 3D 렌더러 속 — 미리보기만 손댄다(RoomScene 이 캔버스에 걸어 둔 손잡이) */
+type SceneHandle = {
+  furniture: { def(id: number): FurnitureDef | undefined };
+  furn: Map<number, { furnitureId: number; pos: { x: number; y: number }; rotation: number }>;
+  placeFurniture(placementId: number, furnitureId: number, pos: { x: number; y: number }, rotation: number): void;
+  pullLever(placementId: number): boolean;
+};
+const sceneHandle = () => (document.querySelector('canvas') as unknown as { roomScene?: SceneHandle } | null)?.roomScene;
+/** 레버 당기기 — 거실의 슬롯머신 전부 한 판씩 */
+function pullSlots() {
+  const s = sceneHandle();
+  if (!s) return;
+  for (const [id, f] of s.furn) if (f.furnitureId === SLOT_ID) s.pullLever(id);
+}
+function setSlotTier(t: Tier) {
+  const url = slotUrl(t);
+  const d = slotDef();
+  if (d) d.model = url; // 더미 서버 값 — 보는 사람을 바꾸거나 평면↔3D 를 오가도 유지
+  const s = sceneHandle();
+  const live = s?.furniture.def(SLOT_ID);
+  if (!s || !live) return;
+  live.model = url;
+  for (const [id, f] of s.furn) if (f.furnitureId === SLOT_ID) s.placeFurniture(id, SLOT_ID, f.pos, f.rotation);
+}
 
 /** 보는 사람 바꿔 보기 — 서버가 토큰으로 정하는 mode 를 미리보기에서만 흉내 낸다 */
 function RoomDevPanel() {
@@ -19,6 +53,7 @@ function RoomDevPanel() {
     return parts.length ? `${path}?${parts.join('&')}` : path;
   };
   const cur = with3d(pathname + search, true);
+  const [tier, setTier] = useState<Tier>(() => TIERS.find((t) => slotUrl(t) === slotDef()?.model) ?? 2);
   const items: [string, string][] = [
     ['내 거실 (OWNER)', '/room'],
     ['남의 거실 (VISITOR)', '/room/22'],
@@ -59,6 +94,40 @@ function RoomDevPanel() {
       >
         {is3d ? '3D 보는 중 → 평면으로' : '평면 보는 중 → 3D로'}
       </button>
+      {is3d && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+          <span style={{ marginRight: 'auto' }}>슬롯머신</span>
+          {TIERS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              title={['낡은 것', '수리한 것', '제일 좋은 것'][t - 1]}
+              onClick={() => {
+                setTier(t);
+                setSlotTier(t);
+              }}
+              style={{
+                height: 24, minWidth: 30, padding: '0 6px', borderRadius: 3, cursor: 'pointer', fontSize: 11,
+                border: '1px solid rgba(255,255,255,0.22)', background: tier === t ? '#F2564C' : '#26262B', color: '#EDEDEA',
+              }}
+            >
+              {t}단계
+            </button>
+          ))}
+        </div>
+      )}
+      {is3d && (
+        <button
+          type="button"
+          onClick={pullSlots}
+          style={{
+            height: 24, padding: '0 8px', borderRadius: 3, cursor: 'pointer', fontSize: 11,
+            border: '1px solid rgba(255,255,255,0.22)', background: '#26262B', color: '#EDEDEA',
+          }}
+        >
+          레버 당기기
+        </button>
+      )}
     </div>
   );
 }
