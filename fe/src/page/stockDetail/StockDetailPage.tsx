@@ -16,6 +16,12 @@ import { VolumeBlock } from './components/VolumeBlock';
 import { WatchRail } from './components/WatchRail';
 import { SolidBatchToggle } from './components/SolidBatchToggle';
 import { Block } from './components/Block';
+import { EmotionTestPanel } from './components/EmotionTestPanel';
+import { useEmotionFeed } from './useEmotionFeed';
+
+/** 감정 테스트 패널을 띄우는가 — 개발 서버와 미리보기에서만(미리보기 표시는 렌더 직전에 붙으므로 그때 본다) */
+const emotionTestOn = () =>
+  import.meta.env.DEV || !!(window as unknown as { __DC_PREVIEW__?: boolean }).__DC_PREVIEW__;
 
 type BlockId = 'orderbook' | 'order' | 'volume' | 'rail';
 const BLOCK_IDS: BlockId[] = ['orderbook', 'order', 'volume', 'rail'];
@@ -71,6 +77,21 @@ export function StockDetailPage() {
   );
   const [stage, setStage] = useState<StageStatus>('loading');
   const stageLoop = useRef<StockStageLoop | null>(null);
+  /** 감정 테스트 패널이 열려 있다 — 그동안 실시간 감정은 멈춘다 */
+  const [emotionTesting, setEmotionTesting] = useState(false);
+  const emotionFeed = useEmotionFeed(stockCode, stageLoop, stage === 'ready', emotionTesting);
+  const getStageLoop = useCallback(() => stageLoop.current, []);
+
+  // 장외 잠 — 다른 종목으로 들어오거나, 탭을 가렸다(안 보고 있다) 돌아오면 다시 잔다.
+  // 화면을 아예 나갔다 오면 캐릭터가 새로 떠서 처음부터 자고 있다
+  useEffect(() => {
+    stageLoop.current?.sleepAgain();
+  }, [stockCode]);
+  useEffect(() => {
+    const onVisible = () => document.hidden && stageLoop.current?.sleepAgain();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
   const [communityKey, setCommunityKey] = useState(0);
 
   const sync = useRef<QuoteSync | null>(null);
@@ -262,6 +283,8 @@ export function StockDetailPage() {
   }, []);
 
   const panStage = useCallback((dx: number) => stageLoop.current?.panBy(dx), []);
+  const spanStage = useCallback((days: number) => stageLoop.current?.setViewSpan(days), []);
+  const pushStage = useCallback(() => stageLoop.current?.pushIn(), []);
 
   const basic = tick?.basic ?? null;
 
@@ -309,6 +332,8 @@ export function StockDetailPage() {
           communityKey={communityKey}
           onCompose={() => setComposing(true)}
           onPan={panStage}
+          onViewSpan={spanStage}
+          onWheelIn={pushStage}
         />
 
         {tick ? (
@@ -324,6 +349,7 @@ export function StockDetailPage() {
           solid={solid.order}
           onToggle={() => setBlockSolid('order')}
           onDone={() => sync.current?.refreshFastNow()}
+          onFilled={emotionFeed.react}
         />
 
         {bars ? (
@@ -353,6 +379,8 @@ export function StockDetailPage() {
           onClose={() => setComposing(false)}
           onSubmitted={() => setCommunityKey((k) => k + 1)}
         />
+
+        {emotionTestOn() && <EmotionTestPanel getLoop={getStageLoop} onActive={setEmotionTesting} />}
       </main>
     </div>
     </LayoutContext.Provider>

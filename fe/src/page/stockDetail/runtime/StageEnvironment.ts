@@ -140,10 +140,10 @@ export class StageEnvironment {
 
   /**
    * 카메라가 바뀔 때마다 — 안개 거리와 지평선 판 위치를 카메라에 맞춘다.
-   * 캐릭터는 원점, 카메라는 +z 쪽에서 -z 방향을 본다.
+   * 캐릭터는 원점, 카메라는 +z 쪽에서 -z 방향을 본다(드론 뷰에서는 위에서 비스듬히).
+   * d = 카메라 ↔ 캐릭터 거리(시선 방향)
    */
-  update(camera: THREE.PerspectiveCamera) {
-    const d = camera.position.z; // 카메라 ↔ 캐릭터 거리
+  update(camera: THREE.PerspectiveCamera, d: number) {
     // 바닥 판은 카메라를 따라 옮기되 굵은 선 간격 단위로만 — 격자 무늬가 미끄러지지 않고 끝도 안 보이게
     const step = CELL * MAJOR_EVERY;
     this.floor.position.x = Math.round(camera.position.x / step) * step;

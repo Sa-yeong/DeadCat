@@ -19,6 +19,7 @@ export function framingFor(L: Layout): Framing {
     centerX: L.character.left + L.character.width / 2,
     horizon: L.floor.horizon,
     vanishX: L.floor.vanishX,
+    winMid: (L.win.top + L.win.bottom) / 2,
   };
 }
 

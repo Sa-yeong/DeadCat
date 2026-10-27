@@ -1,4 +1,5 @@
 import { api } from '../../api/axios';
+import type { Emotion } from './runtime/motionTable';
 import type {
   Candle, CompanyOverview, CompanyScores, CompanySummary, FavoriteItem, Financial,
   Orderbook, Post, PostComment, StockBasic, Timeframe, VolumeSummary,
@@ -22,6 +23,11 @@ function authHeader(): Record<string, string> | undefined {
 
 async function get<T>(url: string, params?: Record<string, string>): Promise<T> {
   const res = await api.get<{ success: boolean; data: T }>(url, { params, headers: authHeader() });
+  return res.data.data;
+}
+
+async function post<T>(url: string, body: unknown): Promise<T> {
+  const res = await api.post<{ success: boolean; data: T }>(url, body, { headers: authHeader() });
   return res.data.data;
 }
 
@@ -75,6 +81,40 @@ export const getComments = (postId: string, cursor: string | null, limit: number
     `/posts/${encodeURIComponent(postId)}/comments`,
     { limit: String(limit), ...(cursor ? { cursor } : {}) },
   );
+
+/* ── 캐릭터 감정 ───────────────────────────────────── */
+
+export type UserAction = 'CLICK' | 'BUY' | 'SELL' | 'SPAM_CLICK';
+export interface EmotionResult {
+  stock_code: string | null;
+  is_holding: boolean;
+  /** 세기 순 — 유지 감정(duration null)과 한 번 반응이 섞여 온다 */
+  emotions: Emotion[];
+}
+
+/**
+ * POST /characters/{code}/emotion — 지금 감정. 로그인했으면 내 보유(수익률·보유기간)가 반영된다.
+ * interaction 을 주면 그 반응(매수·매도 등)도 같이 계산한다
+ */
+export const postEmotion = (code: string, interaction?: { type: UserAction; times?: number }) =>
+  post<EmotionResult>(`/characters/${encodeURIComponent(code)}/emotion`, interaction ? { interaction } : {});
+
+/** 테스트용 상황 — 빠진 값은 서버 기본값(장중, 비보유, 0) */
+export interface EmotionSimulateInput {
+  isOperatingTime?: boolean;
+  holding?: boolean;
+  userProfitRate?: number;
+  holdingPeriodDays?: number;
+  fluctuationRate?: number;
+  volatility?: number;
+  momentum?: number;
+  loss?: number;
+  interaction?: { type: UserAction; times?: number };
+}
+
+/** POST /characters/emotion/simulate — 개발 환경에서만 열린다. 실제 엔진에 상황을 직접 넣는다 */
+export const simulateEmotion = (input: EmotionSimulateInput) =>
+  post<EmotionResult>('/characters/emotion/simulate', input);
 
 /** 응답이 404(없는 종목)인지 */
 export function isNotFound(e: unknown): boolean {

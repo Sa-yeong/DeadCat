@@ -79,10 +79,14 @@ export const MOTIONS: Partial<Record<MotionName, MotionDef>> = {
       { expr: 'ou', keys: [[f(25), 0], [f(60), 1]] },
     ],
   },
+  // 광기 — panic(하락 극단)·euphoria(상승 극단)가 같은 모션을 쓰고, 표정(IDLE_FACE)으로 갈린다.
+  // {파일 대기} madness.vrma 가 오면 그대로 붙는다. 없으면 지금 모션을 유지한다
+  madness: { file: 'madness.vrma', loop: true, face: [] },
 };
 
 /**
- * idle 모션일 때 얹는 유지 표정 — 매칭표 "현재 표정 유지 (엔진이 주는 sad / happy 등)".
+ * idle·madness 모션일 때 얹는 유지 표정 — 매칭표 "현재 표정 유지 (엔진이 주는 sad / happy 등)".
+ * madness 는 panic·euphoria 둘이 같은 모션이라 표정으로 양극단을 가른다.
  * happy·sad 는 모델에 같은 이름의 표정이 있다.
  * {미확정} euphoria·panic 은 모델에 같은 이름이 없어 임시로 가장 가까운 것을 붙였다.
  */

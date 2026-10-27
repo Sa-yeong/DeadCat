@@ -37,6 +37,18 @@ export function zoomStep(tf: Timeframe, visibleBars: number): Timeframe | null {
   return null;
 }
 
+/**
+ * 축소 한계 — 화면에 보일 수 있는 최대 봉 개수.
+ * 기본은 데이터 전체 + 5% (토스처럼 다 보이면 더 안 줄어든다).
+ * 다만 더 큰 단위가 있으면 그 단위로 넘어가는 기준보다는 조금 더 줄 수 있게 한다
+ * — 데이터가 짧은 종목(해외 일봉 100개 등)도 휠로 주·월·년봉까지 갈 수 있게.
+ */
+export function maxVisibleBars(tf: Timeframe, dataLength: number): number {
+  const all = Math.max(dataLength, 1) * 1.05;
+  const next = LIMITS[tf].coarser;
+  return next ? Math.max(all, next[0] * 1.1) : all;
+}
+
 /** 주기를 갈아 끼운 뒤 맞출 화면 — 가운데 시각(초, UTC)과 보일 봉 개수, 최신 봉을 보고 있었는지 */
 export interface ChartFocus {
   center: number;

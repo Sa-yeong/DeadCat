@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useLayout } from '../layout';
-import { convertBars, zoomStep, type ChartFocus } from '../chartZoom';
+import { DAYS_PER_BAR, convertBars, maxVisibleBars, zoomStep, type ChartFocus } from '../chartZoom';
 import type { Candle, Timeframe } from '../types';
 import { ChartPane } from './ChartPane';
 import { ChartToolbar } from './ChartToolbar';
@@ -45,6 +45,8 @@ export function WindowHud({
   communityKey,
   onCompose,
   onPan,
+  onViewSpan,
+  onWheelIn,
 }: {
   tab: WindowTab;
   onSwitch: (t: WindowTab) => void;
@@ -57,6 +59,11 @@ export function WindowHud({
   onCompose: () => void;
   /** 차트를 좌우로 끌었다 — 캐릭터 무대 카메라 연동 */
   onPan?: (dx: number) => void;
+  /** 차트에 보이는 기간(달력 일) — 캐릭터 무대 카메라 앞뒤 연동 */
+  /** 차트에 보이는 기간(달력 일) — 무대 카메라가 따라간다 */
+  onViewSpan?: (days: number) => void;
+  /** 휠을 확대 쪽으로 굴렸다 */
+  onWheelIn?: () => void;
 }) {
   const L = useLayout();
   const { winWidth, winHeight } = L;
@@ -122,6 +129,9 @@ export function WindowHud({
           recent={RECENT_BARS[timeframe]}
           focus={focus}
           onZoom={onZoom}
+          onSpan={(bars) => onViewSpan?.(bars * DAYS_PER_BAR[timeframe])}
+          onWheelIn={onWheelIn}
+          maxBars={(n) => maxVisibleBars(timeframe, n)}
           onPan={onPan}
         />
       </div>

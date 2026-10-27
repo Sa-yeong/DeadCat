@@ -34,6 +34,7 @@ const fmt = (p: number) => Math.round(p).toLocaleString('ko-KR');
  *
  * 좌우로 끌어 지난 구간을 볼 수 있다(2026-10-05). 사용자가 끈 만큼을 onPan 으로 알린다 —
  * 캐릭터 무대의 카메라(창틀)가 같이 움직인다. 데이터 교체·크기 변경으로 생긴 이동은 알리지 않는다.
+ * 양 끝은 빈 곳이 차트 폭의 절반이 될 때까지만 끌린다 — 최신 봉·첫 봉이 가운데에서 멈춘다.
  */
 export function ChartPane({
   stockCode,
@@ -46,6 +47,9 @@ export function ChartPane({
   recent,
   focus,
   onZoom,
+  onSpan,
+  onWheelIn,
+  maxBars,
   onPan,
 }: {
   stockCode: string;
@@ -62,6 +66,12 @@ export function ChartPane({
   focus?: MutableRefObject<ChartFocus | null>;
   /** 휠로 확대·축소를 마쳤다 — 보이는 봉 개수, 가운데 시각(초, UTC), 최신 봉이 보이는지 */
   onZoom?: (visibleBars: number, center: number, atLatest: boolean) => void;
+  /** 보이는 봉 개수가 바뀔 때마다(확대·축소·주기 변경) */
+  onSpan?: (visibleBars: number) => void;
+  /** 축소 한계 — 데이터 개수를 받아 화면에 보일 수 있는 최대 봉 개수를 돌려준다 */
+  maxBars?: (dataLength: number) => number;
+  /** 휠을 확대 쪽으로 굴렸다(굴릴 때마다) */
+  onWheelIn?: () => void;
   /** 사용자가 차트를 끌어 내용이 dx px 움직였다(+ = 오른쪽) */
   onPan?: (dx: number) => void;
 }) {
@@ -77,6 +87,12 @@ export function ChartPane({
   recentRef.current = recent;
   const zoomCb = useRef(onZoom);
   zoomCb.current = onZoom;
+  const spanCb = useRef(onSpan);
+  spanCb.current = onSpan;
+  const wheelInCb = useRef(onWheelIn);
+  wheelInCb.current = onWheelIn;
+  const maxBarsRef = useRef(maxBars);
+  maxBarsRef.current = maxBars;
   /** 지금 그려진 캔들 — 화면 가운데가 몇 시인지 알아낼 때 */
   const listRef = useRef<Candle[]>([]);
 
@@ -155,7 +171,8 @@ export function ChartPane({
     el.addEventListener('pointerdown', onPress);
     // 휠이 멈추면(0.15초) 보이는 범위를 알린다 — 그 사이에 주기를 바꾸면 깜빡인다
     let wheelTimer = 0;
-    const onWheel = () => {
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) wheelInCb.current?.();
       window.clearTimeout(wheelTimer);
       wheelTimer = window.setTimeout(() => {
         const r = c.timeScale().getVisibleLogicalRange();
@@ -170,6 +187,18 @@ export function ChartPane({
     window.addEventListener('pointercancel', onRelease);
     const onRange = (r: { from: number; to: number } | null) => {
       if (!r) return;
+      // 끝까지 끌어도 빈 곳은 차트 폭의 절반까지만 — 첫 봉·마지막 봉이 가운데를 넘어가지 않게.
+      // 넘었으면 되돌려 놓고, 되돌린 범위로 다시 불릴 때 이동량을 계산한다
+      const n = listRef.current.length;
+      if (n) {
+        const mid = (r.from + r.to) / 2;
+        const shift = mid > n - 1 ? n - 1 - mid : mid < 0 ? -mid : 0;
+        if (Math.abs(shift) > 1e-6) {
+          c.timeScale().setVisibleLogicalRange({ from: r.from + shift, to: r.to + shift });
+          return;
+        }
+      }
+      spanCb.current?.(r.to - r.from);
       const prev = lastFrom;
       lastFrom = r.from;
       const byUser = pressed || performance.now() - releasedAt < 700;
@@ -202,7 +231,17 @@ export function ChartPane({
   // 창 크기 변경 — 크기만 맞춘다. 파기하면 창을 끌 때마다 차트가 깜빡인다
   useEffect(() => {
     chart.current?.resize(width, height);
-  }, [width, height]);
+    applyZoomOutLimit();
+  }, [width, height]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 축소 한계 — 봉 사이 최소 간격으로 건다(라이브러리가 그보다 좁게 못 줄인다) */
+  function applyZoomOutLimit() {
+    const n = listRef.current.length;
+    const limit = maxBarsRef.current?.(n);
+    if (!chart.current || !n || !limit) return;
+    const plotW = Math.max(1, size.current.width - 160); // 좌우 가격축 몫을 뺀 대략의 그림 폭
+    chart.current.timeScale().applyOptions({ minBarSpacing: Math.max(0.5, plotW / limit) });
+  }
 
   // 전체 캔들 — 주기 변경 · 종목 변경 · 표현 변경. 주기를 바꾸는 사이에는 비워 둔다
   useEffect(() => {
@@ -212,6 +251,7 @@ export function ChartPane({
     mirror.current.setData(list.map((c) => ({ time: stamp(c.write_time), value: c.close_price })));
     listRef.current = list;
     if (!list.length) return;
+    applyZoomOutLimit();
     // 확대·축소로 주기를 바꿨다 — 같은 기간이 보이게 맞춘다
     const f = focus?.current;
     if (f && focus) {
@@ -224,6 +264,7 @@ export function ChartPane({
         if (i < 0) i = list.length;
         ts?.setVisibleLogicalRange({ from: i - f.bars / 2, to: i + f.bars / 2 });
       }
+      reportSpan();
       return;
     }
     // 처음엔 최근 구간만 — 전부 넣으면 봉이 너무 좁아 날짜 대신 월·년 눈금이 나온다
@@ -233,7 +274,14 @@ export function ChartPane({
     } else {
       chart.current?.timeScale().fitContent();
     }
+    reportSpan();
   }, [candles, kind]);
+
+  /** 보이는 봉 수를 한 번 더 알린다 — 주기만 바뀌고 봉 수가 같으면 범위 변경 알림이 안 오므로 */
+  function reportSpan() {
+    const r = chart.current?.timeScale().getVisibleLogicalRange();
+    if (r) spanCb.current?.(r.to - r.from);
+  }
 
   // 마지막 봉만 — 빠른 주기. 안 하면 차트를 보고 있는 동안 현재 봉이 멈춘다
   useEffect(() => {

@@ -32,6 +32,8 @@ export interface Framing {
   horizon: number;
   /** 소실점 가로 위치 — 바닥 세로선이 모이는 곳(창문 가운데) */
   vanishX: number;
+  /** 창문 세로 가운데 — 드론 뷰(최대 각도)에서 캐릭터가 걸릴 높이 */
+  winMid: number;
 }
 
 /** 지금 얹혀 있는 표정 한 겹. 모션이 바뀌면 이전 겹은 서서히 빠진다 */
@@ -42,10 +44,15 @@ interface FaceLayer {
   /** 빠지는 데 걸리는 시간(초) — 다음 모션으로 넘어갈 때의 섞는 시간 */
   fadeDur: number;
   once: boolean;
+  /** 잠깐 띄우는 표정(flashFace) — 이 시각(초)이 되면 빠지기 시작한다 */
+  until?: number;
 }
 
 /** 망원에 가까운 화각 — 원근 왜곡이 적어 정면 일러스트와 비슷하게 보인다 */
 const FOV = 20;
+
+/** 드론 뷰 — 가장 높이 떴을 때 내려다보는 각도(도, 지면 기준) */
+const DRONE_PITCH = 30;
 
 /**
  * 창틀 안에서 보이는 1인 씬. **어떻게 그릴지만** 안다.
@@ -85,6 +92,10 @@ export class StockScene {
 
   /** 카메라 가로 이동(m) — 차트를 좌우로 밀면 창틀(카메라)이 같이 간다. 캐릭터는 제자리 */
   private panX = 0;
+  /** 카메라 거리 배수 — 1 = 기본 구도, 클수록 뒤로 물러난다(차트 축소 연동) */
+  private zoom = 1;
+  /** 드론 정도(0 = 정면, 1 = DRONE_PITCH 로 내려다봄) — 차트 축소 연동 */
+  private drone = 0;
   /** 캐릭터 깊이에서 1m 가 화면 몇 px 인가 — applyFraming 이 갱신 */
   private pxPerM = 1;
   /** 캐릭터 위치(m, 가로)와 몸 방향(+ = 화면 오른쪽을 봄) */
@@ -172,13 +183,14 @@ export class StockScene {
    * 섞는 시간 = 이전 모션의 fadeOut → 새 모션의 fadeIn → CROSSFADE_S 순으로 먼저 있는 값.
    * 같은 반복 모션을 다시 요청하면 처음부터 다시 틀지 않는다.
    */
-  async play(name: MotionName): Promise<void> {
+  /** 모션을 튼다. 틀었으면(또는 이미 그 반복 모션이면) true — 표에 없거나 파일을 못 받으면 false */
+  async play(name: MotionName): Promise<boolean> {
     const def = MOTIONS[name as keyof typeof MOTIONS];
-    if (!def || !this.mixer) return; // madness — 모션 파일이 아직 없다
-    if (name === this.currentName && def.loop) return;
+    if (!def || !this.mixer) return false;
+    if (name === this.currentName && def.loop) return true;
 
     const clip = await this.clip(name);
-    if (!clip || !this.mixer) return;
+    if (!clip || !this.mixer) return false;
 
     const action = this.mixer.clipAction(clip);
     const prev = this.current;
@@ -202,6 +214,23 @@ export class StockScene {
 
     this.current = action;
     this.currentName = name;
+    return true;
+  }
+
+  /**
+   * 모션은 그대로 두고 표정만 잠깐 — 반복 모션(idle)으로 오는 한 번 반응(예: 매수 → happy).
+   * 한 번 표정으로 다루므로 그동안 유지 표정은 그만큼 내려간다(매칭표 재생 규칙 4).
+   */
+  flashFace(expr: string, weight: number, seconds: number) {
+    const now = this.clock.elapsedTime;
+    this.faces.push({
+      tracks: [{ expr, value: weight }],
+      start: now,
+      fadeOutAt: null,
+      fadeDur: CROSSFADE_S,
+      once: true,
+      until: now + seconds,
+    });
   }
 
   /** 유지 표정 — null 이면 뺀다 */
@@ -225,6 +254,14 @@ export class StockScene {
     this.applyFraming();
   }
 
+  /** 카메라 상태 — 거리 배수(1 = 기본 구도)와 드론 정도(0 = 정면 ~ 1 = 최대 각도) */
+  setView(zoom: number, drone: number) {
+    if (Math.abs(zoom - this.zoom) < 1e-5 && Math.abs(drone - this.drone) < 1e-5) return;
+    this.zoom = zoom;
+    this.drone = drone;
+    this.applyFraming();
+  }
+
   /** 캐릭터 위치(m)와 몸 방향(라디안, + = 화면 오른쪽을 봄) */
   setRoot(x: number, yaw: number) {
     this.rootX = x;
@@ -243,7 +280,10 @@ export class StockScene {
 
   /** 캐릭터가 카메라 가운데에 있을 때의 화면 가로 위치와 무대 폭(px) */
   get home(): { centerX: number; width: number } | null {
-    return this.framing ? { centerX: this.framing.centerX, width: this.framing.width } : null;
+    const f = this.framing;
+    if (!f) return null;
+    // 드론 뷰에서는 캐릭터가 창문 가운데(소실점 자리)에 온다
+    return { centerX: f.centerX + (f.vanishX - f.centerX) * this.drone, width: f.width };
   }
 
   /** 화면 좌표(캔버스 기준 px)가 캐릭터 몸에 닿는가 */
@@ -327,20 +367,39 @@ export class StockScene {
     const d = (spanM * s) / Math.max(spanPx, 1);
     const camY = this.body.headTop - ((f.horizon - f.headTop) * d) / s;
     const camX = -((f.centerX - f.vanishX) * d) / s + this.panX;
-    this.pxPerM = s / d;
-    this.camera.position.set(camX, camY, d);
-    this.camera.lookAt(camX, camY, 0);
+    // 앞뒤로만 물러난다 — 눈높이(camY)가 그대로라 지평선 자리는 변하지 않는다
+    const dist = d * this.zoom;
 
-    // 시점 이동 — 가상의 더 큰 화면 가운데가 (vanishX, horizon) 에 오도록 그중 일부만 그린다
+    // 드론 자리 — 같은 거리에서 캐릭터 몸 가운데를 DRONE_PITCH 로 내려다보는 곳.
+    // 정면 자리와 그 사이를 드론 정도만큼 섞는다. 옆에서 보면 아래로 볼록한 곡선
+    // (앞뒤는 고르게, 높이는 제곱으로) — 처음엔 거의 안 뜨다가 멀어질수록 가파르게 떠오른다
+    const u = this.drone;
+    const cy = this.body.headTop / 2;
+    const D = dist;
+    const a = THREE.MathUtils.degToRad(DRONE_PITCH);
+    const px = camX + (this.panX - camX) * u;
+    const pz = dist + (D * Math.cos(a) - dist) * u;
+    const py = camY + (cy + D * Math.sin(a) - camY) * u * u;
+    // 고개 숙이기 — 지금 자리에서 캐릭터를 바로 보는 각도까지, 드론 정도만큼
+    const pitch = Math.atan2(py - cy, pz) * u;
+    this.camera.position.set(px, py, pz);
+    this.camera.rotation.set(-pitch, 0, 0);
+    // 캐릭터 깊이(시선 방향 거리) — 화면 px ↔ m 환산과 안개 거리에 쓴다
+    const depth = (py - cy) * Math.sin(pitch) + pz * Math.cos(pitch);
+    this.pxPerM = s / depth;
+
+    // 시점 이동 — 가상의 더 큰 화면 가운데가 (vanishX, 기준 높이) 에 오도록 그중 일부만 그린다.
+    // 기준 높이는 정면일 때 지평선, 드론일 때 창문 가운데(캐릭터를 바로 보므로 캐릭터가 거기 걸린다)
+    const vy = f.horizon + (f.winMid - f.horizon) * u;
     const ax = Math.abs(W / 2 - f.vanishX);
-    const ay = Math.abs(H / 2 - f.horizon);
+    const ay = Math.abs(H / 2 - vy);
     const fullW = W + 2 * ax;
     const fullH = H + 2 * ay;
     this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(fullH / 2 / s));
     this.camera.aspect = fullW / fullH;
-    this.camera.setViewOffset(fullW, fullH, fullW / 2 - f.vanishX, fullH / 2 - f.horizon, W, H);
+    this.camera.setViewOffset(fullW, fullH, fullW / 2 - f.vanishX, fullH / 2 - vy, W, H);
     this.camera.updateProjectionMatrix();
-    this.env.update(this.camera);
+    this.env.update(this.camera, depth);
   }
 
   private frame() {
@@ -365,6 +424,7 @@ export class StockScene {
     const val = new Map<string, number>();
     let shot = 0;
 
+    for (const l of this.faces) if (l.until !== undefined && l.fadeOutAt === null && now >= l.until) l.fadeOutAt = l.until;
     this.faces = this.faces.filter((l) => l.fadeOutAt === null || now - l.fadeOutAt < l.fadeDur);
     for (const l of this.faces) {
       const t = now - l.start;

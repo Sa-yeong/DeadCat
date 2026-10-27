@@ -50,6 +50,8 @@ export class StageReturn {
   private yaw = 0;
   private mode: ReturnMode | null = null;
   private time = 0;
+  /** 제자리(자는 중) — 카메라가 움직여도 걸어오지 않는다 */
+  private still = false;
 
   onMove: ((mode: ReturnMode) => void) | null = null;
   /** 도착(또는 다시 끌려서 멈춤) — 어떻게 오던 중이었는지 */
@@ -73,6 +75,11 @@ export class StageReturn {
     this.scene.setPan(this.pan);
   }
 
+  /** 제자리에 둔다(자는 중). 풀리면 밀려나 있던 만큼 그때 돌아온다 */
+  setStill(on: boolean) {
+    this.still = on;
+  }
+
   /** 차트를 누르고 있는 동안 true — 그동안은 출발하지 않는다 */
   setDragging(on: boolean) {
     this.dragging = on;
@@ -88,7 +95,7 @@ export class StageReturn {
     const pushing = this.dragging || this.time - this.lastPanAt < START_WAIT_S;
     if (pushing && this.mode) this.stop();
 
-    if (!pushing && !this.mode && Math.abs(off) > STAY_PX) this.start(this.offScreen() ? 'run' : 'walk');
+    if (!pushing && !this.still && !this.mode && Math.abs(off) > STAY_PX) this.start(this.offScreen() ? 'run' : 'walk');
 
     let facing = 0; // 가는 쪽으로 튼 정도 0~1
     if (this.mode) {

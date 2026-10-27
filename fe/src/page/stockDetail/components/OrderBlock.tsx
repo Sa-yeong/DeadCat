@@ -17,6 +17,7 @@ export function OrderBlock({
   solid,
   onToggle,
   onDone,
+  onFilled,
 }: {
   currentPrice: number;
   /** 호가창에서 누른 가격 — n이 바뀔 때마다 가격 칸을 덮어쓴다 */
@@ -24,6 +25,8 @@ export function OrderBlock({
   solid: boolean;
   onToggle: () => void;
   onDone: () => void;
+  /** 주문이 성공했을 때만 — 캐릭터가 매수·매도에 반응한다 */
+  onFilled?: (side: 'BUY' | 'SELL') => void;
 }) {
   const L = useLayout();
   const b = L.blocks.order;
@@ -53,8 +56,9 @@ export function OrderBlock({
   const submit = async () => {
     setSending(true);
     try {
-      // 실 API 교체 지점 — POST /orders
+      // 실 API 교체 지점 — POST /orders. 실패하면 던지므로 아래 반응은 성공했을 때만 간다
       await new Promise((r) => setTimeout(r, 300));
+      onFilled?.(side);
     } finally {
       setSending(false);
       onDone();
