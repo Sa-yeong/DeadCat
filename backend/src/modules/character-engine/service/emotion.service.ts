@@ -22,10 +22,10 @@ import { concat, map, Observable, of, Subject } from 'rxjs';
 export class EmotionService {
     private readonly logger = new Logger(EmotionService.name);
 
-    // 📡 유저별 SSE 스트림 관리를 위한 Subject Map
+    //  유저별 SSE 스트림 관리를 위한 Subject Map
     private userStreams = new Map<string, Subject<FeedEvent>>();
 
-    // 📡 유저별 이전 감정 상태 저장소 (감정이 '실제로 변했을 때만' SSE 전송)
+    //  유저별 이전 감정 상태 저장소 (감정이 '실제로 변했을 때만' SSE 전송)
     private previousEmotions = new Map<string, Map<string, Emotion>>();
 
     constructor(

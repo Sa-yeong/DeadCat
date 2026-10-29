@@ -6,10 +6,12 @@ import {
     Request,
     Post,
     Body,
+    Put,
 } from '@nestjs/common';
 import { RoomsService } from './rooms.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; // 실제 가드 경로에 맞게 조정
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
+import { UpdateRoomLayoutDto } from './dto/update-room.dto';
 
 @Controller('rooms')
 export class RoomsController {
@@ -43,5 +45,16 @@ export class RoomsController {
             targetUserId,
             dto,
         );
+    }
+
+    // 10.  거실 편집 모드 - 배치 정보 업데이트 (PUT /rooms/layout)
+    @UseGuards(JwtAuthGuard)
+    @Put('layout')
+    async updateRoomLayout(
+        @Request() req: any,
+        @Body() dto: UpdateRoomLayoutDto,
+    ) {
+        const userId = String(req.user.id || req.user.sub);
+        return await this.roomsService.updateRoomLayout(userId, dto);
     }
 }
