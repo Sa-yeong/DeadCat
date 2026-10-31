@@ -46,9 +46,8 @@ export function StatRing({
   const [picker, setPicker] = useState(false);
   const owner = mode === 'OWNER';
 
-  // 수익률 — 내 거실은 시세로 실시간, 남의 거실은 서버가 계산한 값
-  const rate =
-    owner && quote && character.meanPrice ? ((quote.price - character.meanPrice) / character.meanPrice) * 100 : character.returnRate;
+  // 수익률 — 내 거실은 보유 목록(GET /holdings 3초 폴링, 마이페이지와 같은 값), 남의 거실은 서버가 방문 시점에 계산한 값
+  const rate = owner ? quote?.returnRate : character.returnRate;
 
   const kinds: BadgeKind[] = owner ? ['rate', 'affinity', 'reaction', 'stock', 'clothes'] : ['rate', 'affinity', 'reaction', 'stock'];
   const angles = owner ? ANGLES5 : ANGLES4;

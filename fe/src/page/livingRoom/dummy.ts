@@ -14,11 +14,11 @@ import type {
   Outfit,
   OwnerProfileDto,
   PlacementDto,
-  Prices,
   ReactionKind,
   RoomCharacterDto,
   StorageItem,
 } from './types';
+import { modelUrlOf } from './catalog';
 import { FURNITURE_MODELS } from './runtime/furnitureAssets';
 
 /** 슬롯머신 단계 — 1 낡은 것 · 2 수리한 것 · 3 제일 좋은 것. {잠정 — 단계를 저장할 곳이 서버에 없어 고정값} */
@@ -29,15 +29,16 @@ const SLOT_TIER: 1 | 2 | 3 = 2;
 /** 고유 의상 — 캐릭터당 1벌, 호감도 MAX 에서 해금 */
 const outfit = (clothesId: number, stockName: string, color: string): Outfit => ({ clothesId, name: `${stockName} 고유 의상`, unlockLevel: 5, color });
 
-export const CHARACTER_DEFS: CharacterDef[] = [
-  { stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7', outfit: outfit(101, '삼성전자', '#7E6FD8') },
-  { stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF', outfit: outfit(102, 'SK하이닉스', '#4F78D6') },
-  { stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B', outfit: outfit(103, '카카오', '#D69A4F') },
-  { stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', color: '#9FD3C7', outfit: outfit(104, 'NAVER', '#5FA592') },
-  { stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3', outfit: outfit(105, '엔비디아', '#D66F8A') },
-  { stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9', outfit: outfit(106, '현대차', '#7F93AD') },
-  { stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0', outfit: outfit(107, '테슬라', '#C86A6A') },
-];
+/** 더미 종목 번호는 9001~ — 실제 DB 번호(1, 2 …)와 겹치지 않게(캐릭터 탭이 더미 카탈로그를 같은 캐시에 넣는다, S6 까지) */
+export const CHARACTER_DEFS: CharacterDef[] = ([
+  { stockId: 9001, stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7', outfit: outfit(101, '삼성전자', '#7E6FD8') },
+  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF', outfit: outfit(102, 'SK하이닉스', '#4F78D6') },
+  { stockId: 9003, stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B', outfit: outfit(103, '카카오', '#D69A4F') },
+  { stockId: 9004, stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', color: '#9FD3C7', outfit: outfit(104, 'NAVER', '#5FA592') },
+  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3', outfit: outfit(105, '엔비디아', '#D66F8A') },
+  { stockId: 9006, stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9', outfit: outfit(106, '현대차', '#7F93AD') },
+  { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0', outfit: outfit(107, '테슬라', '#C86A6A') },
+] satisfies Omit<CharacterDef, 'modelUrl'>[]).map((d) => ({ ...d, modelUrl: modelUrlOf(d.stockId) }));
 
 /* ── 가구 고정값 (Catalog API) ─────────────────────────────────────── */
 
@@ -165,13 +166,13 @@ export const PLACEMENTS: PlacementDto[] = [
 
 /** 내 보유 종목 전부 — 이 중 지금 프리셋의 종목만 거실에 선다 */
 export const OWNER_HOLDINGS: RoomCharacterDto[] = [
-  { stockCode: '005930', quantity: 40, meanPrice: 66500, affinityLevel: 3, affinityScore: 40, ownedClothesId: null, receivedReactionCount: 12 },
-  { stockCode: '000660', quantity: 8, meanPrice: 191000, affinityLevel: 4, affinityScore: 87, ownedClothesId: null, receivedReactionCount: 31 },
-  { stockCode: '035720', quantity: 25, meanPrice: 44000, affinityLevel: 2, affinityScore: 25, ownedClothesId: null, receivedReactionCount: 5 },
-  { stockCode: '035420', quantity: 6, meanPrice: 187500, affinityLevel: 1, affinityScore: 10, ownedClothesId: null, receivedReactionCount: 2 },
-  { stockCode: 'NVDA', quantity: 10, meanPrice: 212600, affinityLevel: 5, affinityScore: 100, ownedClothesId: 105, receivedReactionCount: 47 },
-  { stockCode: '005380', quantity: 3, meanPrice: 250300, affinityLevel: 1, affinityScore: 5, ownedClothesId: null, receivedReactionCount: 0 },
-  { stockCode: 'TSLA', quantity: 2, meanPrice: 555600, affinityLevel: 2, affinityScore: 20, ownedClothesId: null, receivedReactionCount: 3 },
+  { stockId: 9001, stockCode: '005930', stockName: '삼성전자', quantity: 40, meanPrice: 66500, affinityLevel: 3, affinityScore: 40, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 12 },
+  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', quantity: 8, meanPrice: 191000, affinityLevel: 4, affinityScore: 87, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 31 },
+  { stockId: 9003, stockCode: '035720', stockName: '카카오', quantity: 25, meanPrice: 44000, affinityLevel: 2, affinityScore: 25, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 5 },
+  { stockId: 9004, stockCode: '035420', stockName: 'NAVER', quantity: 6, meanPrice: 187500, affinityLevel: 1, affinityScore: 10, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 2 },
+  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', quantity: 10, meanPrice: 212600, affinityLevel: 5, affinityScore: 100, affinityProgress: null, ownedClothesId: 105, receivedReactionCount: 47 },
+  { stockId: 9006, stockCode: '005380', stockName: '현대차', quantity: 3, meanPrice: 250300, affinityLevel: 1, affinityScore: 5, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 0 },
+  { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', quantity: 2, meanPrice: 555600, affinityLevel: 2, affinityScore: 20, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 3 },
 ];
 
 /** 캐릭터 탭의 프리셋 — 처음엔 첫 번째가 거실에 서 있다 */
@@ -182,8 +183,8 @@ export const PRESETS: CharacterPreset[] = [
 ];
 export const ACTIVE_PRESET_ID = 1;
 
-/** 처음 시세 — PriceFeedClient 가 여기서 출발해 흔든다 */
-export const START_PRICES: Prices = { '005930': 71400, '000660': 214000, '035720': 42200, '035420': 190000, NVDA: 260400, '005380': 245000, TSLA: 610000 };
+/** 더미 시세 — 캐릭터 탭(더미 보유 목록)의 수익률 계산용. S6 에서 실 API 로 바꾸면 지운다 */
+export const START_PRICES: Record<string, number> = { '005930': 71400, '000660': 214000, '035720': 42200, '035420': 190000, NVDA: 260400, '005380': 245000, TSLA: 610000 };
 
 /* ── 남의 거실 (VISITOR·GUEST) ──────────────────────────────────── */
 
@@ -199,9 +200,9 @@ export const VISIT_OWNER: OwnerProfileDto = {
 };
 
 export const VISIT_CHARACTERS: RoomCharacterDto[] = [
-  { stockCode: '000660', returnRate: 18.2, affinityLevel: 4, affinityScore: 70, ownedClothesId: null, receivedReactionCount: 54 },
-  { stockCode: 'NVDA', returnRate: 31.5, affinityLevel: 5, affinityScore: 100, ownedClothesId: 105, receivedReactionCount: 88 },
-  { stockCode: '035720', returnRate: -9.4, affinityLevel: 2, affinityScore: 30, ownedClothesId: null, receivedReactionCount: 9 },
+  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', returnRate: 18.2, affinityLevel: 4, affinityScore: 70, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 54 },
+  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', returnRate: 31.5, affinityLevel: 5, affinityScore: 100, affinityProgress: null, ownedClothesId: 105, receivedReactionCount: 88 },
+  { stockId: 9003, stockCode: '035720', stockName: '카카오', returnRate: -9.4, affinityLevel: 2, affinityScore: 30, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 9 },
 ];
 
 /** /room/999 — 비공개 거실 확인용 */

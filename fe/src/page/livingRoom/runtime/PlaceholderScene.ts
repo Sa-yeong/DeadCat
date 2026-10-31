@@ -15,7 +15,7 @@ import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
 const NS = 'http://www.w3.org/2000/svg';
 const ACCENT = '#F2564C';
 const OUTLINE_ID = 'lr-drop-outline';
-/** 평면 더미엔 모션 파일이 없어 한 번 틀고 끝나는 단계를 이만큼 기다렸다 끝낸다(ms) */
+/** 평면 더미엔 모션 파일이 없어 한 번 틀고 끝나는 단계를 이만큼 기다렸다 끝낸다(ms) — 개발 모드면 holdMissingClips 값 */
 const ENGINE_STEP_MS = 1500;
 
 interface CharNode {
@@ -78,6 +78,8 @@ export class PlaceholderScene implements RoomRenderer {
   private highlighted: number | null = null;
   private dropTarget: DropTarget | null = null;
   private orderDirty = true;
+  /** 개발 모드의 한 단계 길이(ms) — 없으면 ENGINE_STEP_MS */
+  private holdMs: number | null = null;
   private raf = 0;
 
   constructor(svg: SVGSVGElement, furniture: FurnitureCatalog) {
@@ -348,9 +350,9 @@ export class PlaceholderScene implements RoomRenderer {
         onFinish();
         return;
       }
-      this.setClip(c, steps[i].clip);
+      this.setClip(c, steps[i].clip ?? '');
       if (i === steps.length - 1 && steps[i].loop) return; // 반복 — 끝나지 않는다
-      c.engineTimer = window.setTimeout(() => run(i + 1), ENGINE_STEP_MS);
+      c.engineTimer = window.setTimeout(() => run(i + 1), this.holdMs ?? ENGINE_STEP_MS);
     };
     c.engineTimer = window.setTimeout(() => run(0), 0); // onFinish 는 늘 비동기로
   }
@@ -362,6 +364,14 @@ export class PlaceholderScene implements RoomRenderer {
     window.clearTimeout(c.engineTimer);
     c.engineTimer = 0;
     this.setClip(c, '');
+  }
+
+  /** 평면 더미는 동작을 그리지 않는다 — 자세 · 표정은 받기만 한다 */
+  setBasePose(): void {}
+  setExpression(): void {}
+
+  holdMissingClips(ms: number | null): void {
+    this.holdMs = ms;
   }
 
   private setClip(c: CharNode, clip: string): void {

@@ -67,8 +67,9 @@ export function CharacterPanel({
   }, [catalog]);
 
   const presets = state?.presets ?? [];
-  const nameOf = (code: string) => catalog.def(code)?.stockName ?? code;
-  const colorOf = (code: string) => catalog.def(code)?.color ?? '#6E6E68';
+  // 프리셋 · 보유 목록이 아직 더미라 종목 코드로 찾는다 — S6 에서 stock_id 로 바꾼다
+  const nameOf = (code: string) => catalog.byCode(code)?.stockName ?? code;
+  const colorOf = (code: string) => catalog.byCode(code)?.color ?? '#6E6E68';
 
   /** 서버가 돌려준 새 상태를 받는다 — 거실 캐릭터도 같이 맞춘다(안 바뀌었으면 런타임이 그냥 넘긴다) */
   const accept = (next: api.PresetState) => {

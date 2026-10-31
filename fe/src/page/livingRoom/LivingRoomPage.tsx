@@ -1,18 +1,25 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import * as api from './api';
+import { characterDef } from './catalog';
+import { DebugLabels } from './hud/DebugLabels';
 import { ITEM_MIME } from './hud/dnd';
 import { LoginPrompt } from './hud/LoginPrompt';
 import { RoomHud, type RoomHudApi } from './hud/RoomHud';
+import { useHoldingsPoll } from './hud/useHoldingsPoll';
 import { ZoomControl } from './hud/ZoomControl';
 import { clampView, FIT_VIEW, MIN_STAGE, MIN_WIDTH, projectionOf, sideSlack, useRoomLayout, ZOOM_MAX, zoomAt, type PanControl, type RoomView } from './layout';
 import { CharacterCatalog, FurnitureCatalog } from './runtime/catalogs';
-import { NullEngine } from './runtime/CharacterEngine';
+import { NullEngine, type EngineFactory } from './runtime/CharacterEngine';
 import { PlaceholderScene } from './runtime/PlaceholderScene';
-import { PriceFeedClient } from './runtime/PriceFeedClient';
+import { RoomFeed } from './runtime/RoomFeed';
+import { createRoomEngine, ROOM_MOTIONS } from './runtime/roomEngine';
 import { RoomLoop } from './runtime/RoomLoop';
 import type { RoomRenderer } from './runtime/RoomRenderer';
-import type { Quote, ReactionKind, RoomSnapshot } from './types';
+import { charIdOf, type OwnedStock, type Quote, type ReactionKind, type RoomSnapshot } from './types';
+
+/** 개발 모드(?debug=motion) — 파일 없는 모션 단계를 이만큼 대기 자세로 채운다(지시서 1-3, 글자를 읽기 편하게) */
+const DEBUG_HOLD_MS = 3000;
 
 interface Runtime {
   loop: RoomLoop;
@@ -43,6 +50,10 @@ function stopAnim(r: { current: { raf: number; target: number } | null }) {
  * 평면 더미(PlaceholderScene, SVG)는 주소에 `?r=2d` 를 붙이면 쓴다(확인·테스트용).
  * 3D 는 three.js 를 쓰므로 따로 불러온다(평면 더미만 볼 때는 내려받지 않는다).
  *
+ * 내 거실은 실 API(S4) — 거실 조회 · 감정 스트림(엔진) · 보유 종목 3초 폴링(HUD). 남의 거실은 아직 더미라 엔진 없이 걷기만 한다(S7·S8).
+ * 개발 모드 `?debug=motion` — 머리 위에 모션 · 감정 글자, 파일 없는 모션을 3초 대기 자세로, 엔진 사건 로그를 콘솔에(지시서 1-3 · 1-11).
+ * 실제 서비스 화면에는 이 주소를 걸지 않는다.
+ *
  * 줌 · 끌기 — 페이지가 시점(RoomView)을 들고, 바뀔 때마다 렌더러에 resize 로 넘긴다.
  * 1배는 방 전체 구도(layout.ts 규칙), 줌인했을 때만 빈 바닥을 끌어서 둘러본다.
  */
@@ -53,11 +64,12 @@ export function LivingRoomPage() {
   const params = new URLSearchParams(search);
   const asGuest = params.has('guest');
   const use3d = params.get('r') !== '2d';
+  const debug = params.get('debug') === 'motion';
   // 다른 거실로 옮겨 가면 통째로 새로 만든다 — 이전 거실의 런타임·패널 상태를 끌고 가지 않게
-  return <RoomView key={`${userId ?? 'me'}|${asGuest}|${use3d}`} userId={userId} asGuest={asGuest} use3d={use3d} />;
+  return <RoomView key={`${userId ?? 'me'}|${asGuest}|${use3d}|${debug}`} userId={userId} asGuest={asGuest} use3d={use3d} debug={debug} />;
 }
 
-function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGuest: boolean; use3d: boolean }) {
+function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefined; asGuest: boolean; use3d: boolean; debug: boolean }) {
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -69,7 +81,8 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
 
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [rt, setRt] = useState<Runtime | null>(null);
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+  /** 내 보유 종목 전부(GET /holdings) — 내 거실에서만. 3초마다 새로 받는다(지시서 3-②) */
+  const [holdings, setHoldings] = useState<OwnedStock[] | null>(null);
   /** 오른쪽 창(출석·이별 흔적·방명록·아이템·캐릭터)이 열려 있다 — 줌 버튼을 그 왼쪽으로 */
   const [sideOpen, setSideOpen] = useState(false);
   const slackRef = useRef(0);
@@ -97,9 +110,16 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
     let loop: RoomLoop | null = null;
     let renderer: RoomRenderer | null = null;
     (async () => {
-      const snap = await api.getRoom(userId, asGuest);
-      const codes = snap.characters.map((c) => c.stockCode);
-      const [charDefs, furnDefs, reactionKinds] = await Promise.all([api.getCharacterDefs(codes), api.getFurnitureDefs(), api.getReactionKinds()]);
+      const mine = !userId;
+      // 내 거실은 보유 목록도 같이 — 캐릭터 썸네일(stock_img)이 여기 있고(3-③) HUD 자산의 첫 값이 된다
+      const [snap, owned] = await Promise.all([api.getRoom(userId, asGuest), mine ? api.getMyHoldings() : null]);
+      const imgOf = (stockId: number) => owned?.find((h) => h.stockId === stockId)?.imgUrl ?? '';
+      const [charDefs, furnDefs, reactionKinds] = await Promise.all([
+        // 남의 거실은 아직 더미 카탈로그(S8)
+        mine ? snap.characters.map((c) => characterDef(c, imgOf(c.stockId))) : api.getCharacterDefs(snap.characters.map((c) => c.stockCode)),
+        api.getFurnitureDefs(),
+        api.getReactionKinds(),
+      ]);
       const Scene3D = use3d ? (await import('./runtime/RoomScene')).RoomScene : null;
       if (!alive || !(Scene3D ? canvasRef.current : svgRef.current)) return;
 
@@ -109,24 +129,35 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
       furniture.load(furnDefs);
       // 축척은 아래 layout effect 가 rt 가 생기자마자(첫 화면을 그리기 전에) 맞춘다
       renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
+      renderer.holdMissingClips(debug ? DEBUG_HOLD_MS : null);
+      // 엔진 — 내 거실만 감정 스트림이 있다. 남의 거실 스트림(2-7)은 S7·S8 이라 그때까지 빈 엔진(걷기 · 대기 · 들기만)
+      const createEngine: EngineFactory = mine
+        ? (onCommand) =>
+            createRoomEngine({
+              feed: new RoomFeed(() => alive && setNeedLogin(true)),
+              onCommand,
+              log: debug ? (line) => console.log(`[엔진] ${line}`) : undefined,
+              labelOf: (id) => characters.def(id)?.stockName,
+            })
+        : () => new NullEngine();
       loop = new RoomLoop({
         renderer,
-        createEngine: () => new NullEngine(), // 팀원 엔진이 오면 여기만 바꾼다
+        createEngine,
         characters,
         furniture,
-        feed: new PriceFeedClient(),
+        motions: ROOM_MOTIONS,
         events: {
           onPicked: (id, screen) => hud.current?.onSelect(id, screen),
           onEmptyPick: () => hud.current?.onEmptyPick(),
           onLiftCharge: (id, ms) => hud.current?.onLiftCharge(id, ms),
           onLiftChargeEnd: (id) => hud.current?.onLiftChargeEnd(id),
           onLifted: (id) => hud.current?.onLifted(id),
-          onQuotes: (q) => setQuotes(q),
         },
       });
       loop.load(snap);
       loop.start();
       setSnapshot(snap);
+      setHoldings(owned);
       setRt({ loop, renderer, characters, furniture, reactionKinds });
     })().catch((e: unknown) => {
       if (!alive) return;
@@ -140,7 +171,16 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
       loop?.stop();
       renderer?.dispose();
     };
-  }, [userId, asGuest, use3d]);
+  }, [userId, asGuest, use3d, debug]);
+
+  // 보유 종목 3초 폴링 — 내 거실을 다 받은 뒤부터. 로그인이 풀리면 멈추고 로그인 창
+  useHoldingsPoll(!!rt && snapshot?.mode === 'OWNER', setHoldings, () => setNeedLogin(true));
+  /** 거실에 세운 캐릭터의 시세 — 보유 목록에서 캐릭터 id 로 찾는다(스탯 링 수익률) */
+  const quotes = useMemo(() => {
+    const out: Record<string, Quote> = {};
+    for (const h of holdings ?? []) out[charIdOf(h)] = { price: h.currentPrice, returnRate: h.returnRate };
+    return out;
+  }, [holdings]);
 
   // 창 크기 · 줌 · 끌기가 바뀌면 보는 자리만 다시 — 글자·패널 크기는 그대로.
   // 그리기 전에 맞춰야 첫 화면이 빈 화면으로 깜빡이지 않고, 스탯 링·배치 도구가 옛 자리에 남지 않는다
@@ -318,6 +358,7 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
           ownerId={userId}
           snapshot={snapshot}
           reactionKinds={rt.reactionKinds}
+          holdings={holdings}
           quotes={quotes}
           layout={L}
           pan={pan}
@@ -327,7 +368,7 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
           furniture={rt.furniture}
           onSidePanel={setSideOpen}
           onStock={(code) => navigate(`/stocks/${code}`)}
-          onVisit={(id) => navigate(`/room/${id}${roomQuery(asGuest, use3d)}`)} // ?guest 는 더미 전용
+          onVisit={(id) => navigate(`/room/${id}${roomQuery(asGuest, use3d, debug)}`)} // ?guest 는 더미 전용
           onFollow={(on) => {
             if (!userId) return;
             const prev = snapshot.owner?.isFollowing ?? false;
@@ -343,6 +384,7 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
           onNeedLogin={() => setNeedLogin(true)}
         />
       )}
+      {debug && rt && !isPrivate && <DebugLabels loop={rt.loop} />}
       {snapshot && rt && !isPrivate && (
         // 오른쪽 창이 열리면 그 왼쪽으로 비켜난다
         <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.dockTop} onZoom={zoomTo} onStep={zoomStep} />
@@ -352,9 +394,9 @@ function RoomView({ userId, asGuest, use3d }: { userId: string | undefined; asGu
   );
 }
 
-/** 다른 거실로 갈 때도 미리보기 표시(비로그인 흉내 · 평면 더미)를 이어 간다 */
-function roomQuery(asGuest: boolean, use3d: boolean): string {
-  const parts = [asGuest ? 'guest' : '', use3d ? '' : 'r=2d'].filter(Boolean);
+/** 다른 거실로 갈 때도 미리보기 표시(비로그인 흉내 · 평면 더미 · 개발 모드)를 이어 간다 */
+function roomQuery(asGuest: boolean, use3d: boolean, debug: boolean): string {
+  const parts = [asGuest ? 'guest' : '', use3d ? '' : 'r=2d', debug ? 'debug=motion' : ''].filter(Boolean);
   return parts.length ? `?${parts.join('&')}` : '';
 }
 

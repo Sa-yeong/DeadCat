@@ -5,15 +5,17 @@ import type { CharacterCatalog, FurnitureCatalog } from '../runtime/catalogs';
 import type { Pt } from '../runtime/projection';
 import type { RoomLoop } from '../runtime/RoomLoop';
 import type { RoomRenderer } from '../runtime/RoomRenderer';
-import type {
-  InteractionMode,
-  InventoryItem,
-  Panel,
-  PlacementDto,
-  Quote,
-  ReactionKind,
-  RoomCharacterDto,
-  RoomSnapshot,
+import {
+  charIdOf,
+  type InteractionMode,
+  type InventoryItem,
+  type OwnedStock,
+  type Panel,
+  type PlacementDto,
+  type Quote,
+  type ReactionKind,
+  type RoomCharacterDto,
+  type RoomSnapshot,
 } from '../types';
 import { AssetSummary } from './AssetSummary';
 import { ModeDock, TopActions } from './chrome';
@@ -72,6 +74,7 @@ export function RoomHud({
   ownerId,
   snapshot,
   reactionKinds,
+  holdings,
   quotes,
   layout,
   pan,
@@ -93,6 +96,9 @@ export function RoomHud({
   ownerId: api.OwnerId;
   snapshot: RoomSnapshot;
   reactionKinds: ReactionKind[];
+  /** 내 보유 종목 전부(GET /holdings 폴링) — OWNER 의 보유 자산. 받기 전이거나 남의 거실이면 null */
+  holdings: OwnedStock[] | null;
+  /** 거실에 세운 캐릭터의 시세 — 캐릭터 id 별 */
   quotes: Record<string, Quote>;
   layout: RoomLayout;
   /** 줌인했을 때 빈 바닥 끌기 — 배치 편집기에 넘긴다 */
@@ -123,10 +129,10 @@ export function RoomHud({
   const [openSeq, setOpenSeq] = useState(0);
   /** 링을 띄운 캐릭터. 자리는 그릴 때마다 런타임에 묻는다 — 창 크기가 바뀌어도 따라가게 */
   const [selected, setSelected] = useState<string | null>(null);
-  // 런타임이 세운 캐릭터만 — 못 세운 종목은 시세도 안 오므로 거실 자산에서도 뺀다
+  // 런타임이 세운 캐릭터만 — 카탈로그에 없어 못 세운 종목은 링·옷 입히기에서도 뺀다
   const [chars, setChars] = useState<RoomCharacterDto[]>(() => {
     const placed = new Set(loop.characterIds);
-    return snapshot.characters.filter((c) => placed.has(c.stockCode));
+    return snapshot.characters.filter((c) => placed.has(charIdOf(c)));
   });
   const [wardrobeFor, setWardrobeFor] = useState<string | null>(null);
   const [inventory, setInventory] = useState<InventoryItem[] | null>(null);
@@ -176,7 +182,7 @@ export function RoomHud({
   const open = (panel: Panel, charId?: string) => {
     if (!owner && OWNER_ONLY.includes(panel)) return;
     if (panel === 'wardrobe') {
-      setWardrobeFor(charId ?? chars[0]?.stockCode ?? null);
+      setWardrobeFor(charId ?? (chars[0] ? charIdOf(chars[0]) : null));
       setOpenPanel('wardrobe');
       return;
     }
@@ -208,7 +214,7 @@ export function RoomHud({
   const applyRoster = (next: RoomCharacterDto[]) => {
     loop.setRoster(next);
     const placed = new Set(loop.characterIds);
-    setChars(next.filter((c) => placed.has(c.stockCode)));
+    setChars(next.filter((c) => placed.has(charIdOf(c))));
     if (selected && !placed.has(selected)) setSelected(null);
     setCharge((c) => (c && !placed.has(c.charId) ? null : c));
     onRoster(next);
@@ -218,10 +224,12 @@ export function RoomHud({
 
   const give = async (charId: string, itemId: number, at: Pt) => {
     const session = itemSession.current;
-    const r = await api.giveItem(charId, itemId).catch(() => null);
+    const code = chars.find((c) => charIdOf(c) === charId)?.stockCode;
+    if (!code) return;
+    const r = await api.giveItem(code, itemId).catch(() => null); // 더미(S6) — 종목 코드로 찾는다
     if (!r) return;
     // 호감도는 서버에 반영됐으니 그대로 받는다. 보유 수·하트는 그 사이 아이템 탭을 다시 열어 새로 받았으면 새 목록이 맞다
-    setChars((list) => list.map((c) => (c.stockCode === charId ? { ...c, affinityScore: r.affinityScore, affinityLevel: r.affinityLevel } : c)));
+    setChars((list) => list.map((c) => (charIdOf(c) === charId ? { ...c, affinityScore: r.affinityScore, affinityLevel: r.affinityLevel } : c)));
     if (session !== itemSession.current) return;
     setInventory((inv) => (inv ?? []).map((i) => (i.itemId === itemId ? { ...i, quantity: i.quantity - 1 } : i)));
     setFlash({ key: Date.now(), at, delta: r.delta, score: r.affinityScore, level: r.affinityLevel });
@@ -266,11 +274,11 @@ export function RoomHud({
 
   const onBadge = (kind: BadgeKind) => {
     if (!selected) return;
-    if (kind === 'stock') onStock(selected);
+    if (kind === 'stock' && sel) onStock(sel.stockCode); // 종목 화면 주소는 종목 코드(A2)
     if (kind === 'clothes') open('wardrobe', selected);
   };
 
-  const sel = selected ? chars.find((c) => c.stockCode === selected) : undefined;
+  const sel = selected ? chars.find((c) => charIdOf(c) === selected) : undefined;
   const selDef = selected ? catalog.def(selected) : undefined;
   const selAt = selected ? loop.screenOf(selected) : null;
   // 누르는 동안 캐릭터는 멈춰 서 있으니 누른 순간의 머리 위가 곧 지금 자리다
@@ -282,7 +290,7 @@ export function RoomHud({
   return (
     <>
       {/* 좌상단 — 주인은 거실 자산, 방문자는 주인 프로필 */}
-      {normal && owner && <AssetSummary characters={chars} quotes={quotes} />}
+      {normal && owner && <AssetSummary holdings={holdings} />}
       {normal && !owner && snapshot.owner && (
         <OwnerProfileHud owner={snapshot.owner} roomReturnRate={snapshot.roomReturnRate} onFollow={guest ? askLogin : onFollow} />
       )}
@@ -302,10 +310,10 @@ export function RoomHud({
           reactions={reactionKinds}
           onSelectBadge={onBadge}
           onReact={(id) => {
-            const code = selected;
-            // 남긴 반응은 받은 반응 수에 바로 보이게 — 실패하면 조용히 넘긴다(링에 안내 자리가 없음)
-            void api.reactToCharacter(ownerId, code, id).then(
-              () => setChars((list) => list.map((c) => (c.stockCode === code ? { ...c, receivedReactionCount: c.receivedReactionCount + 1 } : c))),
+            const target = selected;
+            // 남긴 반응은 받은 반응 수에 바로 보이게 — 실패하면 조용히 넘긴다(링에 안내 자리가 없음). 반응 API 는 아직 더미(S8) — 종목 코드로 보낸다
+            void api.reactToCharacter(ownerId, sel.stockCode, id).then(
+              () => setChars((list) => list.map((c) => (charIdOf(c) === target ? { ...c, receivedReactionCount: c.receivedReactionCount + 1 } : c))),
               () => {},
             );
           }}
@@ -355,12 +363,12 @@ export function RoomHud({
       {openPanel === 'wardrobe' && wardrobeFor && (
         <WardrobeGallery
           characters={chars}
-          defs={(code) => catalog.def(code)}
+          defs={(id) => catalog.def(id)}
           initial={wardrobeFor}
           onClose={closePanel}
-          onChanged={(code, clothesId) => {
-            setChars((list) => list.map((c) => (c.stockCode === code ? { ...c, ownedClothesId: clothesId } : c)));
-            loop.setOutfit(code, clothesId); // 거실 캐릭터도 갈아입는다
+          onChanged={(id, clothesId) => {
+            setChars((list) => list.map((c) => (charIdOf(c) === id ? { ...c, ownedClothesId: clothesId } : c)));
+            loop.setOutfit(id, clothesId); // 거실 캐릭터도 갈아입는다
           }}
         />
       )}

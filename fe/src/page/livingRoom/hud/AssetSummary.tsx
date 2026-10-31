@@ -1,44 +1,40 @@
 import { pct, toneSoft, won } from '../../stockDetail/format';
-import type { Quote, RoomCharacterDto } from '../types';
+import type { OwnedStock } from '../types';
 import { C } from './style';
 
 /**
- * 거실 자산 — OWNER 전용. **거실에 세운 캐릭터만** 합산한다(마이페이지 총자산과 다른 값).
- * 서버는 평단·수량만 주고, 수익률은 여기서 시세와 합쳐 실시간으로 계산한다.
+ * 보유 자산 — OWNER 전용. 거실에 세운 캐릭터가 아니라 **보유 종목 전체** 기준(지시서 3-①, 마이페이지와 같은 숫자).
+ * GET /holdings 를 3초마다 받아(3-②) 평가금 합계와 평가 손익(%)만 보인다 — 현금은 넣지 않는다(모의투자, 도휘 결정).
+ * 금액 · 손익은 서버가 계산한 값을 더하기만 한다
  */
-export function AssetSummary({ characters, quotes }: { characters: RoomCharacterDto[]; quotes: Record<string, Quote> }) {
+export function AssetSummary({ holdings }: { holdings: OwnedStock[] | null }) {
   let value = 0;
   let cost = 0;
-  let ready = characters.length > 0;
-  for (const c of characters) {
-    const q = quotes[c.stockCode];
-    if (!q || c.quantity === undefined || c.meanPrice === undefined) {
-      ready = false;
-      continue;
-    }
-    value += q.price * c.quantity;
-    cost += c.meanPrice * c.quantity;
+  let profit = 0;
+  for (const h of holdings ?? []) {
+    value += h.currentPrice * h.quantity;
+    cost += h.meanPrice * h.quantity;
+    profit += h.valuationProfit;
   }
-  const diff = value - cost;
-  const rate = cost ? (diff / cost) * 100 : 0;
+  const rate = cost ? (profit / cost) * 100 : 0;
 
   return (
     <div style={{ position: 'absolute', left: 12, top: 10, display: 'flex', flexDirection: 'column', gap: 4, zIndex: 5 }}>
       <div style={{ fontSize: 12, fontWeight: 500, color: C.dim }}>
-        거실 자산 <span style={{ color: '#6E6E68' }}>· 캐릭터 {characters.length}명 기준</span>
+        보유 자산 {holdings && <span style={{ color: '#6E6E68' }}>· {holdings.length}종목 · 현금 제외</span>}
       </div>
-      {ready ? (
+      {holdings && holdings.length > 0 ? (
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, whiteSpace: 'nowrap' }}>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em' }}>
             {won(value)}
             <span style={{ fontFamily: "'Gothic A1', sans-serif", fontSize: 15, marginLeft: 2 }}>원</span>
           </span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: toneSoft(diff) }}>
-            {diff >= 0 ? '▲' : '▼'} {won(Math.abs(diff))} ({pct(rate)})
+          <span style={{ fontSize: 13, fontWeight: 700, color: toneSoft(profit) }}>
+            {profit >= 0 ? '▲' : '▼'} {won(Math.abs(profit))} ({pct(rate)})
           </span>
         </div>
       ) : (
-        <div style={{ fontSize: 13, color: C.faint }}>{characters.length ? '시세 받는 중…' : '거실에 세운 캐릭터가 없어요'}</div>
+        <div style={{ fontSize: 13, color: C.faint }}>{holdings ? '보유 종목이 없어요' : '시세 받는 중…'}</div>
       )}
     </div>
   );

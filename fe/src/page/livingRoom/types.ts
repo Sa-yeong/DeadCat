@@ -28,8 +28,17 @@ export interface OwnerProfileDto {
   isFollowing: boolean;
 }
 
+/**
+ * 캐릭터 식별 값 = DB 종목 번호(stock_id)를 글자로 (지시서 A2). 런타임 핸들 · 엔진 · SSE characterId 가 모두 이 값이다.
+ * 종목 코드는 표시 · 종목 화면 이동용 속성으로 따로 들고 있는다(코드는 거래소와 묶어야 유일해서 식별 값으로 안 씀)
+ */
+export const charIdOf = (c: { stockId: number }): string => String(c.stockId);
+
 export interface RoomCharacterDto {
+  /** DB 종목 번호 — 캐릭터 식별 값(charIdOf) */
+  stockId: number;
   stockCode: string;
+  stockName: string;
   /** OWNER 전용 */
   quantity?: number;
   /** OWNER 전용 · 원화 */
@@ -38,6 +47,8 @@ export interface RoomCharacterDto {
   returnRate?: number;
   affinityLevel: number;
   affinityScore: number;
+  /** 지금 레벨 안에서의 진행률 0~100, MAX 면 null (서버가 계산 — 지시서 3-⑤) */
+  affinityProgress: number | null;
   /** 보유 = 착용 (DB에 착용 칸이 없어 좁힘). 없으면 null */
   ownedClothesId: number | null;
   receivedReactionCount: number;
@@ -67,11 +78,18 @@ export interface RoomSnapshot {
 
 /* ── Catalog API — 종목·가구 고정값. 스냅샷에 싣지 않고 따로 받아 캐시 ─────── */
 
+/**
+ * 캐릭터 한 명의 고정값 — 카탈로그 API 없이 거실 응답 · 보유 목록에서 조립한다(지시서 3-③, api.characterDef)
+ */
 export interface CharacterDef {
+  /** DB 종목 번호 — 캐릭터 식별 값(charIdOf) */
+  stockId: number;
   stockCode: string;
   stockName: string;
-  /** 썸네일·3D 모델 공용 경로 (DB characters.img_url) */
+  /** 썸네일 (DB characters.img_url — 받은 그대로) */
   imgUrl: string;
+  /** 3D 모델 주소 — 종목 번호로 조립. 파일이 없으면 렌더러가 기본 치비 모델로 대신한다 */
+  modelUrl: string;
   /** 평면 더미에서 쓰는 색. 3D가 붙으면 쓰지 않는다 */
   color: string;
   /** 이 캐릭터의 고유 의상 — 캐릭터당 1벌. 종목 고정값이라 카탈로그에 싣는다 {제안 — 서버 카탈로그 응답에 추가 필요} */
@@ -220,11 +238,28 @@ export interface Outfit {
   color: string;
 }
 
-export type Prices = Record<string, number>;
+/**
+ * 내 보유 종목 한 줄 — GET /holdings (마이페이지와 같은 API, 3초 폴링 — 지시서 3-②).
+ * 현재가는 서버가 Redis 시세로 채운다. 거실 HUD 의 총자산 · 스탯 링 수익률이 이 목록에서 나온다
+ */
+export interface OwnedStock {
+  stockId: number;
+  stockCode: string;
+  stockName: string;
+  currentPrice: number;
+  quantity: number;
+  /** 평단가 (서버 칸 이름은 purchase_price) */
+  meanPrice: number;
+  /** 수익률 % — 서버 계산 */
+  returnRate: number;
+  /** 평가 손익 — 서버 계산 */
+  valuationProfit: number;
+  imgUrl: string;
+}
 
-/** 시세 한 건 — 시세 수신기가 내보낸다 */
+/** 거실에 세운 캐릭터 한 명의 시세 — 보유 목록에서 찾아 charId 로 묶는다 */
 export interface Quote {
   price: number;
-  /** 전일 대비 % */
-  changeRate: number;
+  /** 수익률 % (서버가 평단 대비로 계산한 값 — 마이페이지와 같은 숫자) */
+  returnRate: number;
 }

@@ -5,57 +5,23 @@
  *   런타임(여기)   근접 판정 · 들기/놓기 · 걷기 · 재생(렌더러 play/cancel) → 사건과 끝 신호를 엔진에 알린다
  *
  * 런타임은 감정을 계산하지도 기억하지도 않는다 — 필요하면 emotionOf 로 묻는다.
- * 엔진이 브라우저에서 돌든 서버에서 돌든 런타임은 이 약속만 쓴다. 그래서 명령은 **언제든 늦게** 온다고 보고,
- * 그사이 캐릭터가 들렸거나 치워졌으면 렌더러가 버린다.
+ * 명령은 **언제든 늦게** 온다고 보고, 그사이 캐릭터가 들렸거나 치워졌으면 렌더러가 버린다.
  *
- * 메서드 모양은 팀원 초안(CharacterEngine, 2026-10-15) 그대로.
- * {잠정} Emotion · EngineCommand 의 실제 모양은 팀원 정의가 오면 그것으로 바꾼다.
+ * 메서드 · 명령 모양은 엔진 정의(engine/Engine.ts)를 그대로 쓴다(지시서 1-1).
+ *   play     steps 를 순서대로 — clip 은 렌더러가 틀고, behavior 는 RoomLoop 이 움직임으로 처리한다(1-2)
+ *   cancel   하던 모션을 멈추고 평소(걷기·대기)로. 끝 신호는 없다
+ *   emotion  감정이 정해지거나 바뀌었다 — 표정 · 기본 자세(idle·walk)를 바꿔 끼운다(1-8). 이 값으로 분기하지는 않는다
  */
+import type { CharacterEngine, EngineCommand } from '../engine/Engine';
+import type { Emotion } from '../engine/type/type';
 
-/** {잠정 — 팀원 type.ts 의 Emotion 으로 바꿀 것} 런타임은 이 값으로 분기하지 않는다 */
-export type Emotion = string;
-
-/**
- * 엔진 → 런타임 명령. {잠정 — 팀원 정의 대기}
- *   play  motions 를 순서대로 튼다. 모션 이름 = 모션 파일 이름(public/characters/chibi/motions/{이름}.vrma).
- *         loop 이면 마지막 모션을 반복한다(끝 신호가 오지 않는다 — 그만둘 때는 stop).
- *         트는 동안 캐릭터는 제자리에 선다.
- *   stop  하던 모션을 멈추고 평소(걷기·대기)로 돌아간다. 끝 신호는 없다
- */
-export type EngineCommand =
-  | { kind: 'play'; characterId: string; motions: string[]; loop?: boolean }
-  | { kind: 'stop'; characterId: string };
-
-export interface CharacterEngine {
-  /** 캐릭터가 거실에 추가됐다 */
-  addCharacter(id: string): void;
-  /** 캐릭터가 거실에서 빠졌다 */
-  deleteCharacter(id: string): void;
-  /** 가구가 거실에 놓였다 {잠정 — 배치 id 를 넘긴다. 가구 종류를 어떻게 알릴지 팀원 답 대기} */
-  addFurniture(id: string): void;
-  /** 가구가 거실에서 빠졌다 */
-  deleteFurniture(id: string): void;
-  /** 특정 캐릭터의 지금 감정 */
-  emotionOf(id: string): Emotion | undefined;
-  /** 캐릭터끼리 가까워졌다 — 판정은 런타임(ProximityField) */
-  encounter(c1: string, c2: string): void;
-  /** 캐릭터가 가구에 갔다 — 지금은 가구 위에 내려놓았을 때 */
-  visitFurniture(characterId: string, furnitureId: string): void;
-  /** 모션이 끝났다 — 쿨다운을 세는 데 쓴다. 명령의 마지막 모션 이름 */
-  motionFinished(characterId: string, motion: string): void;
-  /** 하던 상호작용을 그만둔다 — 들었을 때 · 배치 저장 뒤 다시 세울 때 */
-  interrupt(id: string): void;
-  /** 거실 진입 — 감정 데이터 받기 시작 */
-  start(): void;
-  /** 거실을 나감 — 감정 데이터 받기 정지 */
-  dispose(): void;
-}
+export type { CharacterEngine, EngineCommand, Emotion };
 
 /** 엔진을 만드는 쪽 — 엔진이 명령을 내보낼 통로(onCommand)를 런타임이 넘겨준다 */
 export type EngineFactory = (onCommand: (cmd: EngineCommand) => void) => CharacterEngine;
 
 /**
- * 빈 엔진 — 팀원 엔진이 붙기 전까지 자리만 지킨다. 아무 판단도, 명령도 하지 않는다.
+ * 빈 엔진 — 감정 공급원이 없는 화면(남의 거실 — 방문자 스트림은 S7·S8)에서 자리만 지킨다. 아무 판단도, 명령도 하지 않는다.
  * 그래서 캐릭터는 걷기 · 대기 · 들기만 한다.
  */
 export class NullEngine implements CharacterEngine {
@@ -66,10 +32,14 @@ export class NullEngine implements CharacterEngine {
   emotionOf(): Emotion | undefined {
     return undefined;
   }
+  isWaitingEmotion(): boolean {
+    return false;
+  }
   encounter(): void {}
   visitFurniture(): void {}
   motionFinished(): void {}
   interrupt(): void {}
+  tick(): void {}
   start(): void {}
   dispose(): void {}
 }

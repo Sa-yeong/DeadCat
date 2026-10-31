@@ -1,16 +1,16 @@
-import type { InteractionMode, PlacementDto, Quote, RoomCharacterDto, RoomSnapshot } from '../types';
+import { charIdOf, type InteractionMode, type PlacementDto, type RoomCharacterDto, type RoomSnapshot } from '../types';
 import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
-import type { CharacterEngine, EngineCommand, EngineFactory } from './CharacterEngine';
-import { createHandle, type CharacterHandle } from './CharacterHandle';
+import type { CharacterEngine, Emotion, EngineCommand, EngineFactory } from './CharacterEngine';
+import { createHandle, type ActRun, type CharacterHandle } from './CharacterHandle';
 import { WalkGrid } from './occupancy';
 import { findPath } from './pathfinding';
 import { syncPlacements } from './placementSync';
 import { PressGesture } from './PressGesture';
-import type { PriceFeedClient } from './PriceFeedClient';
 import { ProximityField } from './ProximityField';
 import { ROOM, type Pt } from './projection';
 import { footprint } from './furnitureShape';
-import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
+import type { DropTarget, RoomRenderer } from './RoomRenderer';
+import type { MotionTable } from './roomEngine';
 
 export interface RoomLoopEvents {
   /** 짧게 누름 — 페이지가 RoomHud.onSelect 에 잇는다. 화면 좌표는 방 기준 */
@@ -23,8 +23,18 @@ export interface RoomLoopEvents {
   onLiftChargeEnd(charId: string): void;
   /** 캐릭터를 길게 눌러 들었다 — 그 캐릭터에 열린 스탯 링은 닫는다 (추가) */
   onLifted(charId: string): void;
-  /** 시세가 왔다 — HUD 의 거실 자산·수익률용 (추가, 제안). 감정은 시세로 계산하지 않는다 — 엔진이 백엔드에서 받는다 */
-  onQuotes(q: Record<string, Quote>): void;
+}
+
+/** 개발 모드(?debug=motion) 머리 위 글자 한 명분 — 지금 단계 모션 이름 · 감정(지시서 1-3) */
+export interface DebugLabel {
+  id: string;
+  /** 머리 위 화면 자리 */
+  at: Pt;
+  /** 지금 단계의 모션 이름(엔진 이름) — 없으면 null */
+  motion: string | null;
+  emotion: Emotion | undefined;
+  /** 거실에 섰지만 감정을 아직 모름(지시서 1-5) */
+  waiting: boolean;
 }
 
 const SPEED = 0.9; //   칸/초
@@ -45,6 +55,9 @@ const CHAR_REACH = 0.9; // 칸 — 들고 있는 캐릭터가 이만큼 가까�
 const FURN_REACH = 0.35; // 칸 — 상호작용 가구 바닥 자리에서 이만큼 안이면 그 가구가 상대
 const SPAWN_GAP = 2; //    칸 — 새로 세울 때 다른 캐릭터와 이만큼은 떨어지게 (안 되면 그냥 세운다)
 const SPAWN_TRIES = 12;
+/** behavior move_away — 상대 반대쪽으로 이만큼(칸) 비켜, 평소 속도의 이 배로 걷는다(팀원 mover.ts 기본값, 지시서 1-2) */
+const AWAY_DISTANCE = 1.5;
+const AWAY_SPEED_SCALE = 1.6;
 
 const targetKey = (t: DropTarget | null) => (!t ? '' : t.kind === 'furniture' ? `f${t.placementId}` : `c${t.charId}`);
 
@@ -53,6 +66,7 @@ const targetKey = (t: DropTarget | null) => (!t ? '' : t.kind === 'furniture' ? 
  *   여기   근접 판정(자기장) · 들기/놓기 · 걷기 · 배치 — 감정을 계산하거나 기억하지 않는다
  *   엔진   감정 · 상호작용 판단 · 쿨다운 (CharacterEngine)
  *   렌더러 그리기 · 재생 — 재생기는 렌더러 하나, 순서는 들림 > 엔진 모션 > 걷기·대기
+ * 엔진 명령의 단계는 하나씩 튼다 — clip 은 렌더러에 맡기고(그동안 제자리), behavior 는 여기서 움직임으로 처리한다(지시서 1-2).
  * 시점 mode(주인/방문자)는 모른다. 상호작용 모드(NORMAL/PLACEMENT)는 안다 —
  * 같은 클릭이 모드에 따라 스탯 링 / (배치 모드에선 무시) 로 갈리기 때문이다.
  */
@@ -61,7 +75,7 @@ export class RoomLoop {
   private readonly engine: CharacterEngine;
   private readonly chars: CharacterCatalog;
   private readonly furniture: FurnitureCatalog;
-  private readonly feed: PriceFeedClient;
+  private readonly motions: MotionTable;
   private readonly events: RoomLoopEvents;
   private readonly field = new ProximityField();
   private readonly gesture: PressGesture;
@@ -80,18 +94,19 @@ export class RoomLoop {
 
   constructor(deps: {
     renderer: RoomRenderer;
-    /** 엔진을 만든다 — 명령 통로를 넘겨준다. 팀원 엔진이 붙기 전에는 NullEngine */
+    /** 엔진을 만든다 — 명령 통로를 넘겨준다. 감정 공급원이 없는 화면은 NullEngine */
     createEngine: EngineFactory;
     characters: CharacterCatalog;
     furniture: FurnitureCatalog;
-    feed: PriceFeedClient;
+    /** 모션 이름 → 파일 · 움직임 (motions.json) */
+    motions: MotionTable;
     events: RoomLoopEvents;
   }) {
     this.renderer = deps.renderer;
     this.engine = deps.createEngine((cmd) => this.onCommand(cmd));
     this.chars = deps.characters;
     this.furniture = deps.furniture;
-    this.feed = deps.feed;
+    this.motions = deps.motions;
     this.events = deps.events;
     this.gesture = new PressGesture({
       hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.renderer.pick(x, y)),
@@ -118,25 +133,27 @@ export class RoomLoop {
   private spawnAll(characters: RoomCharacterDto[]): void {
     const taken: Pt[] = [...this.handles.values()].map((h) => h.position);
     for (const c of characters) {
-      const def = this.chars.def(c.stockCode);
-      if (!def || this.handles.has(c.stockCode)) continue;
-      const h = createHandle(c.stockCode, this.spawnPoint(taken) ?? { x: ROOM / 2, y: ROOM / 2 });
-      this.handles.set(c.stockCode, h);
-      this.renderer.spawn(c.stockCode, def, h.position);
-      this.engine.addCharacter(c.stockCode);
-      if (c.ownedClothesId !== null) this.renderer.setOutfit(c.stockCode, c.ownedClothesId);
+      const id = charIdOf(c);
+      const def = this.chars.def(id);
+      if (!def || this.handles.has(id)) continue;
+      const h = createHandle(id, this.spawnPoint(taken) ?? { x: ROOM / 2, y: ROOM / 2 });
+      this.handles.set(id, h);
+      this.renderer.spawn(id, def, h.position);
+      // 감정을 아직 몰라도 바로 알린다 — 엔진이 감정 대기로 받아 두었다가 감정이 오면 활동시킨다(지시서 1-5 A)
+      this.engine.addCharacter(id);
+      if (c.ownedClothesId !== null) this.renderer.setOutfit(id, c.ownedClothesId);
     }
   }
 
   /**
    * 거실에 세울 캐릭터를 바꾼다 — 캐릭터 탭에서 프리셋을 고르거나 고쳤을 때 (2026-10-12 추가).
    * 빠진 캐릭터는 치우고, 새로 든 캐릭터는 빈 칸 아무 데나 세운다. 남은 캐릭터는 하던 대로 둔다.
-   * 시세는 새 목록으로 다시 구독한다. 카탈로그에 없는 종목은 세우지 못한다(characterIds 로 알 수 있다)
+   * 카탈로그에 없는 종목은 세우지 못한다(characterIds 로 알 수 있다)
    */
   setRoster(characters: RoomCharacterDto[]): void {
-    const keep = new Set(characters.map((c) => c.stockCode));
+    const keep = new Set(characters.map(charIdOf));
     const removed = [...this.handles.keys()].filter((id) => !keep.has(id));
-    const added = characters.some((c) => !this.handles.has(c.stockCode) && this.chars.def(c.stockCode));
+    const added = characters.some((c) => !this.handles.has(charIdOf(c)) && this.chars.def(charIdOf(c)));
     if (removed.length === 0 && !added) return;
     this.gesture.cancel(); // 들고 있던 캐릭터가 빠질 수 있다 — 내려놓고 시작
     for (const id of removed) {
@@ -146,10 +163,9 @@ export class RoomLoop {
       this.handles.delete(id);
     }
     this.spawnAll(characters);
-    if (this.raf) this.feed.subscribe([...this.handles.keys()], (q) => this.onPriceUpdate(q));
   }
 
-  /** 실제로 세운 캐릭터 — 오버레이는 이 목록만 보여 준다(못 세운 종목은 시세도 안 온다) */
+  /** 실제로 세운 캐릭터 — 오버레이는 이 목록만 보여 준다 */
   get characterIds(): string[] {
     return [...this.handles.keys()];
   }
@@ -159,14 +175,12 @@ export class RoomLoop {
     return this.placements;
   }
 
-  /** 가구를 다시 놓는다 — 배치 저장 뒤에 페이지가 부른다. 없어진 가구는 씬에서 지운다 (추가) */
+  /**
+   * 가구를 다시 놓는다 — 배치 저장 뒤에 페이지가 부른다. 없어진 가구는 씬에서 지운다 (추가).
+   * 엔진에는 알리지 않는다 — 가구 종류(엔진 model)를 어떻게 넘길지는 가구 묶음 결정 전이라(S4 도휘 결정) 가구 반응은 아직 없다
+   */
   setPlacements(placements: PlacementDto[]): void {
     syncPlacements(this.renderer, this.placements, placements);
-    // 엔진에도 놓인 가구를 알린다 {잠정 — 배치 id. 가구 종류를 어떻게 넘길지 팀원 답 대기}
-    const was = new Set(this.placements.map((p) => p.placementId));
-    const now = new Set(placements.map((p) => p.placementId));
-    for (const id of was) if (!now.has(id)) this.engine.deleteFurniture(String(id));
-    for (const id of now) if (!was.has(id)) this.engine.addFurniture(String(id));
     this.placements = placements.map((p) => ({ ...p }));
     this.walkOn(placements);
   }
@@ -223,9 +237,9 @@ export class RoomLoop {
     for (const h of this.handles.values()) {
       const pos = this.spawnPoint(taken) ?? h.position;
       Object.assign(h, { position: pos, path: [], rest: 0.5 + Math.random() * 2, pause: 0, held: false, lifted: false, charging: false, awaiting: false });
-      this.renderer.move(h.stockCode, pos); // 숨어 있는 동안 옮기면 렌더러가 카메라 쪽을 보게 세운다
+      this.renderer.move(h.id, pos); // 숨어 있는 동안 옮기면 렌더러가 카메라 쪽을 보게 세운다
       this.stopActing(h);
-      this.engine.interrupt(h.stockCode);
+      this.engine.interrupt(h.id);
     }
   }
 
@@ -242,7 +256,6 @@ export class RoomLoop {
 
   start(): void {
     if (this.raf) return;
-    this.feed.subscribe([...this.handles.keys()], (q) => this.onPriceUpdate(q));
     this.engine.start();
     this.last = performance.now();
     const step = (t: number) => {
@@ -257,17 +270,21 @@ export class RoomLoop {
   stop(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
-    this.feed.unsubscribe();
     this.engine.dispose();
     this.gesture.cancel();
   }
 
   tick(dt: number): void {
+    this.engine.tick(); // 시간 제한이 지난 상호작용을 엔진이 끝낸다(지시서 1-6) — 배치 모드에도 시계는 간다
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
       // 엔진 모션 중엔 제자리 — 단, 가구 위에 내려놓아 비켜 나오는 중이면 마저 나온다
       if (h.acting && this.grid.freeAt(h.position)) continue;
+      if (h.away) {
+        this.walkAway(h, dt);
+        continue;
+      }
       if (h.path.length === 0) {
         h.rest -= dt;
         if (h.rest <= 0) {
@@ -287,37 +304,44 @@ export class RoomLoop {
         h.pause = between(PAUSE_MIN, PAUSE_SPAN);
         continue;
       }
-      // 경유지를 넘어가도 남은 걸음은 다음 구간에 이어 쓴다 — 꺾을 때 멈칫하지 않게
-      let stepLen = SPEED * dt;
-      while (stepLen > 0 && h.path.length) {
-        const next = h.path[0];
-        const dx = next.x - h.position.x;
-        const dy = next.y - h.position.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist <= stepLen) {
-          h.position = next;
-          h.path.shift();
-          stepLen -= dist;
-        } else {
-          h.position = { x: h.position.x + (dx / dist) * stepLen, y: h.position.y + (dy / dist) * stepLen };
-          stepLen = 0;
-        }
-      }
+      this.walk(h, SPEED * dt);
       if (h.path.length === 0) h.rest = between(REST_MIN, REST_SPAN);
-      this.renderer.move(h.stockCode, h.position);
     }
     this.fieldTimer += dt;
     if (this.fieldTimer > 0.5) {
       this.fieldTimer = 0;
       // 들린 캐릭터는 판정에서 뺀다 — 놓은 자리에서 새로 마주친다
-      const list = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.stockCode, x: h.position.x, y: h.position.y }));
+      const list = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
       for (const e of this.field.evaluate(list)) this.onFieldEnter(e.a, e.b);
     }
   }
 
-  /** 시세 — HUD(거실 자산·수익률)로만 넘긴다. 감정은 엔진 몫이다 */
-  onPriceUpdate(quotes: Record<string, Quote>): void {
-    this.events.onQuotes(quotes);
+  /** 길을 따라 stepLen 칸 걷는다 — 경유지를 넘어가도 남은 걸음은 다음 구간에 이어 쓴다(꺾을 때 멈칫하지 않게) */
+  private walk(h: CharacterHandle, stepLen: number): void {
+    while (stepLen > 0 && h.path.length) {
+      const next = h.path[0];
+      const dx = next.x - h.position.x;
+      const dy = next.y - h.position.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= stepLen) {
+        h.position = next;
+        h.path.shift();
+        stepLen -= dist;
+      } else {
+        h.position = { x: h.position.x + (dx / dist) * stepLen, y: h.position.y + (dy / dist) * stepLen };
+        stepLen = 0;
+      }
+    }
+    this.renderer.move(h.id, h.position);
+  }
+
+  /** move_away 로 비켜 걷는 중 — 멈칫하지 않고 빠르게. 닿으면 평소 배회로 돌아가고(1-2 ④) 엔진 명령의 다음 단계로 */
+  private walkAway(h: CharacterHandle, dt: number): void {
+    this.walk(h, SPEED * AWAY_SPEED_SCALE * dt);
+    if (h.path.length) return;
+    h.away = false;
+    h.rest = between(REST_MIN, REST_SPAN);
+    if (h.run) this.nextStep(h, h.run);
   }
 
   /** 두 캐릭터가 가까워졌다 — 판정은 여기, 무엇을 할지는 엔진. 링이 열려 멈춰 선 캐릭터는 알리지 않는다 */
@@ -325,37 +349,108 @@ export class RoomLoop {
     const a = this.handles.get(charId);
     const b = this.handles.get(otherId);
     if (!a || !b || a.held || b.held || a.lifted || b.lifted) return;
+    // 누구와 마주쳤는지 — move_away 가 그 반대쪽으로 비킨다(명령에 상대가 실려 오지 않아서)
+    a.metWith = otherId;
+    b.metWith = charId;
     this.engine.encounter(charId, otherId);
   }
 
   /**
-   * 엔진 명령 → 렌더러. 모션 이름이 곧 클립 이름이다 {잠정 — 팀원 명령 모양 대기}.
-   * 트는 동안 제자리에 세우고, 끝나면 마지막 모션 이름으로 엔진에 알린다.
-   * 들려 있으면 받지 않는다(엔진은 들 때 interrupt 를 받았다). 렌더러는 지금 요청의 끝만 알려 준다 —
-   * 새 요청이 앞 요청을 밀어내면 앞 요청의 끝 신호는 오지 않는다
+   * 엔진 명령 → 렌더러 · 움직임 (지시서 1-1).
+   *   play     단계를 하나씩 — 마지막 단계가 끝나면 그 모션 이름으로 엔진에 알린다. 들려 있으면 받지 않는다(엔진은 들 때 interrupt 를 받았다)
+   *   cancel   하던 걸 멈추고 평소대로(끝 신호 없음)
+   *   emotion  표정 · 기본 자세를 바꿔 끼운다(1-8). 자세 이름은 motions.json 으로 파일을 찾는다
    */
   private onCommand(cmd: EngineCommand): void {
     const h = this.handles.get(cmd.characterId);
     if (!h) return;
-    if (cmd.kind === 'stop') {
-      this.stopActing(h);
+    switch (cmd.type) {
+      case 'cancel':
+        this.stopActing(h);
+        return;
+      case 'emotion':
+        this.renderer.setExpression(h.id, cmd.emotion);
+        this.renderer.setBasePose(h.id, { idle: this.motions.clipOf(cmd.idle), walk: this.motions.clipOf(cmd.walk) });
+        return;
+      case 'play': {
+        if (h.lifted) return;
+        const run: ActRun = { steps: cmd.steps, i: -1 };
+        h.run = run; // 앞 명령은 여기서 끝 — 끝 신호 없이(렌더러도 새 play 가 앞 요청을 밀어낸다)
+        this.nextStep(h, run);
+      }
+    }
+  }
+
+  /**
+   * 다음 단계로 (지시서 1-2).
+   *   clip      렌더러가 튼다 — 그동안 제자리. 반복은 마지막 단계에서만(끝 신호 없음 — 엔진이 cancel 로 끝낸다)
+   *   behavior  keep_walking 은 바로 다음 단계(하던 걸음을 이어 감), move_away 는 상대 반대쪽으로 비켜 걸어가 닿으면 다음 단계.
+   *             걸을 수 없으면 바로 완료. 그동안은 걷게 둔다
+   * run 이 이미 다른 명령으로 바뀌었으면(cancel · 새 play · 들림) 아무것도 안 한다
+   */
+  private nextStep(h: CharacterHandle, run: ActRun): void {
+    if (h.run !== run) return;
+    run.i++;
+    h.away = false;
+    if (run.i >= run.steps.length) {
+      h.run = null;
+      h.acting = false;
+      const last = run.steps.at(-1);
+      if (last) this.engine.motionFinished(h.id, last.name);
       return;
     }
-    if (h.lifted) return;
-    const n = cmd.motions.length;
-    const steps: MotionStep[] = cmd.motions.map((clip, i) => ({ clip, loop: i === n - 1 && cmd.loop === true }));
-    const last = cmd.motions[n - 1];
-    h.acting = true;
-    this.renderer.play(h.stockCode, steps, () => {
-      h.acting = false;
-      if (last !== undefined) this.engine.motionFinished(h.stockCode, last);
-    });
+    const step = run.steps[run.i];
+    if (step.kind === 'clip') {
+      h.acting = true;
+      const loop = step.loop && run.i === run.steps.length - 1;
+      this.renderer.play(h.id, [{ clip: this.motions.clipOf(step.name), loop }], () => this.nextStep(h, run));
+      return;
+    }
+    h.acting = false;
+    this.renderer.cancel(h.id); // 앞 단계가 clip 이었으면 내려놓고 걷기·대기로
+    if (this.motions.behaviorOf(step.name) === 'move_away' && this.startAway(h)) return; // 닿으면 walkAway 가 다음 단계로
+    // keep_walking · 모르는 움직임 · 비킬 수 없음 → 바로 완료. 엔진이 명령을 다 내보낸 뒤에 알리도록 한 박자 늦춘다
+    queueMicrotask(() => this.nextStep(h, run));
+  }
+
+  /** move_away 시작 — 마주친 상대 반대쪽 AWAY_DISTANCE 칸 근처 빈 칸으로 길을 낸다. 상대를 모르면 아무 쪽. 길이 없으면 false */
+  private startAway(h: CharacterHandle): boolean {
+    const other = h.metWith ? this.handles.get(h.metWith) : undefined;
+    let dx = other ? h.position.x - other.position.x : 0;
+    let dy = other ? h.position.y - other.position.y : 0;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-3) {
+      const a = Math.random() * Math.PI * 2;
+      [dx, dy] = [Math.cos(a), Math.sin(a)];
+    } else [dx, dy] = [dx / len, dy / len];
+    const clamp = (v: number) => Math.min(ROOM - MARGIN, Math.max(MARGIN, v));
+    const want = { x: clamp(h.position.x + dx * AWAY_DISTANCE), y: clamp(h.position.y + dy * AWAY_DISTANCE) };
+    const dest = this.grid.freeAt(want) ? want : this.grid.nearestFree(want);
+    const path = dest ? findPath(this.grid, h.position, dest) : null;
+    if (!path || path.length === 0) return false;
+    h.path = path;
+    h.pause = 0;
+    h.away = true;
+    return true;
   }
 
   /** 엔진 모션을 멈추고 다시 걷게 한다 — 끝 신호는 없다 */
   private stopActing(h: CharacterHandle): void {
+    h.run = null;
+    h.away = false;
     h.acting = false;
-    this.renderer.cancel(h.stockCode);
+    this.renderer.cancel(h.id);
+  }
+
+  /** 개발 모드 머리 위 글자 — 세운 캐릭터마다 지금 단계 · 감정(지시서 1-3). 화면에 안 보이는 캐릭터는 뺀다 */
+  debugLabels(): DebugLabel[] {
+    if (this.mode === 'PLACEMENT') return [];
+    return [...this.handles.values()].flatMap((h) => {
+      const at = this.renderer.screenOf(h.id);
+      if (!at) return [];
+      const step = h.run ? h.run.steps[h.run.i] : undefined;
+      return [{ id: h.id, at, motion: step?.name ?? null, emotion: this.engine.emotionOf(h.id), waiting: this.engine.isWaitingEmotion(h.id) }];
+    });
   }
 
   /* ── 상호작용 ───────────────────────────────────────────── */
@@ -375,7 +470,7 @@ export class RoomLoop {
     }
     for (const h of this.handles.values()) {
       h.held = false;
-      this.renderer.setCharacterState(h.stockCode, { hidden: m === 'PLACEMENT', selected: false });
+      this.renderer.setCharacterState(h.id, { hidden: m === 'PLACEMENT', selected: false });
     }
   }
 
@@ -386,7 +481,7 @@ export class RoomLoop {
     if (this.mode === 'NORMAL') {
       for (const o of this.handles.values()) {
         o.held = o === h;
-        this.renderer.setCharacterState(o.stockCode, { selected: o === h });
+        this.renderer.setCharacterState(o.id, { selected: o === h });
       }
       h.path = [];
     }
@@ -403,7 +498,7 @@ export class RoomLoop {
   release(): void {
     for (const h of this.handles.values()) {
       h.held = false;
-      this.renderer.setCharacterState(h.stockCode, { selected: false });
+      this.renderer.setCharacterState(h.id, { selected: false });
     }
   }
 
@@ -423,8 +518,11 @@ export class RoomLoop {
     h.lifted = true;
     h.path = [];
     h.held = false;
-    h.acting = false; // 틀던 엔진 모션은 아래 setCharacterState 에서 렌더러가 버린다
-    this.renderer.setCharacterState(charId, { lifted: true, selected: false }); // 틀던 엔진 모션은 렌더러가 버린다
+    // 하던 엔진 명령은 버린다 — 틀던 모션은 아래 setCharacterState 에서 렌더러가 버리고, 비켜 걷던 것도 그만둔다
+    h.acting = false;
+    h.run = null;
+    h.away = false;
+    this.renderer.setCharacterState(charId, { lifted: true, selected: false });
     this.engine.interrupt(charId);
     this.events.onLifted(charId);
   }
@@ -448,7 +546,7 @@ export class RoomLoop {
     const found: { t: DropTarget; d: number }[] = [];
     const offer = (t: DropTarget, d: number) => found.push({ t, d });
     // 화면에서 겹쳐 보이는 것이 먼저 — 캐릭터는 가구보다 앞에 서 있으니 캐릭터가 이긴다
-    const charUnder = screen ? this.renderer.pick(screen.x, screen.y, h.stockCode) : null;
+    const charUnder = screen ? this.renderer.pick(screen.x, screen.y, h.id) : null;
     if (charUnder && !this.handles.get(charUnder)?.lifted) offer({ kind: 'character', charId: charUnder }, -1);
     const under = screen ? this.renderer.pickFurniture(screen.x, screen.y) : null;
     for (const p of this.placements) {
@@ -467,7 +565,7 @@ export class RoomLoop {
     for (const o of this.handles.values()) {
       if (o === h || o.lifted) continue;
       const d = Math.hypot(o.position.x - h.position.x, o.position.y - h.position.y);
-      if (d <= CHAR_REACH) offer({ kind: 'character', charId: o.stockCode }, d);
+      if (d <= CHAR_REACH) offer({ kind: 'character', charId: o.id }, d);
     }
     found.sort((a, b) => a.d - b.d);
     return found[0]?.t ?? null;
@@ -494,13 +592,11 @@ export class RoomLoop {
     if (!h) return;
     h.lifted = false;
     h.rest = 1 + Math.random() * 2;
-    const target = this.dropTarget;
     this.setDropTarget(null);
     this.stepAside(h); // 가구 위에 내려놓았으면 내려온다
     this.renderer.setCharacterState(charId, { lifted: false });
-    // 놓은 상대 — 가구는 여기서 알린다. 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
-    // 놓았다는 것 자체를 엔진에 알릴지(endDrag 짝)는 팀원 답 대기 — 지금은 interrupt 만
-    if (target?.kind === 'furniture') this.engine.visitFurniture(charId, String(target.placementId));
+    // 놓은 상대 — 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
+    // 가구는 엔진에 알리지 않는다 — 엔진이 가구 종류(model)를 아직 모른다(setPlacements, 가구 묶음 결정 후 visitFurniture 로 잇는다)
   }
 
   /* ── 포인터 → 위 진입점들. 좌표는 방 기준 px ─────────────────────── */

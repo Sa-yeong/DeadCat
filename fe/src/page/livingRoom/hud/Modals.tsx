@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
 import { wornOutfit } from '../runtime/catalogs';
-import type { CharacterDef, RoomCharacterDto } from '../types';
+import { charIdOf, type CharacterDef, type RoomCharacterDto } from '../types';
 import { Icon, Modal } from './ui';
 import { C, solidBtn } from './style';
 
@@ -23,14 +23,15 @@ export function WardrobeGallery({
   onChanged,
 }: {
   characters: RoomCharacterDto[];
-  defs: (code: string) => CharacterDef | undefined;
+  defs: (charId: string) => CharacterDef | undefined;
+  /** 처음 보일 캐릭터 id */
   initial: string;
   onClose: () => void;
-  onChanged: (stockCode: string, clothesId: number | null) => void;
+  onChanged: (charId: string, clothesId: number | null) => void;
 }) {
-  const [idx, setIdx] = useState(() => Math.max(0, characters.findIndex((c) => c.stockCode === initial)));
+  const [idx, setIdx] = useState(() => Math.max(0, characters.findIndex((c) => charIdOf(c) === initial)));
   const cur = characters[idx];
-  const def = cur ? defs(cur.stockCode) : undefined;
+  const def = cur ? defs(charIdOf(cur)) : undefined;
   // 고유 의상은 카탈로그에 실려 있다 — 캐릭터를 넘기면 그 캐릭터의 옷이 바로 보인다(따로 받지 않는다)
   const outfit = def?.outfit ?? null;
   const [busy, setBusy] = useState(false);
@@ -48,10 +49,10 @@ export function WardrobeGallery({
   const apply = async (clothesId: number | null) => {
     if (busy) return;
     setBusy(true);
-    const ok = await api.setOutfit(cur.stockCode, clothesId).then(() => true, () => false);
+    const ok = await api.setOutfit(cur.stockCode, clothesId).then(() => true, () => false); // 더미(S6) — 종목 코드로 찾는다
     setBusy(false);
     setFailed(!ok);
-    if (ok) onChanged(cur.stockCode, clothesId);
+    if (ok) onChanged(charIdOf(cur), clothesId);
   };
 
   const navBtn: React.CSSProperties = {
@@ -69,13 +70,13 @@ export function WardrobeGallery({
         <button type="button" onClick={() => go(-1)} aria-label="이전 캐릭터" style={navBtn}><Icon name="left" size={14} /></button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {characters.map((c, i) => {
-            const d = defs(c.stockCode);
+            const d = defs(charIdOf(c));
             const on = i === idx;
             return (
               <button
-                key={c.stockCode}
+                key={charIdOf(c)}
                 type="button"
-                aria-label={d?.stockName ?? c.stockCode}
+                aria-label={d?.stockName ?? c.stockName}
                 aria-pressed={on}
                 onClick={() => show(i)}
                 style={{

@@ -196,6 +196,11 @@ interface CharNode {
   /** 몸 동작 — 모션 파일을 받기 전이면 null(기본 자세로 선다) */
   mixer: THREE.AnimationMixer | null;
   actions: Partial<Record<Exclude<Pose, 'rest'>, THREE.AnimationAction>>;
+  /** 기본 자세(idle_chibi · walk_chibi) — 엔진이 준 자세(setBasePose) 파일이 없을 때 돌아올 자리 */
+  defaultActions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction };
+  /** 엔진이 준 자세 클립별 동작 · 요청 번호(새 자세가 오면 올라감 — 늦게 온 파일을 버리는 데) */
+  poseActions: Map<string, THREE.AnimationAction>;
+  poseToken: number;
   pose: Pose;
   /** 마지막으로 걸은 시각(performance.now) — 멈춘 걸 알아보는 데 쓴다 */
   movedAt: number;
@@ -262,8 +267,10 @@ export class RoomScene implements RoomRenderer {
   private readonly engineFiles = new Map<string, Promise<VRMAnimation | null>>();
   /** 동작 파일 — 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 들기는 비교 시험 중이라 둘(pickup40 · pickup60) */
   private motionFiles: Promise<Partial<Record<'idle' | 'walk' | 'pickup40' | 'pickup60', VRMAnimation>>> | null = null;
-  /** 모델 파일 — 한 번 받아 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서) */
-  private modelFile: Promise<ArrayBuffer> | null = null;
+  /** 모델 파일 — 주소별로 한 번 받아 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서). 없는 파일은 null */
+  private readonly modelFiles = new Map<string, Promise<ArrayBuffer | null>>();
+  /** 개발 모드 — 파일 없는 엔진 단계를 이만큼(ms) 대기 자세로 채운다(holdMissingClips). null 이면 건너뜀 */
+  private holdMs: number | null = null;
   /** 모델 크기 맞춤 — 첫 캐릭터에서 한 번 잰다 */
   private fit: { scale: number; footY: number } | null = null;
   private lastFrame = 0;
@@ -850,7 +857,7 @@ export class RoomScene implements RoomRenderer {
     const whenReady = new Promise<boolean>((ok) => (setReady = ok));
     const c: CharNode = {
       id: charId, whenReady, setReady, def, pos, clothesId: null, group, figure, body, head, shadow, ring, hull, materials: mats,
-      holder, vrm: null, mixer: null, actions: {}, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
+      holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false,
     };
     this.chars.set(charId, c);
@@ -884,13 +891,26 @@ export class RoomScene implements RoomRenderer {
     this.invalidate();
   }
 
-  /** 치비 VRM 을 풀어 도형 자리에 세운다 — 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버린다 */
+  /** 모델 파일 한 벌 — 없으면(404 · 개발 서버가 대신 준 HTML) null */
+  private modelBytes(url: string): Promise<ArrayBuffer | null> {
+    let file = this.modelFiles.get(url);
+    if (!file) {
+      file = fetch(url).then(
+        (r) => (r.ok && !r.headers.get('content-type')?.includes('text/html') ? r.arrayBuffer() : null),
+        () => null,
+      );
+      this.modelFiles.set(url, file);
+    }
+    return file;
+  }
+
+  /**
+   * VRM 을 풀어 도형 자리에 세운다 — 종목별 모델(def.modelUrl, 지시서 3-③)이 없으면 기본 치비 모델.
+   * 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버린다
+   */
   private async attachModel(charId: string, c: CharNode): Promise<void> {
-    this.modelFile ??= fetch(ROOM_ASSETS.chibi).then((r) => {
-      if (!r.ok) throw new Error(`${r.status} ${ROOM_ASSETS.chibi}`);
-      return r.arrayBuffer();
-    });
-    const buf = await this.modelFile;
+    const buf = (c.def.modelUrl && (await this.modelBytes(c.def.modelUrl))) || (await this.modelBytes(ROOM_ASSETS.chibi));
+    if (!buf) throw new Error(`모델 파일 없음 ${ROOM_ASSETS.chibi}`);
     if (this.disposed || this.chars.get(charId) !== c) return;
     const gltf = await this.loader.parseAsync(buf, '');
     const vrm = gltf.userData.vrm as VRM | undefined;
@@ -979,6 +999,7 @@ export class RoomScene implements RoomRenderer {
     // 한 번 틀고 끝나는 동작이 끝나면 재생기가 알려 준다 — 엔진 모션이면 다음 단계로
     mixer.addEventListener('finished', (e) => this.onActionFinished(c, e.action as THREE.AnimationAction));
     c.mixer = mixer;
+    c.defaultActions = { idle: idle ?? undefined, walk: walk ?? undefined };
     c.actions = { idle: idle ?? undefined, walk: walk ?? undefined, pickup: pickup ?? undefined };
     c.pose = 'rest';
     c.setReady(true); // 이제 엔진 모션을 틀 수 있다
@@ -1095,6 +1116,49 @@ export class RoomScene implements RoomRenderer {
     if (c?.engine) this.dropEngine(c); // 다음 프레임에 wantPose 가 idle·walk 로 섞어 돌아간다
   }
 
+  /**
+   * 평소 자세를 바꿔 끼운다(지시서 1-8) — 파일을 받은 뒤에 바꾼다. 없거나 null 이면 기본 자세.
+   * 지금 대기·걷기 중이면 옛 자세를 내리고 새 자세를 섞어 넣는다
+   */
+  setBasePose(charId: string, pose: { idle: string | null; walk: string | null }): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    const token = ++c.poseToken;
+    void this.applyBasePose(c, pose, token);
+  }
+
+  private async applyBasePose(c: CharNode, pose: { idle: string | null; walk: string | null }, token: number): Promise<void> {
+    if (!(await c.whenReady)) return;
+    const live = () => token === c.poseToken && this.chars.get(c.id) === c && !!c.vrm && !!c.mixer;
+    const make = async (clip: string | null): Promise<THREE.AnimationAction | null> => {
+      if (!clip) return null;
+      const anim = await this.motionFile(clip);
+      if (!anim || !live()) return null;
+      let act = c.poseActions.get(clip);
+      if (!act) {
+        act = c.mixer!.clipAction(createVRMAnimationClip(anim, c.vrm!));
+        act.setLoop(THREE.LoopRepeat, Infinity);
+        c.poseActions.set(clip, act);
+      }
+      return act;
+    };
+    const [idle, walk] = await Promise.all([make(pose.idle), make(pose.walk)]);
+    if (!live()) return;
+    const next = { idle: idle ?? c.defaultActions.idle, walk: walk ?? c.defaultActions.walk };
+    if (next.idle === c.actions.idle && next.walk === c.actions.walk) return;
+    for (const old of [c.actions.idle, c.actions.walk]) if (old && old !== next.idle && old !== next.walk && old.isScheduled()) old.fadeOut(POSE_FADE_S);
+    c.actions = { ...c.actions, ...next };
+    if (c.pose === 'idle' || c.pose === 'walk') this.setPose(c, c.pose);
+    this.invalidate();
+  }
+
+  /** 표정 — 표정 데이터(블렌드셰이프 표)가 아직 없어 창구만 둔다(지시서 1-1) */
+  setExpression(): void {}
+
+  holdMissingClips(ms: number | null): void {
+    this.holdMs = ms;
+  }
+
   /** 엔진 요청을 버린다 — onFinish 를 부르지 않는다. 늦게 오는 파일·끝 신호는 요청 번호로 걸러진다 */
   private dropEngine(c: CharNode): void {
     c.engine = null;
@@ -1113,9 +1177,15 @@ export class RoomScene implements RoomRenderer {
     }
     run.i = i;
     const step = run.steps[i];
-    const action = await this.engineAction(c, step.clip);
+    const action = step.clip ? await this.engineAction(c, step.clip) : null;
     if (c.engine !== run || run.token !== token) return;
-    if (!action) return this.engineStep(c, token, i + 1); // 건너뛴 까닭은 engineAction 이 남긴다
+    if (!action) {
+      // 파일 없음 — 개발 모드면 대기 자세로 시간을 채운다(반복 마지막 단계는 cancel 까지), 아니면 건너뜀(까닭은 engineAction 이 남긴다)
+      if (this.holdMs === null) return this.engineStep(c, token, i + 1);
+      if (i === run.steps.length - 1 && step.loop) return;
+      window.setTimeout(() => void this.engineStep(c, token, i + 1), this.holdMs);
+      return;
+    }
     // 반복은 마지막 단계에서만 — 반복이면 끝나지 않는다(끝 신호 없음 — 반복 모션을 언제 끝낼지는 엔진과 미정)
     if (i === run.steps.length - 1 && step.loop) action.setLoop(THREE.LoopRepeat, Infinity);
     else {
@@ -1151,23 +1221,9 @@ export class RoomScene implements RoomRenderer {
       !busy(a) ? a : !busy(b) ? b : a === c.engine?.action ? b : a;
     const have = c.engineActions.get(clip);
     if (have) return pick(have);
-    let file = this.engineFiles.get(clip);
-    if (!file) {
-      file = (async () => {
-        try {
-          const r = await fetch(MOTION_URL(clip));
-          if (!r.ok) return null;
-          const g = await this.loader.parseAsync(await r.arrayBuffer(), '');
-          return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0] ?? null;
-        } catch {
-          return null;
-        }
-      })();
-      this.engineFiles.set(clip, file);
-    }
-    const anim = await file;
+    const anim = await this.motionFile(clip);
     if (!anim) {
-      console.warn(`[RoomScene] 엔진 모션 파일이 없어 건너뜁니다: ${clip}`);
+      console.warn(`[RoomScene] 엔진 모션 파일이 없습니다: ${clip}`);
       return null;
     }
     const vrm = c.vrm;
@@ -1178,6 +1234,25 @@ export class RoomScene implements RoomRenderer {
     const pair: [THREE.AnimationAction, THREE.AnimationAction] = [c.mixer.clipAction(one), c.mixer.clipAction(one.clone())];
     c.engineActions.set(clip, pair);
     return pair[0];
+  }
+
+  /** 모션 파일(VRMA) — 클립 이름별로 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 없거나 못 읽으면 null */
+  private motionFile(clip: string): Promise<VRMAnimation | null> {
+    let file = this.engineFiles.get(clip);
+    if (!file) {
+      file = (async () => {
+        try {
+          const r = await fetch(MOTION_URL(clip));
+          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) return null;
+          const g = await this.loader.parseAsync(await r.arrayBuffer(), '');
+          return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0] ?? null;
+        } catch {
+          return null;
+        }
+      })();
+      this.engineFiles.set(clip, file);
+    }
+    return file;
   }
 
   /**

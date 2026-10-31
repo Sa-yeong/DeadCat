@@ -1,11 +1,14 @@
 /**
  * 서버 계약 자리 — 컴포넌트 다이어그램(r5)의 소켓 8개에 대응한다.
  *   RoomQuery · Catalog · Placement · Item(증여 응답에 호감도가 실려 온다 — Affinity 소켓) · Guestbook · Follow · Wardrobe
- * 지금은 백엔드 모듈이 없어 dummy.ts 를 돌려준다. **실 API로 바꿀 곳은 이 파일뿐이다.**
- * 함수마다 붙인 주소는 제안이다 {경로 미확정}.
+ * **실 API로 바꿀 곳은 이 파일뿐이다.** 서버 칸 이름(snake_case) → 화면 이름(camelCase) 변환도 여기 한 곳(이름 통일 기준 4).
+ *   실 API (S4)   내 거실 조회 GET /rooms/me · 감정 스트림 GET /rooms/me/stream · 보유 종목 GET /holdings
+ *   더미          그 밖 전부 — S6(내 거실 패널) · S8(남의 거실)에서 C1 경로표대로 바꾼다. 주석의 주소는 옛 가정
  *
  * 한 객체로 묶지 않는다(God class 방지) — 패널이 필요한 묶음만 가져다 쓴다.
  */
+import axios from 'axios';
+import { api as http } from '../../api/axios';
 import * as D from './dummy';
 import type {
   AttendanceState,
@@ -17,9 +20,9 @@ import type {
   GuestbookPost,
   HoldingDto,
   InventoryItem,
+  OwnedStock,
   PlacementDto,
   PresetList,
-  Quote,
   ReactionKind,
   RoomCharacterDto,
   RoomReactions,
@@ -31,9 +34,67 @@ import type {
 /** 거실 주인 — undefined 면 내 거실 (/rooms/me) */
 export type OwnerId = string | undefined;
 
-/** 로그인이 필요하다 — 실 API 에서는 401 응답을 이 에러로 바꿔 던진다 (내 거실을 비로그인으로 열었을 때) */
+/** 로그인이 필요하다 — 토큰이 없거나 서버가 401 을 주면 이 에러로 바꿔 던진다 (내 거실을 비로그인으로 열었을 때) */
 export class AuthRequiredError extends Error {}
 const roomPath = (ownerId: OwnerId) => (ownerId ? `/rooms/${ownerId}` : '/rooms/me');
+
+/* ── 서버 공통 — 토큰 · 응답 껍질 ─────────────────────────────────── */
+
+/** 로그인 토큰 — 다른 화면과 같은 자리(localStorage.token) */
+const tokenOf = (): string | null => localStorage.getItem('token');
+
+/** 로그인 필수 GET — 응답 껍질({ success, data })을 벗겨 data 만 준다. 토큰이 없거나 401 이면 AuthRequiredError */
+async function getAuthed<T>(path: string): Promise<T> {
+  const token = tokenOf();
+  if (!token) throw new AuthRequiredError('로그인이 필요해요');
+  try {
+    const res = await http.get<{ success: boolean; data: T }>(path, { headers: { Authorization: `Bearer ${token}` } });
+    return res.data.data;
+  } catch (e) {
+    if (axios.isAxiosError(e) && e.response?.status === 401) throw new AuthRequiredError('로그인이 필요해요');
+    throw e;
+  }
+}
+
+interface ReactionCountRes {
+  reaction_type: string;
+  count: number;
+}
+const sumCounts = (list: ReactionCountRes[] | undefined) => (list ?? []).reduce((n, r) => n + r.count, 0);
+
+/** GET /rooms/me 응답 (백엔드 MyRoomResponseDto) */
+interface MyRoomRes {
+  viewer_mode: 'OWNER';
+  share_option: boolean;
+  owner_info: { nickname: string };
+  received_reactions: ReactionCountRes[];
+  placed_characters: {
+    stock_id: number;
+    stock_code: string;
+    stock_name: string;
+    quantity: number;
+    mean_price: number;
+    affinity_level: number;
+    affinity_score: number;
+    affinity_progress: number | null;
+    clothes_id: number | null;
+    received_reactions: ReactionCountRes[];
+  }[];
+}
+
+/** GET /holdings 한 줄 (백엔드 HoldingItemDto) — 금액은 글자로 온다 */
+interface HoldingRes {
+  stock_id: number;
+  stock_code: string;
+  stock_name: string;
+  current_price: string;
+  quantity: number;
+  return_rate: number;
+  valuation_profit: string;
+  purchase_price: string;
+  stock_img: string;
+  market: string;
+}
 
 const wait = <T,>(v: T, ms = 120): Promise<T> => new Promise((r) => setTimeout(() => r(structuredClone(v)), ms));
 
@@ -64,25 +125,38 @@ function roomCharacters(): RoomCharacterDto[] {
 /* ── RoomQuery API ────────────────────────────────────────────── */
 
 /**
- * GET /rooms/me · GET /rooms/:ownerId
+ * GET /rooms/me (실 API) · GET /rooms/:ownerId (더미 — S8)
  * 보는 사람은 서버가 토큰으로 안다 — 클라는 userId를 넘기지 않는다.
- * `asGuest` 는 더미 전용(비로그인 확인용). 실 API에서는 빠진다.
+ * `asGuest` 는 더미 전용(비로그인 확인용). 남의 거실을 실 API 로 바꿀 때 빠진다.
  */
-export function getRoom(ownerId: string | undefined, asGuest = false): Promise<RoomSnapshot> {
-  if (!ownerId && asGuest) return Promise.reject(new AuthRequiredError('로그인이 필요해요'));
+export async function getRoom(ownerId: string | undefined, asGuest = false): Promise<RoomSnapshot> {
+  if (!ownerId && asGuest) throw new AuthRequiredError('로그인이 필요해요');
   if (!ownerId) {
-    return wait({
+    const d = await getAuthed<MyRoomRes>('/rooms/me');
+    return {
       mode: 'OWNER',
-      visibility: 'PUBLIC',
-      characters: roomCharacters(),
+      visibility: d.share_option ? 'PUBLIC' : 'PRIVATE',
+      characters: d.placed_characters.map((c) => ({
+        stockId: c.stock_id,
+        stockCode: c.stock_code,
+        stockName: c.stock_name,
+        quantity: c.quantity,
+        meanPrice: c.mean_price,
+        affinityLevel: c.affinity_level,
+        affinityScore: c.affinity_score,
+        affinityProgress: c.affinity_progress,
+        ownedClothesId: c.clothes_id,
+        receivedReactionCount: sumCounts(c.received_reactions),
+      })),
+      // 가구는 가구 묶음 결정 전까지 더미 배치 그대로 보여 준다(S4 도휘 결정) — 응답의 placed_furniture 는 옛 모양이라 쓰지 않는다
       placements: db.placements,
-      roomReactionCount: Object.values(db.reactions.counts).reduce((a, b) => a + b, 0),
-    });
+      roomReactionCount: sumCounts(d.received_reactions),
+    };
   }
   const mode = asGuest ? 'GUEST' : 'VISITOR';
   if (ownerId === D.PRIVATE_OWNER_ID) {
     // 비공개 — 서버가 비워서 준다. 화면은 그 위에 블러만 얹는다
-    return wait({ mode, visibility: 'PRIVATE', owner: { ...D.VISIT_OWNER, nickname: '비공개거실' }, characters: [], placements: [], roomReactionCount: 0 });
+    return wait<RoomSnapshot>({ mode, visibility: 'PRIVATE', owner: { ...D.VISIT_OWNER, nickname: '비공개거실' }, characters: [], placements: [], roomReactionCount: 0 });
   }
   const rates = D.VISIT_CHARACTERS.map((c) => c.returnRate ?? 0);
   return wait({
@@ -312,28 +386,120 @@ export function setOutfit(stockCode: string, clothesId: number | null): Promise<
   return wait(clothesId, 60);
 }
 
-/* ── Price API — 시세 수신기만 쓴다 ───────────────────────────────── */
+/* ── 보유 종목 · 시세 — GET /holdings (실 API, 지시서 3-②) ──────────────── */
 
 /**
- * 종목 시세를 흘려보낸다. 끊을 때 부를 함수를 돌려준다.
- * {폴링/웹소켓 미정} 더미: 전일 종가 대비 -6% ~ +8% 에서 출발해 2초마다 조금씩 흔든다.
+ * 내 보유 종목 전부 — 현재가는 서버가 Redis 시세로 채운다(마이페이지와 같은 숫자).
+ * 거실 HUD 가 3초마다 부른다(useHoldingsPoll). 거실 캐릭터 썸네일(stock_img)도 여기서 받는다(3-③)
  */
-export function streamQuotes(stockCodes: string[], onQuotes: (q: Record<string, Quote>) => void): () => void {
-  const prev: Record<string, number> = {};
-  const price: Record<string, number> = {};
-  for (const c of stockCodes) {
-    prev[c] = D.START_PRICES[c] ?? 10000;
-    price[c] = Math.round(prev[c] * (1 + (Math.random() * 0.14 - 0.06)));
-  }
-  const emit = () => {
-    const out: Record<string, Quote> = {};
-    for (const c of stockCodes) out[c] = { price: price[c], changeRate: ((price[c] - prev[c]) / prev[c]) * 100 };
-    onQuotes(out);
+export async function getMyHoldings(): Promise<OwnedStock[]> {
+  const list = await getAuthed<HoldingRes[]>('/holdings');
+  return list.map((h) => ({
+    stockId: h.stock_id,
+    stockCode: h.stock_code,
+    stockName: h.stock_name,
+    currentPrice: Number(h.current_price),
+    quantity: h.quantity,
+    meanPrice: Number(h.purchase_price),
+    returnRate: h.return_rate,
+    valuationProfit: Number(h.valuation_profit),
+    imgUrl: h.stock_img,
+  }));
+}
+
+/* ── 감정 스트림 — GET /rooms/me/stream (실 API, 지시서 2-1 · 2-2) ─────────── */
+
+/** 열린 스트림 손잡이 — 닫기 · 지금 다시 잇기(프리셋을 바꿨을 때, 1-5 B) */
+export interface RoomStream {
+  close(): void;
+  reconnect(): void;
+}
+
+/** 끊겼을 때 다시 잇는 간격(ms) — 1초에서 두 배씩, 30초까지 */
+const RETRY_MIN = 1000;
+const RETRY_MAX = 30_000;
+
+/**
+ * 내 거실 감정 스트림을 연다. 브라우저 EventSource 는 헤더를 못 붙여서(401) fetch 로 열고 SSE 를 직접 읽는다.
+ *   메시지마다 data 줄의 JSON 을 onMessage 로 — 이름표(event:)는 보지 않는다. 내용 속 type 으로 나누는 건 받는 쪽(2-1)
+ *   끊기면 간격을 두고 다시 잇는다(백엔드가 이을 때마다 snapshot 을 다시 보낸다 — 엔진은 중복 등록하지 않는다, 1-5 A)
+ *   토큰이 없거나 401 이면 다시 잇지 않고 onAuthFailed 를 한 번 부른다(토큰 만료 · 로그아웃)
+ */
+export function streamRoom(onMessage: (data: unknown) => void, onAuthFailed: () => void): RoomStream {
+  let ctrl: AbortController | null = null;
+  let timer = 0;
+  let retry = 0;
+  let closed = false;
+
+  const fail = () => {
+    closed = true;
+    onAuthFailed();
   };
-  emit();
-  const timer = window.setInterval(() => {
-    for (const c of stockCodes) price[c] = Math.max(1, Math.round(price[c] * (1 + (Math.random() - 0.5) * 0.008)));
-    emit();
-  }, 2000);
-  return () => window.clearInterval(timer);
+
+  const connect = async () => {
+    window.clearTimeout(timer);
+    ctrl?.abort();
+    const mine = new AbortController();
+    ctrl = mine;
+    const token = tokenOf();
+    if (!token) return fail();
+    try {
+      const res = await fetch(`${http.defaults.baseURL ?? ''}/rooms/me/stream`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+        cache: 'no-store',
+        signal: mine.signal,
+      });
+      if (res.status === 401) return fail();
+      if (!res.ok || !res.body) throw new Error(`스트림 응답 ${res.status}`);
+      retry = 0;
+      await readSse(res.body, onMessage);
+    } catch (e) {
+      if (mine.signal.aborted) return; // 닫았거나 새로 이었다
+      console.warn('[거실 스트림] 끊김 — 다시 잇습니다', e);
+    }
+    if (closed || ctrl !== mine) return;
+    timer = window.setTimeout(() => void connect(), Math.min(RETRY_MAX, RETRY_MIN * 2 ** retry++));
+  };
+
+  void connect();
+  return {
+    close() {
+      closed = true;
+      window.clearTimeout(timer);
+      ctrl?.abort();
+    },
+    reconnect() {
+      if (closed) return;
+      retry = 0;
+      void connect();
+    },
+  };
+}
+
+/** SSE 본문을 끝까지 읽는다 — 빈 줄로 메시지를 나누고, data 줄을 모아 JSON 으로. 주석(:)·다른 줄은 버린다 */
+async function readSse(body: ReadableStream<Uint8Array>, onMessage: (data: unknown) => void): Promise<void> {
+  const reader = body.getReader();
+  const text = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buf += text.decode(value, { stream: true }).replace(/\r\n?/g, '\n');
+    let cut: number;
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      const data = block
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(l.startsWith('data: ') ? 6 : 5))
+        .join('\n');
+      if (!data) continue;
+      try {
+        onMessage(JSON.parse(data));
+      } catch {
+        console.warn('[거실 스트림] JSON 이 아닌 메시지를 버립니다', data);
+      }
+    }
+  }
 }
