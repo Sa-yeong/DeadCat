@@ -20,13 +20,13 @@ export class ItemsService {
             await this.itemsRepository.findConsumableInventory(userId);
 
         // 등급 · 선물 점수는 선물 API 와 같은 함수로(item-grade.ts) — 프론트는 계산하지 않고 표시만. 표에 없는 등급이면 null(선물 불가)
+        // 그림 주소는 싣지 않는다 — 프론트가 item_id 로 public/items/{id}.png 를 조립
         return inventories.map((inv) => ({
             item_id: Number(inv.item_id),
             item_name: inv.items.name,
             item_level: toItemGrade(inv.items.level),
             affinity_points: giftAffinityPoints(inv.items.level),
             quantity: inv.quantity,
-            item_img_url: `https://assets.deadcat.com/items/${inv.item_id}.png`,
         }));
     }
 
@@ -36,11 +36,11 @@ export class ItemsService {
         const storages =
             await this.itemsRepository.findFurnitureInventory(userId);
 
+        // 그림 주소는 싣지 않는다 — 프론트가 가구 id 로 public/furnitures/{id}.png 를 조립
         return storages.map((s) => ({
             item_code: `FURNITURE_${s.furniture_id}`,
             furniture_name: s.furnitures.name,
             remaining_count: s.quantity,
-            item_img_url: `https://assets.deadcat.com/furnitures/${s.furniture_id}.png`,
         }));
     }
 }

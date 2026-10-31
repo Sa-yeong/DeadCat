@@ -17,7 +17,6 @@ export class FurnituresService {
             item_code: `FURNITURE_${storage.furniture_id}`,
             furniture_name: storage.furnitures.name,
             remaining_count: storage.quantity,
-            item_img_url: `https://assets.deadcat.com/furnitures/${storage.furniture_id}.png`,
         }));
     }
 }

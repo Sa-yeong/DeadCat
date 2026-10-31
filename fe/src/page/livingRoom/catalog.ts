@@ -22,6 +22,13 @@ export function modelUrlsOf(stockId: number, look: Look): string[] {
   return [`${BASE}characters/chibi/clothes/${stockId}/${file}`, `${BASE}characters/chibi/clothes/common/${file}`];
 }
 
+/**
+ * 아이템 · 가구 그림 — 서버는 주소를 주지 않고 프론트가 DB id 로 조립한다(public/items · public/furnitures).
+ * 파일이 없으면 그리는 쪽(hud/ui.tsx Picture)이 아이콘으로 대신한다
+ */
+export const itemImgUrl = (itemId: number): string => `${BASE}items/${itemId}.png`;
+export const furnitureImgUrl = (furnitureId: number): string => `${BASE}furnitures/${furnitureId}.png`;
+
 /** 평면 더미 · 도형 캐릭터 색 — 구분만 되면 된다 */
 const PALETTE = ['#C9C1F7', '#8FB3FF', '#F2C38B', '#9FD3C7', '#F2A0B3', '#B8C7D9', '#E8A0A0', '#C7E0A0'];
 export const colorOf = (stockId: number): string => PALETTE[Math.abs(stockId) % PALETTE.length];

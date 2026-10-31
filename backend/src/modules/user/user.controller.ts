@@ -49,11 +49,12 @@ export class UserController {
         return await this.userService.getUserRelations(userId, type);
     }
     //19. 거실 공유여부 설정
+    @UseGuards(JwtAuthGuard)
     @Patch('me/share-option')
     async updateShareOption(
-        @User() userId: string,
+        @User() userId: bigint,
         @Body() dto: UpdateShareOptionDto,
     ): Promise<ShareOptionResponseDto> {
-        return await this.userService.updateShareOption(userId, dto);
+        return await this.userService.updateShareOption(String(userId), dto);
     }
 }

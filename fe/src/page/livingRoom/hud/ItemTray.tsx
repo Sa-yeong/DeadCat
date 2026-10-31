@@ -4,7 +4,8 @@ import { ITEM_MIME } from './dnd';
 import { gradeLabel, levelLabel } from './labels';
 import { PanelBody, PanelHeader } from './SidePanel';
 import { C } from './style';
-import { ItemIcon } from './ui';
+import { itemImgUrl } from '../catalog';
+import { ItemIcon, Picture } from './ui';
 
 /**
  * 아이템 — 오른쪽 창의 한 탭(OWNER 전용, 2026-10-12 — 예전의 '아이템 모드'를 없앴다).
@@ -55,8 +56,8 @@ export function ItemPanel({
                     cursor: empty ? 'default' : 'grab',
                   }}
                 >
-                  {/* 아이템 그림은 아직 없다(아이템 데이터 보류) — 선물 상자로 */}
-                  <ItemIcon icon="gift" size={34} />
+                  {/* 그림 파일(public/items/{id}.png)이 없으면 선물 상자로 */}
+                  <Picture src={itemImgUrl(it.itemId)} size={34} fallback={<ItemIcon icon="gift" size={34} />} />
                   <span style={{ position: 'absolute', left: 6, bottom: 4, fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: C.text }}>
                     ×{it.quantity}
                   </span>

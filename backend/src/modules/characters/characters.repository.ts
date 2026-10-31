@@ -185,13 +185,25 @@ export class CharactersRepository {
 
     // ── 프리셋 ───────────────────────────────────────────────────
 
-    // 18. 유저의 전체 프리셋 목록 조회
+    // 지금 보유 중인 종목만 골라낸다(전량 매도하면 holdings 줄이 지워짐)
+    async findHeldStockIds(userId: bigint, stockIds: bigint[]) {
+        const rows = await this.prisma.holdings.findMany({
+            where: { user_id: userId, stock_id: { in: stockIds } },
+            select: { stock_id: true },
+        });
+        return rows.map((r) => r.stock_id);
+    }
+
+    // 18. 유저의 전체 프리셋 목록 조회 — 다 판 종목은 빼고(D4). DB 의 프리셋 줄은 그대로라 다시 사면 돌아온다
     async findPresetsByUserId(userId: bigint) {
         return await this.prisma.character_presets.findMany({
             where: { user_id: userId },
             orderBy: { id: 'asc' },
             include: {
                 preset_items: {
+                    where: {
+                        stocks: { holdings: { some: { user_id: userId } } },
+                    },
                     include: {
                         stocks: {
                             select: {

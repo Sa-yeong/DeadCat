@@ -222,10 +222,8 @@ export class CharactersService {
     // 19. 프리셋 생성
     async createPreset(userIdStr: string, dto: CreatePresetDto) {
         const userId = BigInt(userIdStr);
-        const stockIds = dto.stock_ids.map((id) => BigInt(id));
-
-        // 유저가 보유하지 않은 주식이 포함되어 있는지 검증
-        await this.assertHoldsAll(userId, stockIds);
+        // 다 판 종목(보유하지 않은 종목)은 빼고 저장한다(D4) — 거절하지 않음
+        const stockIds = await this.heldOnly(userId, dto.stock_ids);
 
         const created = await this.charactersRepository.createPreset(
             userId,
@@ -247,13 +245,12 @@ export class CharactersService {
     ) {
         const userId = BigInt(userIdStr);
         const presetId = BigInt(presetIdStr);
-        const stockIds = dto.stock_ids.map((id) => BigInt(id));
 
         // 프리셋 존재 여부 및 본인 소유 확인
         await this.findOwnPreset(userId, presetId);
 
-        // 유저 소유 주식 검증
-        await this.assertHoldsAll(userId, stockIds);
+        // 다 판 종목은 빼고 저장(D4) — 화면이 옛 목록을 들고 있다가 보내도 400 이 나지 않게
+        const stockIds = await this.heldOnly(userId, dto.stock_ids);
 
         await this.charactersRepository.updatePreset(
             userId,
@@ -307,6 +304,16 @@ export class CharactersService {
             throw new ForbiddenException('해당 프리셋에 대한 권한이 없습니다.');
         }
         return preset;
+    }
+
+    // 요청 순서를 지키며 지금 보유 중인 종목만 남긴다
+    private async heldOnly(userId: bigint, ids: number[]) {
+        const stockIds = ids.map((id) => BigInt(id));
+        if (stockIds.length === 0) return stockIds;
+        const held = new Set(
+            await this.charactersRepository.findHeldStockIds(userId, stockIds),
+        );
+        return stockIds.filter((id) => held.has(id));
     }
 
     private async assertHoldsAll(userId: bigint, stockIds: bigint[]) {

@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { api } from '../api/axios';
 import { useNavigate } from 'react-router-dom';
 
-export default function Login(){
+/** redirectTo — 로그인 뒤 갈 주소(기본 홈). 거실 로그인 창은 지금 주소를 넘겨 그 자리로 돌아온다 */
+export default function Login({ redirectTo = '/' }: { redirectTo?: string }){
     const [userId, setUserId] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -18,7 +19,7 @@ export default function Login(){
             localStorage.setItem('token', token);
 
             console.log('로그인 성공!');
-            navigate('/', {replace:true});
+            navigate(redirectTo, {replace:true});
         } catch(e) {
             console.error('로그인 실패: ', e);
             setError('아이디 또는 비밀번호가 올바르지 않습니다.');

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { R } from '../../stockDetail/radius';
 import { C, accentBtn, ghostBtn } from './style';
 
@@ -56,6 +56,31 @@ export function ItemIcon({ icon, size = 26 }: { icon: 'cookie' | 'coffee' | 'flo
   );
 }
 
+/** 한 번 못 불러온 그림 주소 — 다시 그릴 때 또 요청하지 않고 바로 대신 그림으로 */
+const missingPictures = new Set<string>();
+
+/**
+ * 그림 파일(아이템 · 가구) — 파일이 없거나 못 불러오면 fallback(지금까지 쓰던 아이콘)을 그린다.
+ * 끌 수 있는 칸 안에 들어가므로 그림 자체는 끌리지 않게(칸의 끌기 데이터를 가로채지 않게)
+ */
+export function Picture({ src, size, fallback }: { src: string; size: number; fallback: ReactNode }) {
+  const [, setMissing] = useState(false);
+  if (missingPictures.has(src)) return <>{fallback}</>;
+  return (
+    <img
+      src={src}
+      alt=""
+      width={size}
+      height={size}
+      draggable={false}
+      onError={() => {
+        missingPictures.add(src);
+        setMissing(true);
+      }}
+      style={{ objectFit: 'contain', pointerEvents: 'none' }}
+    />
+  );
+}
 
 /** 화면 가운데 모달 — 배경을 누르거나 닫기 버튼으로 닫힌다 (Esc 는 RoomHud 가 받는다). 떠 있는 동안 휠은 방 줌으로 가지 않는다(data-own-wheel) */
 export function Modal({ title, sub, width, onClose, children }: { title: string; sub?: string; width: number; onClose: () => void; children: ReactNode }) {

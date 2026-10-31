@@ -38,13 +38,11 @@ export class EmotionController {
             body?.interaction,
         );
 
+        // { success, data } 포장은 전역 ResponseInterceptor 가 한다 — 여기서 또 감싸면 두 겹이 된다
         return {
-            success: true,
-            data: {
-                stock_code: stockCode,
-                is_holding: result.isHolding,
-                emotions: result.emotions,
-            },
+            stock_code: stockCode,
+            is_holding: result.isHolding,
+            emotions: result.emotions,
         };
     }
 

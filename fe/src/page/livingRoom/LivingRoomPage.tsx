@@ -64,12 +64,13 @@ function stopAnim(r: { current: { raf: number; target: number } | null }) {
  */
 export function LivingRoomPage() {
   const { userId } = useParams();
-  const { search } = useLocation();
+  const { search, key } = useLocation();
   const params = new URLSearchParams(search);
   const use3d = params.get('r') !== '2d';
   const debug = params.get('debug') === 'motion';
-  // 다른 거실로 옮겨 가면 통째로 새로 만든다 — 이전 거실의 런타임·패널 상태를 끌고 가지 않게
-  return <RoomView key={`${userId ?? 'me'}|${use3d}|${debug}`} userId={userId} use3d={use3d} debug={debug} />;
+  // 다른 거실로 옮겨 가면 통째로 새로 만든다 — 이전 거실의 런타임·패널 상태를 끌고 가지 않게.
+  // 같은 주소로 다시 들어와도(로그인 창에서 로그인하면 지금 주소로 돌아온다) 새로 — 비로그인으로 받은 거실을 토큰으로 다시 받는다
+  return <RoomView key={`${userId ?? 'me'}|${use3d}|${debug}|${key}`} userId={userId} use3d={use3d} debug={debug} />;
 }
 
 function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d: boolean; debug: boolean }) {

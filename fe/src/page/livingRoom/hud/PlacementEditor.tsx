@@ -19,7 +19,8 @@ import {
   type PlacementDoc,
 } from './placementDoc';
 import { C, accentBtn, ghostBtn } from './style';
-import { ConfirmDialog, Icon } from './ui';
+import { furnitureImgUrl } from '../catalog';
+import { ConfirmDialog, Icon, Picture } from './ui';
 import { useEscape } from './useEscape';
 import { useHistory } from './useHistory';
 import type { PanControl } from '../layout';
@@ -332,11 +333,18 @@ export function PlacementEditor({
               count={s.quantity}
               gap={4}
               icon={
-                <svg width="30" height="24" viewBox="0 0 30 24" aria-hidden="true">
-                  <polygon points="15,3 27,9 15,15 3,9" fill={d.colors[0]} />
-                  <polygon points="3,9 15,15 15,22 3,16" fill={d.kind === 'rug' ? d.colors[0] : d.colors[1]} />
-                  <polygon points="15,15 27,9 27,16 15,22" fill={d.kind === 'rug' ? d.colors[0] : d.colors[2]} />
-                </svg>
+                // 그림 파일(public/furnitures/{id}.png)이 없으면 색 상자로. id 는 지금 프론트 카탈로그 번호 — 가구 묶음(D1)에서 DB furnitures.id 와 맞춘다
+                <Picture
+                  src={furnitureImgUrl(s.furnitureId)}
+                  size={30}
+                  fallback={
+                    <svg width="30" height="24" viewBox="0 0 30 24" aria-hidden="true">
+                      <polygon points="15,3 27,9 15,15 3,9" fill={d.colors[0]} />
+                      <polygon points="3,9 15,15 15,22 3,16" fill={d.kind === 'rug' ? d.colors[0] : d.colors[1]} />
+                      <polygon points="15,15 27,9 27,16 15,22" fill={d.kind === 'rug' ? d.colors[0] : d.colors[2]} />
+                    </svg>
+                  }
+                />
               }
               draggable={!saving}
               aria-label={`${d.name} ${s.quantity}개`}
