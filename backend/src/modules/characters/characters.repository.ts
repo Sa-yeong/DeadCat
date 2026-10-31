@@ -94,4 +94,88 @@ export class CharactersRepository {
             },
         });
     }
+
+    // 18. 유저의 전체 프리셋 목록 조회
+    async findPresetsByUserId(userId: bigint) {
+        return await this.prisma.character_presets.findMany({
+            where: { user_id: userId },
+            orderBy: { id: 'asc' },
+            include: {
+                preset_items: {
+                    include: {
+                        stocks: {
+                            select: {
+                                id: true,
+                                name: true,
+                                characters: {
+                                    select: {
+                                        img_url: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    // 특정 프리셋 단건 조회 (본인 소유 검증용)
+    async findPresetById(presetId: bigint) {
+        return await this.prisma.character_presets.findUnique({
+            where: { id: presetId },
+        });
+    }
+
+    // 19. 프리셋 생성 (트랜잭션)
+    async createPreset(userId: bigint, presetName: string, stockIds: bigint[]) {
+        return await this.prisma.character_presets.create({
+            data: {
+                user_id: userId,
+                preset_name: presetName,
+                preset_items: {
+                    create: stockIds.map((stockId) => ({
+                        stock_id: stockId,
+                    })),
+                },
+            },
+        });
+    }
+
+    // 20. 프리셋 수정 (기존 항목 삭제 후 재생성 트랜잭션)
+    async updatePreset(
+        presetId: bigint,
+        presetName: string,
+        stockIds: bigint[],
+    ) {
+        return await this.prisma.$transaction(async (tx) => {
+            // 1) 프리셋 이름 수정
+            await tx.character_presets.update({
+                where: { id: presetId },
+                data: { preset_name: presetName },
+            });
+
+            // 2) 기존 연결된 아이템 삭제
+            await tx.character_preset_items.deleteMany({
+                where: { preset_id: presetId },
+            });
+
+            // 3) 새로운 주식 목록 연결
+            if (stockIds.length > 0) {
+                await tx.character_preset_items.createMany({
+                    data: stockIds.map((stockId) => ({
+                        preset_id: presetId,
+                        stock_id: stockId,
+                    })),
+                });
+            }
+        });
+    }
+
+    // 21. 프리셋 삭제
+    async deletePreset(presetId: bigint) {
+        return await this.prisma.character_presets.delete({
+            where: { id: presetId },
+        });
+    }
 }
