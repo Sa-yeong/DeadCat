@@ -12,10 +12,14 @@ import { RoomsService } from './rooms.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; // 실제 가드 경로에 맞게 조정
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
+import { FarewellsService } from './farewells.service';
 
 @Controller('rooms')
 export class RoomsController {
-    constructor(private readonly roomsService: RoomsService) {}
+    constructor(
+        private readonly roomsService: RoomsService,
+        private readonly farewellsService: FarewellsService,
+    ) {}
 
     // 내 거실 — ':targetUserId'보다 먼저 선언해야 'me'가 userId로 잡히지 않는다
     @UseGuards(JwtAuthGuard)
@@ -24,6 +28,15 @@ export class RoomsController {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         const userId = String(req.user.id || req.user.sub);
         return await this.roomsService.getMyRoom(userId);
+    }
+
+    // 이별 흔적 (3-⑦-d)
+    @UseGuards(JwtAuthGuard)
+    @Get('me/farewells')
+    async getMyFarewells(@Request() req: any) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const userId = String(req.user.id || req.user.sub);
+        return await this.farewellsService.getFarewells(userId);
     }
 
     @UseGuards(JwtAuthGuard)

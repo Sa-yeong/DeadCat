@@ -1,7 +1,7 @@
 import { IsNumber, IsNotEmpty } from 'class-validator';
 
-export class UpdateCostumeDto {
+export class UpdateClothesDto {
     @IsNumber()
     @IsNotEmpty()
-    costume_id!: number;
+    clothes_id!: number;
 }

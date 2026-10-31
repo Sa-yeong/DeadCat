@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/providers/database/prisma.service';
+import { ItemGrade } from 'src/common/items/item-grade';
 
 @Injectable()
 export class AttendanceRepository {
@@ -12,11 +13,10 @@ export class AttendanceRepository {
         });
     }
 
-    // 출석 갱신 및 아이템 인벤토리 지급을 하나의 트랜잭션으로 처리
+    // 출석 갱신 및 아이템 인벤토리 지급을 하나의 트랜잭션으로 처리 (reward가 null이면 출석만)
     async processAttendanceAndReward(
         userId: bigint,
-        itemId: bigint,
-        quantity: number,
+        reward: { itemId: bigint; quantity: number } | null,
         newCount: number,
         today: Date,
     ) {
@@ -30,25 +30,35 @@ export class AttendanceRepository {
                 },
             });
 
+            if (!reward) return;
+
             // 2. 인벤토리에 보상 아이템 지급 (없으면 생성, 있으면 수량 증가)
             await tx.inventory.upsert({
                 where: {
-                    user_id_item_id: { user_id: userId, item_id: itemId },
+                    user_id_item_id: {
+                        user_id: userId,
+                        item_id: reward.itemId,
+                    },
                 },
                 update: {
-                    quantity: { increment: quantity },
+                    quantity: { increment: reward.quantity },
                 },
                 create: {
                     user_id: userId,
-                    item_id: itemId,
-                    quantity: quantity,
+                    item_id: reward.itemId,
+                    quantity: reward.quantity,
                 },
             });
         });
     }
 
-    // 랜덤 보상을 위해 존재하는 아이템 하나 가져오기 (임시 로직)
-    async getRandomRewardItem() {
-        return await this.prisma.items.findFirst(); // 실제 서비스에서는 확률형이나 고정 보상 로직 적용
+    // 그 등급(items.level, 대소문자 무시) 아이템 중 하나를 무작위로. 없으면 null
+    async pickItemOfGrade(grade: ItemGrade) {
+        const items = await this.prisma.items.findMany({
+            where: { level: { equals: grade, mode: 'insensitive' } },
+            select: { id: true, name: true },
+        });
+        if (items.length === 0) return null;
+        return items[Math.floor(Math.random() * items.length)];
     }
 }
