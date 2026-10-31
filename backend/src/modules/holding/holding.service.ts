@@ -63,6 +63,7 @@ export class HoldingService {
 
             // 7. DTO 규격에 맞춰 리턴
             return new HoldingItemDto({
+                stock_id: Number(holding.stock_id),
                 stock_code: stockCode,
                 stock_name: holding.stocks?.name ?? '',
                 current_price: String(currentPriceBigInt),

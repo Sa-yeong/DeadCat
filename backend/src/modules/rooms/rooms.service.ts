@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 
 import {
+    MyRoomResponseDto,
+    PlacedFurnitureDto,
     ReactionCountDto,
     RoomStateResponseDto,
 } from './dto/room-response.dto';
@@ -15,6 +17,7 @@ import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
 import { AssetService } from '../asset/asset.service';
 import { PriceService } from 'src/price/price.service';
+import { toAffinityInfo } from 'src/common/affinity/affinity-level';
 
 @Injectable()
 export class RoomsService {
@@ -23,6 +26,149 @@ export class RoomsService {
         private readonly assetService: AssetService,
         private readonly priceService: PriceService,
     ) {}
+
+    // GET /rooms/me — 내 거실 (지시서 3-①)
+    async getMyRoom(userIdStr: string): Promise<MyRoomResponseDto> {
+        const userId = BigInt(userIdStr);
+
+        const owner = await this.prisma.users.findUnique({
+            where: { id: userId },
+            select: { nickname: true, share_option: true },
+        });
+        if (!owner) {
+            throw new NotFoundException('존재하지 않는 사용자입니다.');
+        }
+
+        const placedHoldings = await this.prisma.holdings.findMany({
+            where: { user_id: userId, is_placed: true },
+            include: { stocks: true },
+        });
+        const stockIds = [...new Set(placedHoldings.map((h) => h.stock_id))];
+
+        const affinities = stockIds.length
+            ? await this.prisma.affinity.findMany({
+                  where: { user_id: userId, stock_id: { in: stockIds } },
+              })
+            : [];
+
+        const [roomReactions, reactionsByStock, placedFurnitures] =
+            await Promise.all([
+                this.countRoomReactions(userId),
+                this.countCharacterReactions(userId, stockIds),
+                this.prisma.placed.findMany({
+                    where: { user_id: userId },
+                    include: { furnitures: true },
+                }),
+            ]);
+
+        return {
+            viewer_mode: 'OWNER',
+            share_option: owner.share_option ?? true,
+            owner_info: { nickname: owner.nickname },
+            received_reactions: roomReactions,
+            placed_characters: placedHoldings.map((h) => {
+                const aff = affinities.find((a) => a.stock_id === h.stock_id);
+                return {
+                    stock_id: Number(h.stock_id),
+                    stock_code: h.stocks.code,
+                    stock_name: h.stocks.name,
+                    quantity: h.quantity,
+                    mean_price: Number(h.mean_price_krw),
+                    ...toAffinityInfo(aff?.affinity_score ?? 0),
+                    clothes_id: h.equipped_clothes_id
+                        ? Number(h.equipped_clothes_id)
+                        : null,
+                    received_reactions:
+                        reactionsByStock.get(h.stock_id.toString()) ?? [],
+                };
+            }),
+            placed_furniture: placedFurnitures.map((f) =>
+                this.formatFurniture(f),
+            ),
+        };
+    }
+
+    // 거실이 받은 반응 — 종류별 개수
+    private async countRoomReactions(
+        receiverId: bigint,
+    ): Promise<ReactionCountDto[]> {
+        const grouped = await this.prisma.room_reactions.groupBy({
+            by: ['reaction_id'],
+            where: { receiver_id: receiverId },
+            _count: { _all: true },
+        });
+        const typeMap = await this.reactionTypeMap(
+            grouped.map((r) => r.reaction_id),
+        );
+        return grouped.map((r) => ({
+            reaction_type: typeMap.get(r.reaction_id.toString()) ?? 'UNKNOWN',
+            count: r._count._all,
+        }));
+    }
+
+    // 캐릭터마다 받은 반응 — String(stock_id) → 종류별 개수
+    private async countCharacterReactions(
+        receiverId: bigint,
+        stockIds: bigint[],
+    ): Promise<Map<string, ReactionCountDto[]>> {
+        const byStock = new Map<string, ReactionCountDto[]>();
+        if (!stockIds.length) return byStock;
+
+        const grouped = await this.prisma.char_reactions.groupBy({
+            by: ['stock_id', 'reaction_id'],
+            where: { receiver_id: receiverId, stock_id: { in: stockIds } },
+            _count: { _all: true },
+        });
+        const typeMap = await this.reactionTypeMap(
+            grouped.map((r) => r.reaction_id),
+        );
+        for (const r of grouped) {
+            const key = r.stock_id.toString();
+            const list = byStock.get(key) ?? [];
+            list.push({
+                reaction_type:
+                    typeMap.get(r.reaction_id.toString()) ?? 'UNKNOWN',
+                count: r._count._all,
+            });
+            byStock.set(key, list);
+        }
+        return byStock;
+    }
+
+    private async reactionTypeMap(
+        reactionIds: bigint[],
+    ): Promise<Map<string, string>> {
+        const ids = [...new Set(reactionIds)];
+        if (!ids.length) return new Map();
+        const rows = await this.prisma.reactions.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, type: true },
+        });
+        return new Map(rows.map((r) => [r.id.toString(), r.type]));
+    }
+
+    // 놓인 가구 — 가구 묶음 결정 전까지 기존 응답 모양 그대로
+    private formatFurniture(f: {
+        id: bigint;
+        furniture_id: bigint;
+        position_x: unknown;
+        position_y: unknown;
+        rotation: unknown;
+        furnitures: { name: string };
+    }): PlacedFurnitureDto {
+        return {
+            furniture_id: Number(f.id),
+            // DB에 item_code가 없으므로 임시 코드 생성
+            item_code: `FURNITURE_${f.furniture_id}`,
+            furniture_name: f.furnitures.name,
+            position: {
+                x: Number(f.position_x),
+                y: Number(f.position_y),
+                z: 0,
+            },
+            rotation: { x: 0, y: Number(f.rotation), z: 0 },
+        };
+    }
 
     /* async getRoomState(
         currentUserId: string,

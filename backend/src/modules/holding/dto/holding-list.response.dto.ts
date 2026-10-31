@@ -1,4 +1,5 @@
 export class HoldingItemDto {
+    stock_id: number; // DB 종목 번호(거실 캐릭터 식별 값)
     stock_code: string; // 종목 코드
     stock_name: string; // 종목 이름
     current_price: string; // 현재가
@@ -10,6 +11,7 @@ export class HoldingItemDto {
     market: string; // 국내/해외 구분 (DOMESTIC | FOREIGN)
 
     constructor(partial: {
+        stock_id: number;
         stock_code: string;
         stock_name: string;
         current_price: string;
@@ -20,6 +22,7 @@ export class HoldingItemDto {
         stock_img: string;
         market: string;
     }) {
+        this.stock_id = partial.stock_id;
         this.stock_code = partial.stock_code;
         this.stock_name = partial.stock_name;
         this.current_price = partial.current_price;

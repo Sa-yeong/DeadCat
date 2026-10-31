@@ -17,6 +17,15 @@ import { UpdateRoomLayoutDto } from './dto/update-room.dto';
 export class RoomsController {
     constructor(private readonly roomsService: RoomsService) {}
 
+    // 내 거실 — ':targetUserId'보다 먼저 선언해야 'me'가 userId로 잡히지 않는다
+    @UseGuards(JwtAuthGuard)
+    @Get('me')
+    async getMyRoom(@Request() req: any) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const userId = String(req.user.id || req.user.sub);
+        return await this.roomsService.getMyRoom(userId);
+    }
+
     @UseGuards(JwtAuthGuard)
     @Get(':targetUserId')
     async getRoomState(

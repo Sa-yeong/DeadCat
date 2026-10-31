@@ -12,7 +12,7 @@ export type MotionName =
   | 'walk' | 'run' | 'stoprun';
 
 export type EmotionName =
-  | 'happy' | 'sad' | 'tired' | 'depression' | 'euphoria' | 'panic' | 'anxious' | 'sleepy';
+  | 'happy' | 'sad' | 'tired' | 'depress' | 'euphoria' | 'panic' | 'anxious' | 'sleepy';
 
 /** 엔진이 내보내는 감정 한 줄 — 백엔드 EmotionOutput 과 같은 모양 */
 export interface Emotion {

@@ -12,6 +12,7 @@ export class HoldingRepository {
                 user_id: BigInt(userId),
             },
             select: {
+                stock_id: true,
                 quantity: true,
                 mean_price_krw: true,
                 created_at: true,

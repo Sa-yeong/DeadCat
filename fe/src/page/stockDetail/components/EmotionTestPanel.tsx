@@ -49,7 +49,7 @@ const SLIDERS: { key: keyof Input; label: string; min: number; max: number; step
   { key: 'holdingPeriodDays', label: '보유 기간 일', min: 0, max: 365, step: 1, hint: '90일부터 tired', holding: true },
   { key: 'volatility', label: '변동성', min: 0, max: 1, step: 0.01, hint: '0.7부터 anxious' },
   { key: 'momentum', label: '모멘텀', min: -1, max: 1, step: 0.01, hint: '+0.5 광기 · -0.5 하락' },
-  { key: 'loss', label: '하락 지속', min: 0, max: 1, step: 0.01, hint: '0.5 + 모멘텀 -0.5 → depression' },
+  { key: 'loss', label: '하락 지속', min: 0, max: 1, step: 0.01, hint: '0.5 + 모멘텀 -0.5 → depress' },
 ];
 
 export function EmotionTestPanel({

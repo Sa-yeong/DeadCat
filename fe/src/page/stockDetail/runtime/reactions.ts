@@ -21,7 +21,7 @@ export function clickReaction(current: EmotionName): MotionName | null {
     case 'sleepy':
       return 'surprise';
     default:
-      return null; // panic·euphoria 는 기존 감정 유지, depression 은 모션 미확정으로 보류
+      return null; // panic·euphoria 는 기존 감정 유지, depress 는 모션 미확정으로 보류
   }
 }
 
@@ -33,7 +33,7 @@ export function spamReaction(current: EmotionName): MotionName | null {
   switch (current) {
     case 'panic':
     case 'euphoria':
-    case 'depression':
+    case 'depress':
       return null;
     default:
       return 'annoying';
