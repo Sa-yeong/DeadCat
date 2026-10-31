@@ -451,9 +451,12 @@ model character_presets {
   user_id        BigInt
   preset_name    String                   @db.VarChar(50)
   created_at     DateTime                 @default(now()) @db.Timestamp(6)
-  activated_at   DateTime?                @db.Timestamp(6)
+  is_active      Boolean                  @default(false)
   users          users                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   preset_items   character_preset_items[]
+
+  // DB에만 있는 부분 유일 인덱스 character_presets_one_active: 사용자당 is_active = true 는 하나만.
+  // Prisma는 미리보기 기능(partialIndexes) 없이는 WHERE 인덱스를 적을 수 없어 주석으로 둔다 — db push 금지라 지워지지 않음.
 }
 
 model character_preset_items {
