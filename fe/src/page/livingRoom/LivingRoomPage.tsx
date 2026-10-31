@@ -184,6 +184,11 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
     for (const h of holdings ?? []) out[charIdOf(h)] = { price: h.currentPrice, returnRate: h.returnRate };
     return out;
   }, [holdings]);
+  // 옷 상태(헤진 · 일반 · 좋은)도 같은 수익률로 — 런타임이 10분마다 판정한다(3-⑩)
+  useEffect(() => {
+    if (!rt || !holdings) return;
+    rt.loop.updateReturnRates(Object.fromEntries(holdings.map((h) => [charIdOf(h), h.returnRate])));
+  }, [rt, holdings]);
 
   // 창 크기 · 줌 · 끌기가 바뀌면 보는 자리만 다시 — 글자·패널 크기는 그대로.
   // 그리기 전에 맞춰야 첫 화면이 빈 화면으로 깜빡이지 않고, 스탯 링·배치 도구가 옛 자리에 남지 않는다

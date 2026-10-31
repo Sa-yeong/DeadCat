@@ -3,6 +3,7 @@ import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
 import type { CharacterEngine, Emotion, EngineCommand, EngineFactory } from './CharacterEngine';
 import { createHandle, type ActRun, type CharacterHandle } from './CharacterHandle';
 import { WalkGrid } from './occupancy';
+import { clothesKindOf, OutfitStates, type OutfitState } from './outfitState';
 import { findPath } from './pathfinding';
 import { syncPlacements } from './placementSync';
 import { PressGesture } from './PressGesture';
@@ -81,6 +82,10 @@ export class RoomLoop {
   private readonly gesture: PressGesture;
 
   private readonly handles = new Map<string, CharacterHandle>();
+  /** 옷 상태(수익률로 헤진 · 일반 · 좋은, 3-⑩) — 판정은 outfitState 한 곳, 여기는 캐릭터별로 들고 렌더러에 알린다 */
+  private readonly outfits = new OutfitStates();
+  /** 고른 옷(서버 equipped_clothes_id) — null = 기본 */
+  private readonly clothes = new Map<string, number | null>();
   private placements: PlacementDto[] = [];
   private grid = WalkGrid.empty();
   /** 들고 있는 캐릭터를 지금 놓으면 만나는 상대 — 하이라이트 중 */
@@ -141,7 +146,10 @@ export class RoomLoop {
       this.renderer.spawn(id, def, h.position);
       // 감정을 아직 몰라도 바로 알린다 — 엔진이 감정 대기로 받아 두었다가 감정이 오면 활동시킨다(지시서 1-5 A)
       this.engine.addCharacter(id);
-      if (c.ownedClothesId !== null) this.renderer.setOutfit(id, c.ownedClothesId);
+      this.clothes.set(id, c.ownedClothesId);
+      // 남의 거실은 방문 시점 서버 수익률로 진입 때 한 번. 내 거실은 보유 목록 폴링이 updateReturnRates 로 넣는다
+      if (c.returnRate !== undefined) this.outfits.update(id, c.returnRate);
+      this.applyLook(id);
     }
   }
 
@@ -161,6 +169,8 @@ export class RoomLoop {
       this.engine.deleteCharacter(id);
       this.renderer.despawn(id); // 틀던 엔진 모션도 같이 버린다
       this.handles.delete(id);
+      this.outfits.forget(id); // 다시 세우면 여유 구간 없이 처음부터 판정
+      this.clothes.delete(id);
     }
     this.spawnAll(characters);
   }
@@ -489,9 +499,32 @@ export class RoomLoop {
     if (s) this.events.onPicked(charId, s);
   }
 
-  /** 옷 입히기 창에서 적용했다 — 거실 캐릭터도 갈아입는다 (추가) */
+  /** 옷 입히기 창에서 골랐다(null = 기본, 값 = MAX 옷) — 거실 캐릭터도 갈아입는다. 상태(헤진 · 좋은)는 그대로 */
   setOutfit(charId: string, clothesId: number | null): void {
-    this.renderer.setOutfit(charId, clothesId);
+    if (!this.handles.has(charId)) return;
+    this.clothes.set(charId, clothesId);
+    this.applyLook(charId);
+  }
+
+  /**
+   * 종목 수익률(%)이 왔다 — 내 거실 보유 목록 폴링(GET /holdings, 3-②)마다. 캐릭터 id 별.
+   * 처음 본 캐릭터는 바로, 이후엔 10분마다 옷 상태를 다시 판정하고 바뀌었으면 렌더러에 알린다(3-⑩)
+   */
+  updateReturnRates(rates: Readonly<Record<string, number>>): void {
+    for (const id of this.handles.keys()) {
+      const r = rates[id];
+      if (r !== undefined && this.outfits.update(id, r)) this.applyLook(id);
+    }
+  }
+
+  /** 지금 옷 상태 — 옷 입히기 창의 안내 한 줄. 수익률을 아직 못 받았으면 undefined */
+  outfitStateOf(charId: string): OutfitState | undefined {
+    return this.outfits.stateOf(charId);
+  }
+
+  /** 고른 옷 × 상태를 렌더러에 — 상태를 아직 모르면 일반 */
+  private applyLook(charId: string): void {
+    this.renderer.setOutfit(charId, { clothes: clothesKindOf(this.clothes.get(charId) ?? null), state: this.outfits.stateOf(charId) ?? 'normal' });
   }
 
   /** 스탯 링을 닫았다 — 다시 걷게 한다 (추가) */

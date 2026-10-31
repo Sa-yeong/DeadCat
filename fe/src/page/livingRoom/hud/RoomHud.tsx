@@ -408,6 +408,7 @@ export function RoomHud({
           characters={chars}
           defs={(id) => catalog.def(id)}
           initial={wardrobeFor}
+          stateOf={(id) => loop.outfitStateOf(id)}
           onClose={closePanel}
           onChanged={(id, clothesId) => {
             setChars((list) => list.map((c) => (charIdOf(c) === id ? { ...c, ownedClothesId: clothesId } : c)));

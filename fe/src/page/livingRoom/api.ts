@@ -406,23 +406,19 @@ export function setFollow(ownerId: string, on: boolean): Promise<boolean> {
 
 /* ── Wardrobe API — 옷 입히기 (OWNER, B1) ───────────────────────────── */
 
-/** GET /rooms/me/characters/:stockId/clothes — 그 종목 전용 옷 + 공용 옷, 해금 · 착용 여부와 호감도 */
+/** GET /rooms/me/characters/:stockId/clothes — 고를 수 있는 옷은 기본 · 이 캐릭터의 MAX 옷 둘(3-⑩) */
 export async function getClothes(stockId: number): Promise<CharacterClothes> {
   const r = await getAuthed<{
     equipped_clothes_id: number | null;
-    affinity_level: number;
-    affinity_progress: number | null;
-    clothes: { clothes_id: number; clothes_name: string; is_unlocked: boolean; is_equipped: boolean; unlock_level: number | null }[];
+    max_clothes: { clothes_id: number; clothes_name: string; is_unlocked: boolean } | null;
   }>(`/rooms/me/characters/${stockId}/clothes`);
   return {
     equippedClothesId: r.equipped_clothes_id,
-    affinityLevel: r.affinity_level,
-    affinityProgress: r.affinity_progress,
-    clothes: r.clothes.map((c) => ({ clothesId: c.clothes_id, name: c.clothes_name, unlocked: c.is_unlocked, equipped: c.is_equipped, unlockLevel: c.unlock_level })),
+    maxClothes: r.max_clothes && { clothesId: r.max_clothes.clothes_id, name: r.max_clothes.clothes_name, unlocked: r.max_clothes.is_unlocked },
   };
 }
 
-/** PUT /rooms/me/characters/:stockId/clothes { clothes_id } — null 이면 기본 옷으로(벗기). 해금 안 된 옷은 서버가 거절 */
+/** PUT /rooms/me/characters/:stockId/clothes { clothes_id } — null 이면 기본 옷, 값이면 이 캐릭터의 MAX 옷(해금된 것만 — 서버가 거절) */
 export async function setClothes(stockId: number, clothesId: number | null): Promise<void> {
   await authed('put', `/rooms/me/characters/${stockId}/clothes`, { clothes_id: clothesId });
 }

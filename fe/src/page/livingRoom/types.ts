@@ -49,7 +49,7 @@ export interface RoomCharacterDto {
   affinityScore: number;
   /** 지금 레벨 안에서의 진행률 0~100, MAX 면 null (서버가 계산 — 지시서 3-⑤) */
   affinityProgress: number | null;
-  /** 입은 옷(서버 clothes_id = holdings.equipped_clothes_id). 기본 옷이면 null */
+  /** 고른 옷(서버 clothes_id = holdings.equipped_clothes_id) — null = 기본 옷, 값 = MAX 옷(3-⑩) */
   ownedClothesId: number | null;
   receivedReactionCount: number;
 }
@@ -88,8 +88,6 @@ export interface CharacterDef {
   stockName: string;
   /** 썸네일 (DB characters.img_url — 받은 그대로) */
   imgUrl: string;
-  /** 3D 모델 주소 — 종목 번호로 조립. 파일이 없으면 렌더러가 기본 치비 모델로 대신한다 */
-  modelUrl: string;
   /** 평면 더미에서 쓰는 색. 3D가 붙으면 쓰지 않는다 */
   color: string;
 }
@@ -245,30 +243,15 @@ export interface AttendanceClaim {
   rewardItem: { itemId: number; name: string; quantity: number } | null;
 }
 
-/** 입은 옷 — 착용 옷 번호로 조립한다(3-③ 4, catalog.outfitOf). 기본 옷이면 null */
-export interface Outfit {
-  clothesId: number;
-  /** 옷 모델 자리 — 파일 구조는 모델 만들 때 확정. 3D 는 아직 몸통 색만 바꾼다 */
-  modelUrl: string;
-  /** 평면 더미 · 도형 몸통 색 */
-  color: string;
-}
-
-/** 옷 입히기 창의 한 벌 — GET /rooms/me/characters/:stockId/clothes (그 종목 전용 + 공용) */
-export interface ClothesOption {
-  clothesId: number;
-  name: string;
-  unlocked: boolean;
-  equipped: boolean;
-  /** 해금에 필요한 호감도 레벨 — 호감도로 풀리는 옷이 아니면 null */
-  unlockLevel: number | null;
-}
-
+/**
+ * 옷 입히기 창 — GET /rooms/me/characters/:stockId/clothes (3-⑩).
+ * 고를 수 있는 옷은 기본 · 이 캐릭터의 MAX 보상 옷 둘뿐. 헤진 · 일반 · 좋은 형태는 수익률로 화면이 정한다(runtime/outfitState)
+ */
 export interface CharacterClothes {
+  /** 고른 옷 — null 이면 기본 옷 */
   equippedClothesId: number | null;
-  affinityLevel: number;
-  affinityProgress: number | null;
-  clothes: ClothesOption[];
+  /** 이 캐릭터의 MAX 옷 — DB 에 아직 없으면 null. 선물로 호감도 MAX 에 닿으면 해금(unlocked) */
+  maxClothes: { clothesId: number; name: string; unlocked: boolean } | null;
 }
 
 /**

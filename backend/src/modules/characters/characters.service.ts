@@ -5,13 +5,14 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { CharactersRepository } from './characters.repository';
-import { ClothesResponseDto } from './dto/clothes-response.dto';
+import { MaxClothesDto } from './dto/clothes-response.dto';
 import { UpdateCharacterPlacementDto } from './dto/update-placement.dto';
 import { UpdateClothesDto } from './dto/update-clothes.dto';
 import { CreatePresetDto } from './dto/create-preset.dto';
 import { UpdatePresetDto } from './dto/update-preset.dto';
 import { GiftItemDto } from './dto/gift-item.dto';
 import {
+    AFFINITY_MAX_LEVEL,
     AFFINITY_MAX_SCORE,
     toAffinityInfo,
 } from 'src/common/affinity/affinity-level';
@@ -21,7 +22,8 @@ import { giftAffinityPoints } from 'src/common/items/item-grade';
 export class CharactersService {
     constructor(private readonly charactersRepository: CharactersRepository) {}
 
-    // 캐릭터의 옷 목록 (그 종목 전용 + 공용, 해금 · 착용 여부) + 호감도 (3-⑤)
+    // 캐릭터의 고를 수 있는 옷 (3-⑩: 기본 · MAX 보상 옷 둘, 해금 · 착용 여부) + 호감도 (3-⑤).
+    // 헤진 · 일반 · 좋은 상태는 수익률로 프론트가 정한다 — 서버는 고른 옷만 저장
     async getCharacterClothes(userIdStr: string, stockIdStr: string) {
         const userId = BigInt(userIdStr);
         const stockId = BigInt(stockIdStr);
@@ -34,20 +36,23 @@ export class CharactersService {
             throw new NotFoundException('보유 중인 캐릭터(주식)가 아닙니다.');
         }
 
-        const [clothesList, score] = await Promise.all([
-            this.charactersRepository.findCharacterClothes(stockId, userId),
+        const [max, score] = await Promise.all([
+            this.charactersRepository.findMaxClothes(
+                stockId,
+                userId,
+                AFFINITY_MAX_LEVEL,
+            ),
             this.charactersRepository.findAffinityScore(userId, stockId),
         ]);
 
-        const clothes: ClothesResponseDto[] = clothesList.map((c) => ({
-            clothes_id: Number(c.id),
-            clothes_name: c.name,
+        // 그 종목의 MAX 옷이 DB 에 아직 없으면 null — 고를 수 있는 건 기본 옷뿐
+        const maxClothes: MaxClothesDto | null = max && {
+            clothes_id: Number(max.id),
+            clothes_name: max.name,
             // 옷장(wardrobe) 배열에 데이터가 있으면 획득(해금)한 상태
-            is_unlocked: c.wardrobe.length > 0,
-            is_equipped: holding.equipped_clothes_id === c.id,
-            unlock_level: c.unlock_affinity ?? null,
-            clothes_img_url: `https://assets.deadcat.com/clothes/${c.id}.png`,
-        }));
+            is_unlocked: max.wardrobe.length > 0,
+            is_equipped: holding.equipped_clothes_id === max.id,
+        };
 
         return {
             stock_id: Number(stockId),
@@ -56,7 +61,7 @@ export class CharactersService {
                     ? null
                     : Number(holding.equipped_clothes_id),
             ...toAffinityInfo(score),
-            clothes,
+            max_clothes: maxClothes,
         };
     }
 
@@ -81,8 +86,18 @@ export class CharactersService {
             throw new NotFoundException('보유 중인 캐릭터(주식)가 아닙니다.');
         }
 
-        // 2. 유저가 변경하려는 옷을 보유 중인지 검증
+        // 2. 고를 수 있는 건 기본(null) · 이 캐릭터의 MAX 옷뿐(3-⑩) — 다른 종목 옷 · 공용 옷은 거절. 그다음 해금(옷장) 여부
         if (clothesId !== null) {
+            const max = await this.charactersRepository.findMaxClothes(
+                stockId,
+                userId,
+                AFFINITY_MAX_LEVEL,
+            );
+            if (!max || max.id !== clothesId) {
+                throw new BadRequestException(
+                    '이 캐릭터가 입을 수 있는 옷이 아닙니다.',
+                );
+            }
             const hasClothes = await this.charactersRepository.findWardrobe(
                 userId,
                 clothesId,

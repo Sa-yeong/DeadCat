@@ -115,6 +115,7 @@ function fakeRenderer() {
     cancel: (id) => calls.push(`cancel ${id}`),
     setBasePose: (id, p) => calls.push(`pose ${id} ${p.idle}/${p.walk}`),
     setExpression: (id, e) => calls.push(`face ${id} ${e}`),
+    setOutfit: (id, l) => calls.push(`look ${id} ${l.clothes}_${l.state}`),
     screenOf: () => ({ x: 0, y: 0 }),
     pick: () => null,
   };
@@ -213,5 +214,37 @@ describe('엔진 명령 처리 (RoomLoop.onCommand)', () => {
     for (let i = 0; i < 100 && t.finished.length === 0; i++) t.loop.tick(0.1);
     await flush();
     expect(t.finished).toEqual(['1:avoid']);
+  });
+});
+
+describe('옷 모습 — 고른 옷 × 수익률 상태 (3-⑩)', () => {
+  const looks = (calls: string[]) => calls.filter((c) => c.startsWith('look '));
+
+  it('세울 때는 기본 옷 · 일반, 수익률이 처음 오면 바로 판정해 알린다', () => {
+    const t = setup();
+    expect(looks(t.calls)).toEqual(['look 1 base_normal', 'look 2 base_normal']);
+    t.loop.updateReturnRates({ '1': 25, '2': -30, '99': 50 }); // 거실에 없는 종목은 무시
+    expect(looks(t.calls).slice(2)).toEqual(['look 1 base_fancy', 'look 2 base_ragged']);
+    expect(t.loop.outfitStateOf('1')).toBe('fancy');
+  });
+
+  it('옷을 고르면 상태는 그대로 옷만 바뀐다 · 10분 전엔 수익률이 바뀌어도 그대로', () => {
+    const t = setup();
+    t.loop.updateReturnRates({ '1': 25 });
+    t.loop.setOutfit('1', 7);
+    expect(looks(t.calls).at(-1)).toBe('look 1 max_fancy');
+    const n = looks(t.calls).length;
+    t.loop.updateReturnRates({ '1': 0 });
+    expect(looks(t.calls)).toHaveLength(n);
+  });
+
+  it('거실에서 빠졌다 다시 서면 처음부터 판정', () => {
+    const t = setup();
+    t.loop.updateReturnRates({ '2': -30 });
+    t.loop.setRoster([ch(1)]);
+    expect(t.loop.outfitStateOf('2')).toBeUndefined();
+    t.loop.setRoster([ch(1), ch(2)]);
+    t.loop.updateReturnRates({ '2': -19 }); // 여유 구간 없이 — 일반
+    expect(t.loop.outfitStateOf('2')).toBe('normal');
   });
 });

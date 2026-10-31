@@ -1,5 +1,6 @@
 import type { CharacterDef } from '../types';
 import type { Pt } from './projection';
+import type { Look } from './outfitState';
 
 /**
  * 거실을 **어떻게 그릴지**만 아는 쪽. 무엇을 할지는 RoomLoop 이 정한다.
@@ -76,10 +77,10 @@ export interface RoomRenderer {
   /** 선택 표시 · 들림 · 숨김(배치 모드 — 그림자까지, 클릭도 안 됨) */
   setCharacterState(charId: string, s: { selected?: boolean; lifted?: boolean; hidden?: boolean }): void;
   /**
-   * 옷을 입힌다(clothesId) / 기본 옷으로 돌린다(null). 모양은 옷 번호로 정한다(catalog.outfitOf).
-   * 평면 더미는 몸통 색만 바꾸고, 3D 는 옷 모델을 바꿔 끼운다 (추가, 제안)
+   * 지금 모습 — 고른 옷(기본 · MAX) × 수익률 상태(헤진 · 일반 · 좋은), 지시서 3-⑩. 판정은 RoomLoop(outfitState)가 한다.
+   * 평면 더미는 몸통 색만 바꾸고, 3D 는 그 모습의 모델 파일(catalog.modelUrlsOf)로 통째로 갈아 끼운다 — 찾은 파일이 지금과 같으면 그대로
    */
-  setOutfit(charId: string, clothesId: number | null): void;
+  setOutfit(charId: string, look: Look): void;
   /**
    * 들고 있는 캐릭터를 놓으면 상호작용이 있는 상대 — 테두리를 빛낸다(null 이면 끈다). 하나만 켠다.
    * 평면 더미는 SVG 외곽선, 3D 는 부풀린 뒷면으로 그린 실루엣 (추가, 제안)

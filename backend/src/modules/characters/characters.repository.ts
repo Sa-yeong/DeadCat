@@ -7,11 +7,10 @@ export class CharactersRepository {
     constructor(private readonly prisma: PrismaService) {}
 
     // 캐릭터(stock_id)가 입을 수 있는 옷(그 종목 전용 + 공용)과 유저의 해금(wardrobe) 여부 동시 조회
-    async findCharacterClothes(stockId: bigint, userId: bigint) {
-        return await this.prisma.clothes.findMany({
-            where: {
-                OR: [{ stock_id: stockId }, { stock_id: null }],
-            },
+    // 그 캐릭터의 MAX 보상 옷(3-⑩) — 그 종목 옷 중 호감도 MAX 레벨에서 풀리는 것. 여러 벌이면 번호가 가장 작은 것
+    async findMaxClothes(stockId: bigint, userId: bigint, maxLevel: number) {
+        return await this.prisma.clothes.findFirst({
+            where: { stock_id: stockId, unlock_affinity: maxLevel },
             orderBy: { id: 'asc' },
             include: {
                 // 현재 유저가 해당 옷을 옷장(wardrobe)에 가지고 있는지 체크

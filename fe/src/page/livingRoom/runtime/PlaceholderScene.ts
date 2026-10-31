@@ -1,5 +1,6 @@
 import type { CharacterDef } from '../types';
-import { outfitOf } from '../catalog';
+import { lookColor } from '../catalog';
+import type { Look } from './outfitState';
 import type { FurnitureCatalog } from './catalogs';
 import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
 import { CHAR } from './characterSize';
@@ -380,11 +381,11 @@ export class PlaceholderScene implements RoomRenderer {
     c.title.textContent = clip ? `${c.def.stockName} · ${clip}` : c.def.stockName;
   }
 
-  setOutfit(charId: string, clothesId: number | null): void {
+  setOutfit(charId: string, look: Look): void {
     const c = this.chars.get(charId);
     if (!c) return;
-    // 옷 입히기 창의 미리보기와 같은 규칙(outfitOf) — 몸통만 옷 색, 머리는 캐릭터 색
-    c.body.setAttribute('fill', outfitOf(clothesId)?.color ?? c.def.color);
+    // 옷 입히기 창의 미리보기와 같은 규칙(lookColor) — 몸통만 옷 색(고른 옷 × 상태), 머리는 캐릭터 색
+    c.body.setAttribute('fill', lookColor(c.def.stockId, look));
   }
 
   setDropTarget(target: DropTarget | null): void {

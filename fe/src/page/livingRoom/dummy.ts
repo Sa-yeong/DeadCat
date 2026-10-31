@@ -13,7 +13,6 @@ import type {
   RoomCharacterDto,
   StorageItem,
 } from './types';
-import { modelUrlOf } from './catalog';
 import { FURNITURE_MODELS } from './runtime/furnitureAssets';
 
 /** 슬롯머신 단계 — 1 낡은 것 · 2 수리한 것 · 3 제일 좋은 것. {잠정 — 단계를 저장할 곳이 서버에 없어 고정값} */
@@ -22,7 +21,7 @@ const SLOT_TIER: 1 | 2 | 3 = 2;
 /* ── 종목 고정값 (Catalog API) ─────────────────────────────────────── */
 
 /** 남의 거실(더미, S8 까지) 캐릭터 — 종목 번호는 9001~ 로 실제 DB 번호(1, 2 …)와 겹치지 않게 */
-export const CHARACTER_DEFS: CharacterDef[] = ([
+export const CHARACTER_DEFS: CharacterDef[] = [
   { stockId: 9001, stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7' },
   { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF' },
   { stockId: 9003, stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B' },
@@ -30,7 +29,7 @@ export const CHARACTER_DEFS: CharacterDef[] = ([
   { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3' },
   { stockId: 9006, stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9' },
   { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0' },
-] satisfies Omit<CharacterDef, 'modelUrl'>[]).map((d) => ({ ...d, modelUrl: modelUrlOf(d.stockId) }));
+];
 
 /* ── 가구 고정값 (Catalog API) ─────────────────────────────────────── */
 

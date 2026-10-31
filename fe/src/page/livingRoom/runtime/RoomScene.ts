@@ -4,7 +4,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionProxy, type VRMAnimation } from '@pixiv/three-vrm-animation';
 import type { CharacterDef } from '../types';
-import { outfitOf } from '../catalog';
+import { lookColor, modelUrlsOf } from '../catalog';
+import { DEFAULT_LOOK, type Look } from './outfitState';
 import type { FurnitureCatalog } from './catalogs';
 import { shapeOf, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
@@ -180,7 +181,15 @@ interface CharNode {
   id: string;
   def: CharacterDef;
   pos: Pt;
-  clothesId: number | null;
+  /** 지금 모습(고른 옷 × 수익률 상태, 3-⑩) — 모델 파일을 고르는 기준 */
+  look: Look;
+  /** 지금 올라가 있는 모델 파일 주소 — 모습이 바뀌어도 찾은 파일이 같으면 갈아 끼우지 않는다 */
+  modelUrl: string | null;
+  /** 모습이 바뀌어 모델을 다시 찾아야 한다 — 엔진 모션 · 들림이 끝난 뒤 프레임에서 처리(swapModel) */
+  swapNeeded: boolean;
+  swapping: boolean;
+  /** 엔진이 마지막으로 준 평소 자세 — 모델을 갈아 끼우면 새 모델에 다시 건다 */
+  basePose: { idle: string | null; walk: string | null } | null;
   group: THREE.Group;
   figure: THREE.Group;
   body: THREE.Mesh;
@@ -857,7 +866,7 @@ export class RoomScene implements RoomRenderer {
     let setReady: (ok: boolean) => void = () => {};
     const whenReady = new Promise<boolean>((ok) => (setReady = ok));
     const c: CharNode = {
-      id: charId, whenReady, setReady, def, pos, clothesId: null, group, figure, body, head, shadow, ring, hull, materials: mats,
+      id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false,
     };
@@ -906,22 +915,93 @@ export class RoomScene implements RoomRenderer {
   }
 
   /**
-   * VRM 을 풀어 도형 자리에 세운다 — 종목별 모델(def.modelUrl, 지시서 3-③)이 없으면 기본 치비 모델.
-   * 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버린다
+   * 이 모습의 모델 파일 — 캐릭터 전용 → 공통 → 기본 치비 순으로 있는 것(catalog.modelUrlsOf, 3-⑩). 기본 치비도 없으면 null
    */
-  private async attachModel(charId: string, c: CharNode): Promise<void> {
-    const buf = (c.def.modelUrl && (await this.modelBytes(c.def.modelUrl))) || (await this.modelBytes(ROOM_ASSETS.chibi));
-    if (!buf) throw new Error(`모델 파일 없음 ${ROOM_ASSETS.chibi}`);
-    if (this.disposed || this.chars.get(charId) !== c) return;
+  private async findModel(c: CharNode, look: Look): Promise<{ url: string; buf: ArrayBuffer } | null> {
+    for (const url of [...modelUrlsOf(c.def.stockId, look), ROOM_ASSETS.chibi]) {
+      const buf = await this.modelBytes(url);
+      if (buf) return { url, buf };
+    }
+    return null;
+  }
+
+  /** 모델 파일을 VRM 으로 푼다 — 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버리고 null */
+  private async parseVrm(c: CharNode, buf: ArrayBuffer): Promise<VRM | null> {
     const gltf = await this.loader.parseAsync(buf, '');
     const vrm = gltf.userData.vrm as VRM | undefined;
     if (!vrm) throw new Error('VRM 확장이 없는 파일');
-    if (this.disposed || this.chars.get(charId) !== c) {
+    if (this.disposed || this.chars.get(c.id) !== c) {
       VRMUtils.deepDispose(gltf.scene);
-      return;
+      return null;
     }
-    VRMUtils.removeUnnecessaryVertices(gltf.scene);
-    VRMUtils.combineSkeletons(gltf.scene);
+    return vrm;
+  }
+
+  /**
+   * VRM 을 풀어 도형 자리에 세운다 — 지금 모습의 모델(findModel)이 없으면 기본 치비 모델.
+   * 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버린다. 받는 사이 모습이 바뀌었으면 다음 프레임에 다시 찾는다
+   */
+  private async attachModel(charId: string, c: CharNode): Promise<void> {
+    const look = c.look;
+    const found = await this.findModel(c, look);
+    if (!found) throw new Error(`모델 파일 없음 ${ROOM_ASSETS.chibi}`);
+    if (this.disposed || this.chars.get(charId) !== c) return;
+    const vrm = await this.parseVrm(c, found.buf);
+    if (!vrm) return;
+    this.mountVrm(c, vrm);
+    c.modelUrl = found.url;
+    if (c.look !== look) c.swapNeeded = true;
+    // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다
+    this.attachMotions(c, vrm).catch((e: unknown) => {
+      console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e);
+      c.setReady(false);
+    });
+  }
+
+  /**
+   * 모습이 바뀌었다 — 그 모습의 모델 파일이 지금 것과 다르면 통째로 갈아 끼운다(3-⑩ ①, S6+ 도휘 결정).
+   * 엔진 모션 · 들림 중엔 부르지 않는다(프레임이 끝난 뒤로 미룸) — 중간에 끊으면 엔진이 끝 신호를 못 받는다.
+   * 갈아 끼우는 동안 온 엔진 요청은 새 모델 준비(whenReady)를 기다린다. 평소 자세는 새 모델에 다시 건다
+   */
+  private async swapModel(c: CharNode): Promise<void> {
+    c.swapNeeded = false;
+    c.swapping = true;
+    try {
+      const look = c.look;
+      const found = await this.findModel(c, look);
+      if (!found || found.url === c.modelUrl || this.disposed || this.chars.get(c.id) !== c) return;
+      const next = await this.parseVrm(c, found.buf);
+      if (!next) return;
+      // 옛 모델 내리기 — 동작은 뼈에 묶여 있어 새로 만든다
+      let setReady: (ok: boolean) => void = () => {};
+      c.whenReady = new Promise<boolean>((ok) => (setReady = ok));
+      c.setReady = setReady;
+      c.mixer?.stopAllAction();
+      for (const r of c.rims) r.removeFromParent();
+      if (c.vrm) {
+        c.vrm.scene.removeFromParent();
+        VRMUtils.deepDispose(c.vrm.scene);
+      }
+      Object.assign(c, { vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), engineActions: new Map(), rims: [], pose: 'rest' });
+      this.mountVrm(c, next);
+      c.modelUrl = found.url;
+      if (c.look !== look) c.swapNeeded = true;
+      await this.attachMotions(c, next).catch((e: unknown) => {
+        console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e);
+        c.setReady(false);
+      });
+      if (c.basePose) this.setBasePose(c.id, c.basePose);
+    } catch (e) {
+      console.warn('[RoomScene] 옷 모델을 못 바꿔 지금 모델로 둡니다', e);
+    } finally {
+      c.swapping = false;
+    }
+  }
+
+  /** 푼 VRM 을 도형 자리에 올린다 — 크기 · 발 높이 · 테두리. 첫 모델로 축척을 정하고 다음 모델도 같은 축척 */
+  private mountVrm(c: CharNode, vrm: VRM): void {
+    VRMUtils.removeUnnecessaryVertices(vrm.scene);
+    VRMUtils.combineSkeletons(vrm.scene);
     if (vrm.meta?.metaVersion === '0') VRMUtils.rotateVRM0(vrm);
     for (const [bone, z] of REST_POSE) {
       const n = vrm.humanoid.getNormalizedBoneNode(bone);
@@ -956,11 +1036,6 @@ export class RoomScene implements RoomRenderer {
     c.head.visible = false;
     this.drawChar(c);
     this.invalidate();
-    // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다
-    this.attachMotions(c, vrm).catch((e: unknown) => {
-      console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e);
-      c.setReady(false);
-    });
   }
 
   /** 몸 동작 파일을 받아(처음 한 번) 이 캐릭터의 뼈에 맞춘 클립을 만든다. 기본 자세를 잡은 뒤라 동작이 빠지면 그 자세로 돌아온다 */
@@ -1124,6 +1199,7 @@ export class RoomScene implements RoomRenderer {
   setBasePose(charId: string, pose: { idle: string | null; walk: string | null }): void {
     const c = this.chars.get(charId);
     if (!c) return;
+    c.basePose = pose;
     const token = ++c.poseToken;
     void this.applyBasePose(c, pose, token);
   }
@@ -1261,6 +1337,8 @@ export class RoomScene implements RoomRenderer {
    * 들려 있을 땐 집힌 순간 보던 쪽 그대로 — 카메라 쪽으로 돌려 세우지 않는다(2026-10-12 도휘). 대롱대롱은 화면 축 기준이라 방향과 무관
    */
   private animate(c: CharNode, dt: number): void {
+    // 모습이 바뀌었으면 모델을 다시 찾는다 — 엔진 모션 · 들림이 끝난 뒤에(swapModel)
+    if (c.swapNeeded && !c.swapping && !c.engine && !c.lifted) void this.swapModel(c);
     const target = c.lifted ? c.yaw : c.heading; // 들려 있으면 돌던 중이어도 그 자리에서 멈춘다
     const d = Math.atan2(Math.sin(target - c.yaw), Math.cos(target - c.yaw));
     c.yaw += d * Math.min(1, dt * TURN_RATE);
@@ -1304,12 +1382,14 @@ export class RoomScene implements RoomRenderer {
     this.invalidate();
   }
 
-  setOutfit(charId: string, clothesId: number | null): void {
+  setOutfit(charId: string, look: Look): void {
     const c = this.chars.get(charId);
-    if (!c) return;
-    c.clothesId = clothesId;
-    // 옷 입히기 창의 미리보기와 같은 규칙(outfitOf) — 도형은 몸통만 옷 색. VRM 은 옷 모델이 생기면 여기서 갈아 끼운다
-    c.materials.body.color.set(outfitOf(clothesId)?.color ?? c.def.color);
+    if (!c || (c.look.clothes === look.clothes && c.look.state === look.state)) return;
+    c.look = look;
+    // 옷 입히기 창의 미리보기와 같은 규칙(lookColor) — 도형(모델 받기 전 · 못 받음)은 몸통만 옷 색
+    c.materials.body.color.set(lookColor(c.def.stockId, look));
+    // VRM 은 그 모습의 모델 파일로 갈아 끼운다 — 모델을 아직 받는 중이면 받은 뒤 attachModel 이 모습을 다시 본다
+    if (c.vrm) c.swapNeeded = true;
     this.invalidate();
   }
 
@@ -1442,7 +1522,7 @@ export class RoomScene implements RoomRenderer {
   }
 
   /** 미리보기·테스트용 — 캐릭터마다 지금 동작·화면 자리·상태 */
-  inspect(): { id: string; clip: string | null; screen: Pt; lifted: boolean; selected: boolean; outlined: boolean; clothesId: number | null; model: boolean }[] {
+  inspect(): { id: string; clip: string | null; screen: Pt; lifted: boolean; selected: boolean; outlined: boolean; look: Look; model: boolean }[] {
     return [...this.chars.entries()].map(([id, c]) => ({
       id,
       clip: c.engine?.action ? c.engine.steps[c.engine.i].clip : null,
@@ -1450,7 +1530,7 @@ export class RoomScene implements RoomRenderer {
       lifted: c.lifted,
       selected: c.selected,
       outlined: c.outlined,
-      clothesId: c.clothesId,
+      look: c.look,
       model: c.vrm !== null,
     }));
   }
