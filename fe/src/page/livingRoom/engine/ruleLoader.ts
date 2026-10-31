@@ -1,4 +1,4 @@
-import type { CharacterRule, FurnitureRule, MotionDef, FurnitureDef, EventDef, MarketEventType, Effect, FurEffect, RawData } from "./type/type"
+import type { CharacterRule, FurnitureRule, MotionDef, FurnitureDef, EventDef, MarketEventType, Effect, FurEffect, RawData, PoseDef } from "./type/type"
 import { EMOTIONS, MARKET_EVENTS, type Emotion } from "./type/type"
 // 인덱스: 함수가 반환하는 하나의 불변 객체
 export type RuleSet = {
@@ -8,6 +8,7 @@ export type RuleSet = {
     motions: Map<string, MotionDef>
     furniture: Map<string, FurnitureDef>
     events: Record<MarketEventType, EventDef>
+    poses: Record<Emotion, PoseDef>
 }
 
 const EMOTION_SET: ReadonlySet<string> = new Set(EMOTIONS)
@@ -135,6 +136,26 @@ export function loadRules(raw: RawData): RuleSet {
         if (!(MARKET_EVENTS as readonly string[]).includes(key)) error.push(`[event:${key}] 알 수 없는 이벤트 이름`)
     }
 
+    // 기본 자세 검증: 모든 감정이 묶음을 갖고, 묶음의 자세는 clip 모션이어야 함
+    const poses = {} as Record<Emotion, PoseDef>
+    for(const emotion of EMOTIONS){
+        const groupName = raw.poses.emotions[emotion]
+        const group = groupName === undefined ? undefined : raw.poses.groups[groupName]
+
+        if(!group){
+            error.push(`[pose: ${emotion}] 묶음이 없음 "${groupName}"`);
+            continue;
+        }
+        for(const key of ['idle', 'walk'] as const){
+            if(raw_motions.get(group[key])?.kind !== 'clip') error.push(`[pose: ${groupName}] ${key}: clip 모션이 아님 "${group[key]}"`);
+        }
+        poses[emotion] = group;
+    }
+
+    for (const key of Object.keys(raw.poses.emotions)) {
+        if (!isEmotion(key)) error.push(`[pose] 알 수 없는 감정 "${key}"`)
+    }
+
     // index 생성
     const characterIndex = new Map<string, CharacterRule[]>();
     for(const rule of normalizedCharRules)
@@ -154,7 +175,7 @@ export function loadRules(raw: RawData): RuleSet {
     if(error.length !== 0) throw new Error('규칙 데이터 오류: \n' + error.join('\n'));
     else {
         // output 만들기
-        return{characterIndex, furnitureIndex, rulesById, motions: raw_motions, furniture: raw_furniture, events};
+        return{characterIndex, furnitureIndex, rulesById, motions: raw_motions, furniture: raw_furniture, events, poses};
     }
 }
 

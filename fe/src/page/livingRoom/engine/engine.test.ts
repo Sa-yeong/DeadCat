@@ -5,6 +5,7 @@ import type { RawData, Emotion } from './type/type'
 import motions from './data/motions.json'
 import furniture from './data/furniture.json'
 import events from './data/events.json'
+import poses from './data/poses.json'
 
 // ---------- 테스트용 규칙 ----------
 const CHAR_RULES = [
@@ -47,7 +48,7 @@ const FURNITURE_RULES = [
 ]
 
 const rules: RuleSet = loadRules(
-    structuredClone({ characterRules: CHAR_RULES, furnitureRules: FURNITURE_RULES, motions, furniture, events }) as unknown as RawData,
+    structuredClone({ characterRules: CHAR_RULES, furnitureRules: FURNITURE_RULES, motions, furniture, events, poses }) as unknown as RawData,
 )
 
 // ---------- 공통 준비 ----------

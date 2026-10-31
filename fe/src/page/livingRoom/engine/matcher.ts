@@ -32,9 +32,8 @@ type Candidate <R extends {id: string; priority: number}> = {
     other: string;
 }
 
+// 로그는 남기지 않는다 — 고르지 못한 이유는 컨트롤러가 사건마다 한 줄로 남김 (ControllerOptions.log)
 export function matchCharacter(a: CharView, b: CharView, ctx: MatchContext): Decision_C | null{
-    console.log(`[Matcher] 캐릭터 매칭 시도: ${a.id}(${a.emotion}) ↔ ${b.id}(${b.emotion})`);
-
     const forward = firstAvailable(ctx.rules.characterIndex.get(`${a.emotion}|${b.emotion}`), a.id, b.id, ctx);
     const backward = firstAvailable(ctx.rules.characterIndex.get(`${b.emotion}|${a.emotion}`), b.id, a.id, ctx);
 
@@ -43,8 +42,6 @@ export function matchCharacter(a: CharView, b: CharView, ctx: MatchContext): Dec
 
     const effect = weightedPick(picked.rule.effect, ctx.random);
     const to = effect.otherEmotionTo
-
-    console.log(`[Matcher] ✅ 규칙 찾음! Rule ID: ${picked.rule.id}`);
 
     return{
         rule: picked.rule,

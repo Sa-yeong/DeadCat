@@ -7,9 +7,10 @@ import furnitureRules from './data/furnitureRules.json'
 import motions from './data/motions.json'
 import furniture from './data/furniture.json'
 import events from './data/events.json'
+import poses from './data/poses.json'
 
 const realData = () =>
-  structuredClone({ characterRules, furnitureRules, motions, furniture, events }) as unknown as RawData
+  structuredClone({ characterRules, furnitureRules, motions, furniture, events, poses }) as unknown as RawData
 
 const ruleSet: RuleSet = loadRules(realData())
 

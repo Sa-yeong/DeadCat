@@ -23,6 +23,7 @@
   "console_together":     { "kind": "clip", "clip": null},
   "trembling":            { "kind": "clip", "clip": null},
   "idle":                 { "kind": "clip", "clip": null },
+  "walk":                 { "kind": "clip", "clip": null, "loop": true },
 
   "avoid":                { "kind": "behavior", "behavior": "move_away" },
   "pass_by":              { "kind": "behavior", "behavior": "keep_walking" },

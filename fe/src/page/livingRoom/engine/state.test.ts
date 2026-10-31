@@ -8,6 +8,7 @@ import furnitureRules from './data/furnitureRules.json'
 import motions from './data/motions.json'
 import furniture from './data/furniture.json'
 import events from './data/events.json'
+import poses from './data/poses.json'
 
 let t = 0
 let state: InteractionState
@@ -98,7 +99,7 @@ describe('캐릭터 상태', () => {
 
 describe('매처 연결', () => {
     const rules = loadRules(
-        structuredClone({ characterRules, furnitureRules, motions, furniture, events }) as unknown as RawData,
+        structuredClone({ characterRules, furnitureRules, motions, furniture, events, poses }) as unknown as RawData,
     )
     const happy = { id: 'c1', emotion: 'happy' as const }
     const depress = { id: 'c2', emotion: 'depress' as const }

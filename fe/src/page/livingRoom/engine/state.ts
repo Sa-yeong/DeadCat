@@ -99,6 +99,12 @@ export class InteractionState {
         return until !== undefined && this.now() < until
     }
 
+    // 쿨다운이 풀리기까지 남은 시간(ms). 쿨다운이 아니면 0 (로그용)
+    cooldownRemaining(ruleId: string, a: string, b: string): number {
+        const until = this.cooldownUntil.get(pairKey(ruleId, a, b))
+        return until === undefined ? 0 : Math.max(0, until - this.now())
+    }
+
     // 모션이 끝난 시점에 디스패처가 호출한다 (매처는 호출하지 않는다)
     startCooldown(ruleId: string, a: string, b: string, cooldownMs: number): void {
         if (cooldownMs <= 0) return

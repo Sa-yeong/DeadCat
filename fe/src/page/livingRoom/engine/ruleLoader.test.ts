@@ -5,9 +5,10 @@ import furnitureRules from './data/furnitureRules.json'
 import motions from './data/motions.json'
 import furniture from './data/furniture.json'
 import events from './data/events.json'
+import poses from './data/poses.json'
 import type { RawData } from './type/type'
 
-const realData = () => structuredClone({characterRules, furnitureRules, motions, furniture, events}) as unknown as RawData
+const realData = () => structuredClone({characterRules, furnitureRules, motions, furniture, events, poses}) as unknown as RawData
 
 describe('실제 데이터', () => {
     it('에러 없이 로드됨', () => {
@@ -53,6 +54,18 @@ describe('잘못된 데이터', () => {
     d.characterRules[1].when = d.characterRules[0].when
     d.characterRules[1].priority = d.characterRules[0].priority
     expect(() => loadRules(d)).toThrow(/priority 동률/)
+  })
+
+  it('기본 자세: 감정에 묶음이 없음', () => {
+    const d = realData()
+    delete (d.poses.emotions as Record<string, string>).panic
+    expect(() => loadRules(d)).toThrow(/\[pose: panic\] 묶음이 없음/)
+  })
+
+  it('기본 자세: clip이 아닌 모션', () => {
+    const d = realData()
+    d.poses.groups.basic.walk = 'avoid'
+    expect(() => loadRules(d)).toThrow(/walk: clip 모션이 아님 "avoid"/)
   })
 
   it('오류가 여러 개여도 한 번에 모아서 보고한다', () => {

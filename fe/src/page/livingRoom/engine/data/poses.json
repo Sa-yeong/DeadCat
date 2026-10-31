@@ -1,0 +1,15 @@
+{
+  "groups": {
+    "basic": { "idle": "idle", "walk": "walk" }
+  },
+  "emotions": {
+    "happy":    "basic",
+    "sad":      "basic",
+    "tired":    "basic",
+    "depress":  "basic",
+    "euphoria": "basic",
+    "panic":    "basic",
+    "anxious":  "basic",
+    "sleepy":   "basic"
+  }
+}

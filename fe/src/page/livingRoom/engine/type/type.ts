@@ -32,6 +32,8 @@ export type MotionDef = { kind: 'clip'; clip: string |  null; loop?: boolean}
     | {kind: 'behavior'; behavior: string}
 export type FurnitureDef = {category: string; interactionRadius: number; anchors: Anchor[]}
 export type EventDef = {reaction: string; emotionTo: Emotion}
+// 감정별 기본 자세 (아무 일 없을 때의 대기·걷기). 값은 motions.json의 모션 이름
+export type PoseDef = {idle: string; walk: string}
 
 export type CharState =
     | {kind: 'wandering'}
@@ -68,10 +70,17 @@ export type rawFurnitureRule = {
     interruptible: boolean
 }
 
+// poses.json: 감정 → 묶음 이름 → 자세
+export type rawPoses = {
+    groups: Record<string, PoseDef>
+    emotions: Record<string, string>
+}
+
 export type RawData = {
     characterRules: rawCharacterRule[]
     furnitureRules: rawFurnitureRule[]
     motions: Record<string, MotionDef>
     furniture: Record<string, FurnitureDef>
     events: Record<string,EventDef>
+    poses: rawPoses
 }

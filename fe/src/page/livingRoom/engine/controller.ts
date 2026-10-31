@@ -11,8 +11,11 @@ export type ControllerOptions = {
     dispatcher: Dispatcher
     now?: Clock
     groupDurationMs?: number
+    furnitureDurationMs?: number // 반복 모션으로 끝나는 가구 상호작용의 시간 제한
     random?: () => number
-    log?: (line: string) => void
+    log?: (line: string) => void // 사건 하나당 결과와 이유 한 줄
+    labelOf?: (characterId: string) => string | undefined // 로그에 곁들일 이름 (예: 종목명)
+    onEmotionChanged?: (characterId: string, emotion: Emotion) => void // 규칙이 감정을 바꿨을 때 (otherEmotionTo)
 }
 
 type Verdict = 
@@ -29,8 +32,8 @@ type Interaction = {
     furnitureId: number | null // 가구 제거 시 가구를 쓰던 상호작용 찾는 용도
     group:{
         focusId: string | null // 중심인 캐릭터가 없는 경우 -> null
-        endAt: number // 지속 시간 만료 시각
     } | null // grouping을 사용하지 않는 경우 -> null
+    endAt: number | null // 시간 제한 만료 시각 (그룹, 반복으로 끝나는 가구). 없으면 모션 끝 알림으로만 끝남
 }
 
 // Perception → 매처 → 상태 → 디스패처를 잇는 흐름. 거실 하나당 하나, 나갈 때 버린다.
@@ -42,7 +45,10 @@ export class LivingRoomController {
     private readonly ctx: MatchContext
     private readonly now: Clock
     private readonly groupDurationMs: number
+    private readonly furnitureDurationMs: number
     private readonly log: (line: string) => void
+    private readonly labelOf: (characterId: string) => string | undefined
+    private readonly onEmotionChanged: (characterId: string, emotion: Emotion) => void
 
     private emotions = new Map<string, Emotion>()
     private models = new Map<number, string>() // db furniture id , json 데이터에 있는 가구 이름
@@ -57,7 +63,21 @@ export class LivingRoomController {
         this.state = new InteractionState(this.now)
         this.ctx = this.state.createMatchContext(opts.rules, opts.random)
         this.groupDurationMs = opts.groupDurationMs ?? 15000
+        this.furnitureDurationMs = opts.furnitureDurationMs ?? 30000
         this.log = opts.log ?? (() => undefined)
+        this.labelOf = opts.labelOf ?? (() => undefined)
+        this.onEmotionChanged = opts.onEmotionChanged ?? (() => undefined)
+    }
+
+    // 로그용 캐릭터 표기: "12(삼성전자)", 이름을 모르면 id만
+    label(id: string): string {
+        const name = this.labelOf(id)
+        return name ? `${id}(${name})` : id
+    }
+
+    private furnitureLabel(placementId: number): string {
+        const model = this.models.get(placementId)
+        return model ? `가구 ${placementId}(${model})` : `가구 ${placementId}`
     }
 
     // ---------- 캐릭터 ----------
@@ -83,7 +103,7 @@ export class LivingRoomController {
         if (prev === emotion) return
         this.interrupt(id) // 그룹 해제 하기
         this.emotions.set(id, emotion)
-        this.log(`${id} 감정 → ${emotion}`)
+        this.log(`${this.label(id)}: 감정 ${prev} → ${emotion}`)
     }
 
     // ---------- 가구 ----------
@@ -105,20 +125,41 @@ export class LivingRoomController {
 
     // ---------- enter 처리 ----------
     encounter(a: string, b: string): void {
+        const pair = `${this.label(a)} × ${this.label(b)}`
         const ea = this.emotions.get(a)
         const eb = this.emotions.get(b)
-        if (ea === undefined || eb === undefined) return
+        if (ea === undefined || eb === undefined) {
+            this.log(`${pair}: 등록되지 않은 캐릭터`)
+            return
+        }
 
         for(const id of [a, b]){
             if(this.state.canInteract(id)) continue
-            if(this.byChar.get(id) === undefined) return;
+            if(this.byChar.get(id) === undefined) {
+                this.log(`${pair}: 한쪽 상호작용 중`)    // 상호작용 기록 없이 바쁨 (드래그 등)
+                return
+            }
         }
 
         if(this.joinGroup(a, b)) return;
 
         const d = matchCharacter({ id: a, emotion: ea }, { id: b, emotion: eb }, this.ctx)
 
-        if (d) { this.startCharChar(d) }
+        if (d) this.startCharChar(d)
+        else this.log(`${pair}: ${this.whyNoMatch([
+            [this.rules.characterIndex.get(`${ea}|${eb}`), a, b],
+            [this.rules.characterIndex.get(`${eb}|${ea}`), b, a],
+        ], `${ea} × ${eb}`)}`)
+    }
+
+    // 매처가 아무것도 고르지 않은 이유: 규칙이 아예 없거나, 있는 규칙이 전부 쿨다운 중
+    private whyNoMatch(candidates: [{ id: string }[] | undefined, string, string][], emotions: string): string {
+        let remaining = Infinity
+        for (const [list, x, y] of candidates) {
+            for (const rule of list ?? []) remaining = Math.min(remaining, this.state.cooldownRemaining(rule.id, x, y))
+        }
+        if (remaining === Infinity) return `규칙 없음(${emotions})`
+        return `쿨다운 중(${Math.ceil(remaining / 1000)}초 남음)`
     }
 
     private joinGroup(a: string, b: string):boolean{
@@ -150,25 +191,39 @@ export class LivingRoomController {
         it.remaining.add(newbee);
         this.byChar.set(newbee, interactionId)
         this.state.setState(newbee, {kind: 'interactingGroup', groupId: interactionId})
+        this.log(`${this.label(newbee)} × ${this.label(target)}: 그룹 합류 → ${it.ruleId} (${motions.join('>')})`)
         this.dispatcher.play({characterId: newbee, motions},
                 () => this.finished(newbee, interactionId))
         return true
     }
 
     visitFurniture(charId: string, furnitureId: number): void {
+        const pair = `${this.label(charId)} × ${this.furnitureLabel(furnitureId)}`
         const emotion = this.emotions.get(charId)
         const model = this.models.get(furnitureId)
-        if (emotion === undefined || model === undefined) return
-        const furniture = this.rules.furniture.get(model)
-        if(!furniture) return
-
-        if (!this.state.canInteract(charId)) return
-        if (!this.state.hasFreeAnchor(furnitureId)) {
-            this.log(`skip ${charId} × ${furnitureId}: 자리가 없음`)    // 가구가 없는 것처럼 취급
+        if (emotion === undefined) {
+            this.log(`${pair}: 등록되지 않은 캐릭터`)
             return
         }
-        const d = matchFurniture({ id: charId, emotion }, model, furniture?.category, this.ctx)
+        const furniture = model === undefined ? undefined : this.rules.furniture.get(model)
+        if (model === undefined || !furniture) {
+            this.log(`${pair}: 모르는 가구`)
+            return
+        }
+
+        if (!this.state.canInteract(charId)) {
+            this.log(`${pair}: 캐릭터가 상호작용 중`)
+            return
+        }
+        if (!this.state.hasFreeAnchor(furnitureId)) {
+            this.log(`${pair}: 자리 없음`)    // 가구가 없는 것처럼 취급
+            return
+        }
+        const d = matchFurniture({ id: charId, emotion }, model, furniture.category, this.ctx)
         if (d) this.startFurniture(d, furnitureId)
+        else this.log(`${pair}: ${this.whyNoMatch([
+            [this.rules.furnitureIndex.get(`${emotion}|${furniture.category}`), charId, model],
+        ], `${emotion} × ${furniture.category}`)}`)
     }
 
     // ---------- 상호작용 시작 ----------
@@ -194,35 +249,44 @@ export class LivingRoomController {
 
     private startCharChar(d: Decision_C): void {
         const { rule, self, other, effect } = d
+        const pair = `${this.label(self)} × ${this.label(other)}`
         const parts: [string, string[]][] = []
         if (effect.self.length > 0) parts.push([self, effect.self])
         if (effect.other.length > 0) parts.push([other, effect.other])
-        if (parts.length === 0) return
+        if (parts.length === 0) {
+            this.log(`${pair}: ${rule.id}에 모션 없음`)
+            return
+        }
 
         const verdict = this.judge(rule, self, other);
 
-        if(verdict.kind === 'ignore') return
+        if(verdict.kind === 'ignore') {
+            this.log(`${pair}: 한쪽 상호작용 중 (${rule.id}로 끼어들 수 없음)`)
+            return
+        }
         if(verdict.kind === 'interrupt'){
             this.interruptWhole(self);
             this.interruptWhole(other);
         }
 
-        // start 로직 구현 && interrupt 로직 동일할거라 예측
-        // console.log(`[${rule.id}] ${self} → ${other}: ${effect.self.join('>')} / ${effect.other.join('>')}${note}`)
+        this.log(`${pair}: ${verdict.kind === 'interrupt' ? '끼어들기' : '시작'} → ${rule.id} (${effect.self.join('>') || '-'} / ${effect.other.join('>') || '-'})`)
 
         // grouping 만들기 && 캐릭터의 state -> InteractGroup으로 하기
         const group = rule.group ? {
             focusId: rule.group.focus === "self" ? self : rule.group.focus === "other" ? other : null,
-            endAt: this.now() + this.groupDurationMs,
         } : null
- 
-        const interactionId = this.begin(rule.id, rule.cooldownMs, self, other, parts.map(p => p[0]), null, group);
+        const endAt = group ? this.now() + this.groupDurationMs : null
+
+        const interactionId = this.begin(rule.id, rule.cooldownMs, self, other, parts.map(p => p[0]), null, group, endAt);
 
         const applyEmotion = () => {
             if (d.otherEmotionTo === null) return
+            const prev = this.emotions.get(other)
+            if (prev === undefined || prev === d.otherEmotionTo) return  // 그사이 제거됐거나 이미 같은 감정
             this.emotions.set(other, d.otherEmotionTo)
-            this.log(`${other} 감정 → ${d.otherEmotionTo}`)
-        }        
+            this.log(`${this.label(other)}: 감정 ${prev} → ${d.otherEmotionTo} (${rule.id})`)
+            this.onEmotionChanged(other, d.otherEmotionTo)
+        }
 
         for (const [charId, motions] of parts) {
             this.state.setState(charId, group 
@@ -239,19 +303,28 @@ export class LivingRoomController {
 
     private startFurniture(d: Decision_F, placementId: number): void {
         const { rule, self: charId, effect } = d
-        if (effect.self.length === 0) return
+        const pair = `${this.label(charId)} × ${this.furnitureLabel(placementId)}`
+        if (effect.self.length === 0) {
+            this.log(`${pair}: ${rule.id}에 모션 없음`)
+            return
+        }
+        const model = this.models.get(placementId);
+        if(!model) return;
 
         if (rule.occupy) {
             if (!this.state.occupy(placementId, charId, rule.id)) return
         }else{
             this.state.setState(charId, {kind: 'reacting', ruleId: rule.id})
         }
-    
-        this.log(`[${rule.id}] ${charId} × ${placementId}: ${effect.self.join(' → ')}${rule.occupy ? ' (점유)' : ''}`)
-        
-        const category = this.models.get(placementId);
-        if(!category) return;
-        const interactionId = this.begin(rule.id, rule.cooldownMs, charId, category, [charId], placementId, null)
+
+        // 반복 모션으로 끝나면 스스로 끝나지 않으므로 시간 제한을 건다 (한 번짜리는 모션 끝 알림으로 끝남)
+        const lastDef = this.rules.motions.get(effect.self[effect.self.length - 1])
+        const endsWithLoop = lastDef?.kind === 'clip' && lastDef.loop === true
+        const endAt = endsWithLoop ? this.now() + this.furnitureDurationMs : null
+
+        this.log(`${pair}: 시작 → ${rule.id} (${effect.self.join('>')})${rule.occupy ? ' 점유' : ''}${endsWithLoop ? ` ${this.furnitureDurationMs / 1000}초 제한` : ''}`)
+
+        const interactionId = this.begin(rule.id, rule.cooldownMs, charId, model, [charId], placementId, null, endAt)
         this.dispatcher.play(
             { characterId: charId, motions: effect.self },
             () => this.finished(charId, interactionId),
@@ -261,10 +334,10 @@ export class LivingRoomController {
     // ---------- 상호작용 생명주기 ----------
     private begin(
         ruleId: string, cooldownMs: number, keyA: string, keyB: string,
-        participants: string[], furnitureId: number | null, group: {focusId: string | null; endAt: number} | null
+        participants: string[], furnitureId: number | null, group: {focusId: string | null} | null, endAt: number | null
     ): number {
         const id = this.nextId++
-        this.interactions.set(id, { ruleId, cooldownMs, pair: [keyA, keyB], remaining: new Set(participants), furnitureId, group })
+        this.interactions.set(id, { ruleId, cooldownMs, pair: [keyA, keyB], remaining: new Set(participants), furnitureId, group, endAt })
         for (const p of participants) this.byChar.set(p, id)
         return id
     }
@@ -320,14 +393,20 @@ export class LivingRoomController {
         for (const c of [...it.remaining]) this.removeMember(c)
     }
 
-    // 근데 이것도 endAt없애면 필요없는거 아닌가?
+    // 시간이 지난 것만으로 끝나야 하는 상호작용(그룹, 반복으로 끝나는 가구)을 끝낸다. 런타임이 매 프레임 호출.
+    // 끝나는 경로는 정상 종료와 같다: 참가자 전원 cancel → 자리 비움 → 마지막 참가자가 빠질 때 쿨다운 시작
     tick(): void {
-    this.state.prune()
-    const t = this.now()
-    for (const it of [...this.interactions.values()]) {
-        if (it.group && t >= it.group.endAt) for (const c of [...it.remaining]) this.removeMember(c)
+        this.state.prune()
+        const t = this.now()
+        for (const it of [...this.interactions.values()]) {
+            if (it.endAt === null || t < it.endAt) continue
+            const who = it.furnitureId !== null
+                ? `${[...it.remaining].map(c => this.label(c)).join(' × ')} × ${this.furnitureLabel(it.furnitureId)}`
+                : [...it.remaining].map(c => this.label(c)).join(' × ')
+            this.log(`${who}: 시간 만료 → ${it.ruleId} 종료`)
+            for (const c of [...it.remaining]) this.removeMember(c)
+        }
     }
-}
 }
 
 // dispatcher 간소화 (test용)
