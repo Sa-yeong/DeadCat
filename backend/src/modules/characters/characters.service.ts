@@ -68,7 +68,9 @@ export class CharactersService {
     ) {
         const userId = BigInt(userIdStr);
         const stockId = BigInt(stockIdStr);
-        const clothesId = BigInt(dto.clothes_id);
+        // null = 기본 옷으로(벗기) — 옷장 검사 없이 착용 칸을 비운다
+        const clothesId =
+            dto.clothes_id === null ? null : BigInt(dto.clothes_id);
 
         // 1. 유저가 해당 캐릭터를 보유 중인지 검증
         const holding = await this.charactersRepository.findHolding(
@@ -80,14 +82,16 @@ export class CharactersService {
         }
 
         // 2. 유저가 변경하려는 옷을 보유 중인지 검증
-        const hasClothes = await this.charactersRepository.findWardrobe(
-            userId,
-            clothesId,
-        );
-        if (!hasClothes) {
-            throw new ForbiddenException(
-                '해당 옷을 보유하고 있지 않아 착용할 수 없습니다.',
+        if (clothesId !== null) {
+            const hasClothes = await this.charactersRepository.findWardrobe(
+                userId,
+                clothesId,
             );
+            if (!hasClothes) {
+                throw new ForbiddenException(
+                    '해당 옷을 보유하고 있지 않아 착용할 수 없습니다.',
+                );
+            }
         }
 
         // 3. 착용 상태 업데이트
@@ -99,7 +103,7 @@ export class CharactersService {
 
         return {
             stock_id: Number(stockId),
-            clothes_id: Number(clothesId),
+            clothes_id: clothesId === null ? null : Number(clothesId),
         };
     }
 

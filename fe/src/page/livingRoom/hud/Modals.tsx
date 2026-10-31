@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
-import { wornOutfit } from '../runtime/catalogs';
-import { charIdOf, type CharacterDef, type RoomCharacterDto } from '../types';
+import { outfitOf } from '../catalog';
+import { charIdOf, type CharacterClothes, type CharacterDef, type RoomCharacterDto } from '../types';
+import { affinityLabel, levelLabel } from './labels';
 import { Icon, Modal } from './ui';
 import { C, solidBtn } from './style';
 
@@ -12,8 +13,8 @@ import { C, solidBtn } from './style';
 
 /**
  * 스탯 링의 옷 배지에서 열린다 — OWNER 전용.
- * 캐릭터당 고유 의상 1벌, 호감도 MAX에서 해금. '기본 옷' 적용이 벗기기.
- * {착용 저장 테이블 미정 — 지금은 ownedClothesId 하나로 보유=착용}
+ * 캐릭터를 넘길 때마다 그 캐릭터의 옷 목록을 받는다(GET /rooms/me/characters/:stockId/clothes — 그 종목 전용 + 공용, 해금 · 착용 여부).
+ * 착용은 holdings.equipped_clothes_id 한 칸. '기본 옷' 적용이 벗기(clothes_id null).
  */
 export function WardrobeGallery({
   characters,
@@ -32,36 +33,59 @@ export function WardrobeGallery({
   const [idx, setIdx] = useState(() => Math.max(0, characters.findIndex((c) => charIdOf(c) === initial)));
   const cur = characters[idx];
   const def = cur ? defs(charIdOf(cur)) : undefined;
-  // 고유 의상은 카탈로그에 실려 있다 — 캐릭터를 넘기면 그 캐릭터의 옷이 바로 보인다(따로 받지 않는다)
-  const outfit = def?.outfit ?? null;
+  /** 지금 캐릭터의 옷 목록 — 받는 중이면 null */
+  const [wardrobe, setWardrobe] = useState<{ stockId: number; data: CharacterClothes } | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const stockId = cur?.stockId;
+  useEffect(() => {
+    if (stockId === undefined) return;
+    let alive = true;
+    api.getClothes(stockId).then(
+      (data) => alive && setWardrobe({ stockId, data }),
+      () => alive && setLoadFailed(true),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [stockId]);
 
   if (!cur || !def) return null;
-  /** 캐릭터를 넘기면 앞 캐릭터의 실패 안내는 지운다 */
+  /** 캐릭터를 넘기면 앞 캐릭터의 안내는 지우고 새로 받는다 */
   const show = (i: number) => {
     setIdx(i);
-    setFailed(false);
+    setFailed(null);
+    setLoadFailed(false);
   };
   const go = (d: number) => show((idx + d + characters.length) % characters.length);
-  const worn = wornOutfit(def, cur.ownedClothesId); // 거실 렌더러와 같은 규칙
-  const unlocked = outfit ? cur.affinityLevel >= outfit.unlockLevel : false;
+  const data = wardrobe?.stockId === cur.stockId ? wardrobe.data : null;
+  const worn = outfitOf(cur.ownedClothesId); // 거실 렌더러와 같은 규칙
   const apply = async (clothesId: number | null) => {
     if (busy) return;
     setBusy(true);
-    const ok = await api.setOutfit(cur.stockCode, clothesId).then(() => true, () => false); // 더미(S6) — 종목 코드로 찾는다
+    const err = await api.setClothes(cur.stockId, clothesId).then(
+      () => null,
+      (e: unknown) => (e instanceof Error && e.message ? e.message : '옷을 바꾸지 못했어요'),
+    );
     setBusy(false);
-    setFailed(!ok);
-    if (ok) onChanged(charIdOf(cur), clothesId);
+    setFailed(err);
+    if (err) return;
+    onChanged(charIdOf(cur), clothesId);
+    setWardrobe((w) => (w && w.stockId === cur.stockId ? { ...w, data: { ...w.data, equippedClothesId: clothesId, clothes: w.data.clothes.map((c) => ({ ...c, equipped: c.clothesId === clothesId })) } } : w));
   };
 
   const navBtn: React.CSSProperties = {
     width: 30, height: 30, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     border: '1px solid rgba(255,255,255,0.16)', borderRadius: R.control, background: 'transparent', color: C.text, cursor: 'pointer',
   };
+  /** 잠긴 옷의 안내 — 호감도로 풀리는 옷이면 필요 레벨, 아니면 얻는 방법 미정 */
+  const lockedSub = (unlockLevel: number | null) =>
+    unlockLevel === null ? '아직 얻지 못한 옷' : `호감도 ${unlockLevel >= 5 ? 'MAX' : `Lv.${unlockLevel}`}에서 해금 · 지금 ${levelLabel(cur.affinityLevel, cur.affinityProgress)}`;
   const options = [
     { id: null as number | null, title: '기본 옷', sub: '처음부터 입고 있던 옷', color: '#55555C', locked: false },
-    ...(outfit ? [{ id: outfit.clothesId as number | null, title: outfit.name, sub: unlocked ? '호감도 MAX 달성으로 해금' : `호감도 MAX(Lv.${outfit.unlockLevel})에서 해금 · 지금 Lv.${cur.affinityLevel}`, color: outfit.color, locked: !unlocked }] : []),
+    ...(data?.clothes ?? []).map((c) => ({ id: c.clothesId as number | null, title: c.name, sub: c.unlocked ? '해금됨' : lockedSub(c.unlockLevel), color: outfitOf(c.clothesId)!.color, locked: !c.unlocked })),
   ];
 
   return (
@@ -92,14 +116,14 @@ export function WardrobeGallery({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, minHeight: 420 }}>
         <div style={{ position: 'relative', borderRadius: R.panel, background: '#1F1F24', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 20 }}>
           <span style={{ position: 'absolute', left: 14, top: 12, fontSize: 13, fontWeight: 700 }}>
-            {def.stockName} <span style={{ color: C.dim, fontWeight: 500 }}>· {cur.affinityLevel >= 5 ? 'Lv.5 MAX' : `Lv.${cur.affinityLevel}`}</span>
+            {def.stockName} <span style={{ color: C.dim, fontWeight: 500 }}>· {affinityLabel(cur.affinityLevel, cur.affinityProgress)}</span>
           </span>
           <div aria-hidden="true" style={{ position: 'relative', width: 170, height: 300 }}>
             <span style={{ position: 'absolute', left: 25, top: 280, width: 120, height: 20, borderRadius: '50%', background: 'rgba(0,0,0,0.5)' }} />
             <span style={{ position: 'absolute', left: 38, top: 150, width: 94, height: 136, borderRadius: '40px 40px 28px 28px', background: worn ? worn.color : def.color }} />
             <span style={{ position: 'absolute', left: 10, top: 0, width: 150, height: 150, borderRadius: '50%', background: def.color }} />
           </div>
-          <span style={{ marginTop: 10, fontSize: 12, color: failed ? C.accent : C.dim }}>{failed ? '옷을 바꾸지 못했어요 — 다시 눌러 주세요' : '적용한 옷은 거실 캐릭터에도 보여요'}</span>
+          <span style={{ marginTop: 10, fontSize: 12, color: failed ? C.accent : C.dim }}>{failed ?? '적용한 옷은 거실 캐릭터에도 보여요'}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {options.map((o) => {
@@ -122,6 +146,8 @@ export function WardrobeGallery({
               </div>
             );
           })}
+          {!data && <span style={{ fontSize: 12, color: loadFailed ? C.accent : C.faint }}>{loadFailed ? '옷 목록을 불러오지 못했어요' : '옷 목록을 불러오는 중…'}</span>}
+          {data && data.clothes.length === 0 && <span style={{ fontSize: 12, color: C.faint }}>아직 이 캐릭터의 옷이 없어요</span>}
         </div>
       </div>
     </Modal>

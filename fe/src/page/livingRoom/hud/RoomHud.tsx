@@ -7,6 +7,7 @@ import type { RoomLoop } from '../runtime/RoomLoop';
 import type { RoomRenderer } from '../runtime/RoomRenderer';
 import {
   charIdOf,
+  type GiftResult,
   type InteractionMode,
   type InventoryItem,
   type OwnedStock,
@@ -23,6 +24,7 @@ import { GuestbookPanel } from './GuestbookPanel';
 import { CharacterPanel } from './CharacterPanel';
 import { AffinityFlash, ItemPanel } from './ItemTray';
 import { WardrobeGallery } from './Modals';
+import { isMaxAffinity } from './labels';
 import { AttendancePanel, FarewellPanel } from './OwnerPanels';
 import { OwnerProfileHud } from './OwnerProfileHud';
 import { PlacementEditor } from './PlacementEditor';
@@ -44,6 +46,8 @@ export interface RoomHudApi {
   onLifted(charId: string): void;
   /** 아이템을 캐릭터에게 끌어다 놓았다 — 놓은 아이템 id 를 그대로 받는다 */
   onItemDrop(charId: string, itemId: number, screen: Pt): void;
+  /** 끌고 있는 아이템 밑의 캐릭터가 바뀌었다(없으면 null) */
+  onItemOver(charId: string | null): void;
 }
 
 /** OWNER 만 여는 것 */
@@ -58,9 +62,10 @@ interface Flash {
   key: number;
   /** 준 순간의 머리 위 자리 — 캐릭터가 걸어가도 따라가지 않는다 */
   at: Pt;
-  delta: number;
-  score: number;
+  text: string;
   level: number;
+  progress: number | null;
+  sub?: string;
 }
 
 /**
@@ -137,7 +142,13 @@ export function RoomHud({
   const [wardrobeFor, setWardrobeFor] = useState<string | null>(null);
   const [inventory, setInventory] = useState<InventoryItem[] | null>(null);
   /** 끌고 있는 아이템 — 트레이에서 그 칸을 표시만 한다 */
-  const [dragging, setDragging] = useState<number | null>(null);
+  const [dragging, setDraggingState] = useState<number | null>(null);
+  /** 끌고 있는 아이템 밑의 캐릭터 — 호감도 MAX 면 머리 위에 「이미 MAX」 */
+  const [itemOver, setItemOver] = useState<string | null>(null);
+  const setDragging = (itemId: number | null) => {
+    setDraggingState(itemId);
+    if (itemId === null) setItemOver(null);
+  };
   const [flash, setFlash] = useState<Flash | null>(null);
   /** 들기 게이지 — 누를 때마다 key 가 바뀌어 처음부터 다시 찬다 */
   const [charge, setCharge] = useState<{ charId: string; ms: number; key: number } | null>(null);
@@ -224,15 +235,35 @@ export function RoomHud({
 
   const give = async (charId: string, itemId: number, at: Pt) => {
     const session = itemSession.current;
-    const code = chars.find((c) => charIdOf(c) === charId)?.stockCode;
-    if (!code) return;
-    const r = await api.giveItem(code, itemId).catch(() => null); // 더미(S6) — 종목 코드로 찾는다
-    if (!r) return;
-    // 호감도는 서버에 반영됐으니 그대로 받는다. 보유 수·하트는 그 사이 아이템 탭을 다시 열어 새로 받았으면 새 목록이 맞다
-    setChars((list) => list.map((c) => (charIdOf(c) === charId ? { ...c, affinityScore: r.affinityScore, affinityLevel: r.affinityLevel } : c)));
-    if (session !== itemSession.current) return;
-    setInventory((inv) => (inv ?? []).map((i) => (i.itemId === itemId ? { ...i, quantity: i.quantity - 1 } : i)));
-    setFlash({ key: Date.now(), at, delta: r.delta, score: r.affinityScore, level: r.affinityLevel });
+    const c = chars.find((x) => charIdOf(x) === charId);
+    if (!c) return;
+    // MAX 캐릭터는 선물을 받지 않는다(3-⑦-a) — 서버도 거절하지만 부르지 않고 안내만
+    if (isMaxAffinity(c.affinityProgress)) {
+      setFlash({ key: Date.now(), at, text: '이미 MAX', level: c.affinityLevel, progress: null });
+      return;
+    }
+    let r: GiftResult;
+    try {
+      r = await api.giveItem(c.stockId, itemId);
+    } catch (e) {
+      if (e instanceof api.AuthRequiredError) return askLogin();
+      // 서버가 거절한 이유(등급 없음 · 아이템 없음 등)를 작은 줄로
+      setFlash({ key: Date.now(), at, text: '선물하지 못했어요', level: c.affinityLevel, progress: c.affinityProgress, sub: e instanceof Error ? e.message : undefined });
+      return;
+    }
+    // 호감도는 서버에 반영됐으니 그대로 받는다. 보유 수는 그 사이 아이템 탭을 다시 열어 새로 받았으면 새 목록이 맞다
+    setChars((list) =>
+      list.map((x) => (charIdOf(x) === charId ? { ...x, affinityLevel: r.affinityLevel, affinityScore: r.affinityScore, affinityProgress: r.affinityProgress } : x)),
+    );
+    if (session === itemSession.current) setInventory((inv) => (inv ?? []).map((i) => (i.itemId === itemId ? { ...i, quantity: i.quantity - 1 } : i)));
+    setFlash({
+      key: Date.now(),
+      at,
+      text: `+${r.delta}`,
+      level: r.affinityLevel,
+      progress: r.affinityProgress,
+      sub: r.unlockedClothes ? `옷 해금 · ${r.unlockedClothes.name}` : undefined,
+    });
   };
 
   useEffect(() => {
@@ -267,6 +298,10 @@ export function RoomHud({
       setDragging(null);
       void give(charId, itemId, screen);
     },
+    onItemOver(charId) {
+      if (!owner || interaction !== 'NORMAL') return;
+      setItemOver(charId);
+    },
   }));
 
   // Esc — 창 → 링 순으로 닫는다. 로그인 창은 자기가 받고, 배치 모드는 편집기가 받는다
@@ -283,6 +318,8 @@ export function RoomHud({
   const selAt = selected ? loop.screenOf(selected) : null;
   // 누르는 동안 캐릭터는 멈춰 서 있으니 누른 순간의 머리 위가 곧 지금 자리다
   const chargeAt = charge ? loop.screenOf(charge.charId) : null;
+  const overChar = dragging !== null && itemOver ? chars.find((c) => charIdOf(c) === itemOver) : undefined;
+  const maxOverAt = overChar && isMaxAffinity(overChar.affinityProgress) ? loop.screenOf(itemOver!) : null;
   const centerX = layout.width / 2;
   const barTop = layout.stageHeight - 92;
   const normal = interaction === 'NORMAL';
@@ -322,7 +359,13 @@ export function RoomHud({
       )}
 
       {chargeAt && charge && <PressRing key={charge.key} x={chargeAt.x} y={chargeAt.y} ms={charge.ms} />}
-      {flash && <AffinityFlash key={flash.key} x={flash.at.x} y={flash.at.y} delta={flash.delta} score={flash.score} level={flash.level} />}
+      {flash && <AffinityFlash key={flash.key} x={flash.at.x} y={flash.at.y} text={flash.text} level={flash.level} progress={flash.progress} sub={flash.sub} />}
+      {maxOverAt && (
+        // 끌고 있는 아이템 밑이 MAX 캐릭터 — 놓아도 주지 않는다(3-⑦-a)
+        <div style={{ position: 'absolute', left: maxOverAt.x - 60, top: maxOverAt.y - 34, width: 120, zIndex: 7, pointerEvents: 'none', display: 'flex', justifyContent: 'center' }}>
+          <span style={{ padding: '4px 9px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.22)', background: 'rgba(33,33,38,0.92)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>이미 MAX</span>
+        </div>
+      )}
 
       {interaction === 'PLACEMENT' && (
         <PlacementEditor
@@ -358,7 +401,7 @@ export function RoomHud({
         {owner && sideTab === 'attendance' && <AttendancePanel key={openSeq} onClose={closePanel} onClaimed={() => setInventory(null)} />}
         {owner && sideTab === 'farewell' && <FarewellPanel key={openSeq} onClose={closePanel} />}
         {owner && sideTab === 'items' && <ItemPanel inventory={inventory} dragging={dragging} onDrag={setDragging} onClose={closePanel} />}
-        {owner && sideTab === 'characters' && <CharacterPanel key={openSeq} catalog={catalog} onRoom={applyRoster} onClose={closePanel} />}
+        {owner && sideTab === 'characters' && <CharacterPanel key={openSeq} catalog={catalog} holdings={holdings} onRoom={applyRoster} onClose={closePanel} onNeedLogin={askLogin} />}
       </SidePanel>
       {openPanel === 'wardrobe' && wardrobeFor && (
         <WardrobeGallery

@@ -3,7 +3,8 @@
  *   RoomQuery · Catalog · Placement · Item(증여 응답에 호감도가 실려 온다 — Affinity 소켓) · Guestbook · Follow · Wardrobe
  * **실 API로 바꿀 곳은 이 파일뿐이다.** 서버 칸 이름(snake_case) → 화면 이름(camelCase) 변환도 여기 한 곳(이름 통일 기준 4).
  *   실 API (S4)   내 거실 조회 GET /rooms/me · 감정 스트림 GET /rooms/me/stream · 보유 종목 GET /holdings
- *   더미          그 밖 전부 — S6(내 거실 패널) · S8(남의 거실)에서 C1 경로표대로 바꾼다. 주석의 주소는 옛 가정
+ *   실 API (S6)   프리셋 · 아이템 · 선물 · 출석 · 이별 흔적 · 옷 — 모두 /rooms/me/… (C1 경로표)
+ *   더미          남의 거실(S8: 조회 · 방명록 · 반응 · 팔로우 · 반응 종류 · 카탈로그) · 가구(가구 묶음 보류). 주석의 주소는 옛 가정
  *
  * 한 객체로 묶지 않는다(God class 방지) — 패널이 필요한 묶음만 가져다 쓴다.
  */
@@ -11,14 +12,15 @@ import axios from 'axios';
 import { api as http } from '../../api/axios';
 import * as D from './dummy';
 import type {
+  AttendanceClaim,
   AttendanceState,
+  CharacterClothes,
   CharacterDef,
-  CharacterPreset,
   FarewellCard,
   FurnitureDef,
+  GiftResult,
   GuestbookComment,
   GuestbookPost,
-  HoldingDto,
   InventoryItem,
   OwnedStock,
   PlacementDto,
@@ -43,18 +45,24 @@ const roomPath = (ownerId: OwnerId) => (ownerId ? `/rooms/${ownerId}` : '/rooms/
 /** 로그인 토큰 — 다른 화면과 같은 자리(localStorage.token) */
 const tokenOf = (): string | null => localStorage.getItem('token');
 
-/** 로그인 필수 GET — 응답 껍질({ success, data })을 벗겨 data 만 준다. 토큰이 없거나 401 이면 AuthRequiredError */
-async function getAuthed<T>(path: string): Promise<T> {
+/**
+ * 로그인 필수 요청 — 응답 껍질({ success, data })을 벗겨 data 만 준다. 토큰이 없거나 401 이면 AuthRequiredError.
+ * 그 밖의 거절(400 · 403 · 404)은 서버가 준 안내 글(`{ success: false, message }`)을 담은 Error 로 바꿔 던진다 — 패널이 그대로 보여 준다
+ */
+async function authed<T>(method: 'get' | 'post' | 'put' | 'delete', path: string, body?: unknown): Promise<T> {
   const token = tokenOf();
   if (!token) throw new AuthRequiredError('로그인이 필요해요');
   try {
-    const res = await http.get<{ success: boolean; data: T }>(path, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await http.request<{ success: boolean; data: T }>({ method, url: path, data: body, headers: { Authorization: `Bearer ${token}` } });
     return res.data.data;
   } catch (e) {
     if (axios.isAxiosError(e) && e.response?.status === 401) throw new AuthRequiredError('로그인이 필요해요');
+    const msg: unknown = axios.isAxiosError(e) ? (e.response?.data as { message?: unknown } | undefined)?.message : undefined;
+    if (typeof msg === 'string' || Array.isArray(msg)) throw new Error(Array.isArray(msg) ? msg.join(' · ') : msg, { cause: e });
     throw e;
   }
 }
+const getAuthed = <T,>(path: string) => authed<T>('get', path);
 
 interface ReactionCountRes {
   reaction_type: string;
@@ -98,29 +106,17 @@ interface HoldingRes {
 
 const wait = <T,>(v: T, ms = 120): Promise<T> => new Promise((r) => setTimeout(() => r(structuredClone(v)), ms));
 
-/* 더미 서버의 상태 — 화면에서 바꾼 것이 새로고침 전까지 유지되게 */
+/* 더미 서버의 상태(남의 거실 · 가구) — 화면에서 바꾼 것이 새로고침 전까지 유지되게 */
 const db = {
   placements: D.PLACEMENTS.map((p) => ({ ...p })),
   storage: D.STORAGE.map((s) => ({ ...s })),
-  inventory: D.INVENTORY.map((i) => ({ ...i })),
-  /** 보유 종목 전부 — 거실엔 지금 프리셋의 종목만 선다(roomCharacters) */
-  holdings: D.OWNER_HOLDINGS.map((c) => ({ ...c })),
-  presets: structuredClone(D.PRESETS),
-  activePresetId: D.ACTIVE_PRESET_ID,
   guestbook: structuredClone(D.GUESTBOOK),
   /** 남의 거실 방명록 — 더미는 남의 거실이 하나(22)라 하나만 둔다 */
   visitGuestbook: structuredClone(D.VISIT_GUESTBOOK),
   reactions: { counts: { ...D.ROOM_REACTION_COUNTS }, mine: null as number | null },
-  attendance: { ...D.ATTENDANCE },
   following: false,
   nextId: 1000,
 };
-
-/** 내 거실에 선 캐릭터 — 지금 프리셋의 종목을 넣은 순서대로 */
-function roomCharacters(): RoomCharacterDto[] {
-  const p = db.presets.find((x) => x.presetId === db.activePresetId) ?? db.presets[0];
-  return (p?.stockCodes ?? []).flatMap((code) => db.holdings.filter((h) => h.stockCode === code));
-}
 
 /* ── RoomQuery API ────────────────────────────────────────────── */
 
@@ -198,106 +194,139 @@ export function savePlacements(placements: PlacementDto[], storage: StorageItem[
   return wait(db.placements);
 }
 
-/* ── Preset API — 캐릭터 탭 (OWNER) {제안 — 경로·DB 테이블 미정} ───────────── */
+/* ── Preset API — 캐릭터 탭 (OWNER, 3-⑥) ─────────────────────────────── */
 
 export const MAX_ROOM_CHARACTERS = 5;
+/** 화면 규칙 — 서버는 개수를 막지 않는다 */
 export const MAX_PRESETS = 5;
+/** 화면 규칙 — 서버는 50자까지 받는다 */
 export const PRESET_NAME_MAX = 12;
 
-/** 프리셋을 바꾸면 늘 이걸 돌려받는다 — 목록과, 바뀐 뒤 거실에 선 캐릭터(지금 프리셋을 고쳤거나 바꿨을 때 달라진다) */
+/**
+ * 프리셋을 바꾸면 늘 이걸 돌려받는다 — 목록과, 바뀐 뒤 거실에 선 캐릭터(지금 프리셋을 고쳤거나 바꿨을 때 달라진다).
+ * 프리셋 API 는 거실 캐릭터를 돌려주지 않아서 GET /rooms/me 를 다시 받아 붙인다(호감도 · 옷 · 반응 수까지 서버 값 그대로)
+ */
 export interface PresetState extends PresetList {
   characters: RoomCharacterDto[];
 }
 
-const presetState = (): Promise<PresetState> => wait({ presets: db.presets, activePresetId: db.activePresetId, characters: roomCharacters() });
+interface PresetRes {
+  preset_id: number;
+  preset_name: string;
+  is_active: boolean;
+  stocks: { stock_id: number; stock_name: string; character_img_url: string }[];
+}
 
-/** 서버가 막을 것 — 이름 1~12자, 종목 1~5개·중복 없음·보유 중인 것만 */
-function checkPreset(name: string, stockCodes: string[]): string | null {
+/** GET /rooms/me/presets + GET /rooms/me */
+export async function getPresets(): Promise<PresetState> {
+  const [list, room] = await Promise.all([getAuthed<PresetRes[]>('/rooms/me/presets'), getRoom(undefined)]);
+  return {
+    presets: list.map((p) => ({ presetId: p.preset_id, name: p.preset_name, stocks: p.stocks.map((s) => ({ stockId: s.stock_id, stockName: s.stock_name })) })),
+    activePresetId: list.find((p) => p.is_active)?.preset_id ?? null,
+    characters: room.characters,
+  };
+}
+
+/** 화면에서 먼저 막는 것 — 이름 1~12자, 종목 1~5개 · 중복 없음. 보유 여부는 서버가 본다 */
+function checkPreset(name: string, stockIds: number[]): string | null {
   const n = name.trim();
-  if (!n || n.length > PRESET_NAME_MAX) return '이름은 1~12자로 써 주세요';
-  if (stockCodes.length < 1 || stockCodes.length > MAX_ROOM_CHARACTERS) return '캐릭터는 1~5명이에요';
-  if (new Set(stockCodes).size !== stockCodes.length) return '같은 캐릭터를 두 번 넣을 수 없어요';
-  if (!stockCodes.every((c) => db.holdings.some((h) => h.stockCode === c))) return '보유하지 않은 종목이 있어요';
+  if (!n || n.length > PRESET_NAME_MAX) return `이름은 1~${PRESET_NAME_MAX}자로 써 주세요`;
+  if (stockIds.length < 1 || stockIds.length > MAX_ROOM_CHARACTERS) return `캐릭터는 1~${MAX_ROOM_CHARACTERS}명이에요`;
+  if (new Set(stockIds).size !== stockIds.length) return '같은 캐릭터를 두 번 넣을 수 없어요';
   return null;
 }
 
-/** GET /rooms/me/presets */
-export const getPresets = (): Promise<PresetState> => presetState();
+/**
+ * POST /rooms/me/presets { preset_name, stock_ids }.
+ * `activate` — 선택된 프리셋이 없을 때(처음 만들 때) 만들자마자 거실에 세운다(S6 도휘 결정). 세우기만 실패하면 목록은 그대로 돌려준다(눌러서 고르면 됨)
+ */
+export async function createPreset(name: string, stockIds: number[], activate: boolean): Promise<PresetState> {
+  const bad = checkPreset(name, stockIds);
+  if (bad) throw new Error(bad);
+  const made = await authed<{ preset_id: number }>('post', '/rooms/me/presets', { preset_name: name.trim(), stock_ids: stockIds });
+  if (activate) await authed('put', `/rooms/me/presets/${made.preset_id}/activate`).catch(() => {});
+  return getPresets();
+}
 
-/** GET /rooms/me/holdings — 프리셋에 넣을 후보. 수익률은 보낸 시점 기준 */
-export const getHoldings = (): Promise<HoldingDto[]> =>
-  wait(
-    db.holdings.map((h) => {
-      const now = D.START_PRICES[h.stockCode] ?? h.meanPrice ?? 1;
-      const mean = h.meanPrice ?? now;
-      return { stockCode: h.stockCode, quantity: h.quantity ?? 0, returnRate: ((now - mean) / mean) * 100 };
-    }),
+/** PUT /rooms/me/presets/:presetId — 지금 거실에 선 프리셋이면 서버가 거실도 바꾼다 */
+export async function updatePreset(presetId: number, name: string, stockIds: number[]): Promise<PresetState> {
+  const bad = checkPreset(name, stockIds);
+  if (bad) throw new Error(bad);
+  await authed('put', `/rooms/me/presets/${presetId}`, { preset_name: name.trim(), stock_ids: stockIds });
+  return getPresets();
+}
+
+/** DELETE /rooms/me/presets/:presetId — 거실에 선 걸 지우면 서버가 남은 것 중 가장 최근에 만든 것을 세운다(없으면 거실이 빈다) */
+export async function deletePreset(presetId: number): Promise<PresetState> {
+  await authed('delete', `/rooms/me/presets/${presetId}`);
+  return getPresets();
+}
+
+/** PUT /rooms/me/presets/:presetId/activate — 이 프리셋의 캐릭터를 거실에 세운다 */
+export async function activatePreset(presetId: number): Promise<PresetState> {
+  await authed('put', `/rooms/me/presets/${presetId}/activate`);
+  return getPresets();
+}
+
+/* ── Item API — 아이템 · 선물 (OWNER, 3-⑦-a) ───────────────────────────── */
+
+/** GET /rooms/me/items — 수량 0 은 서버가 빼고 준다 */
+export async function getInventory(): Promise<InventoryItem[]> {
+  const list = await getAuthed<{ item_id: number; item_name: string; item_level: string | null; affinity_points: number | null; quantity: number }[]>('/rooms/me/items');
+  return list.map((i) => ({ itemId: i.item_id, name: i.item_name, quantity: i.quantity, grade: i.item_level, points: i.affinity_points }));
+}
+
+/** POST /rooms/me/characters/:stockId/gift { item_id } — 한 번에 1개. MAX 캐릭터 · 없는 아이템은 서버가 거절(차감 없음) */
+export async function giveItem(stockId: number, itemId: number): Promise<GiftResult> {
+  const r = await authed<{
+    affinity_level: number;
+    affinity_score: number;
+    affinity_progress: number | null;
+    delta: number;
+    unlocked_clothes: { clothes_id: number; clothes_name: string } | null;
+  }>('post', `/rooms/me/characters/${stockId}/gift`, { item_id: itemId });
+  return {
+    affinityLevel: r.affinity_level,
+    affinityScore: r.affinity_score,
+    affinityProgress: r.affinity_progress,
+    delta: r.delta,
+    unlockedClothes: r.unlocked_clothes && { clothesId: r.unlocked_clothes.clothes_id, name: r.unlocked_clothes.clothes_name },
+  };
+}
+
+/* ── 출석 · 이별 흔적 (OWNER, 3-⑦-b · 3-⑦-d) ────────────────────────────── */
+
+/** GET /rooms/me/attendance — 하루 기준은 한국 시간 자정(서버) */
+export async function getAttendance(): Promise<AttendanceState> {
+  const r = await getAuthed<{ attendance_count: number; claimed_today: boolean; today_index: number; rewards: { grade: string; quantity: number }[] }>('/rooms/me/attendance');
+  return { attendanceCount: r.attendance_count, claimedToday: r.claimed_today, todayIndex: r.today_index, rewards: r.rewards };
+}
+
+/** POST /rooms/me/attendance — 오늘 이미 받았으면 서버가 거절 */
+export async function claimAttendance(): Promise<AttendanceClaim> {
+  const r = await authed<{ attendance_count: number; today_index: number; reward_item: { item_id: number; item_name: string; quantity: number } | null }>('post', '/rooms/me/attendance');
+  return {
+    attendanceCount: r.attendance_count,
+    todayIndex: r.today_index,
+    rewardItem: r.reward_item && { itemId: r.reward_item.item_id, name: r.reward_item.item_name, quantity: r.reward_item.quantity },
+  };
+}
+
+/** GET /rooms/me/farewells — 서버가 거래 내역에서 전량 매도 회차를 찾아 만든다(최근 이별 순) */
+export async function getFarewells(): Promise<FarewellCard[]> {
+  const list = await getAuthed<{ stock_id: number; stock_code: string; stock_name: string; start_date: string; end_date: string; days: number; final_return_rate: number }[]>(
+    '/rooms/me/farewells',
   );
-
-/** POST /rooms/me/presets { name, stockCodes } — 5개까지 */
-export function createPreset(name: string, stockCodes: string[]): Promise<PresetState> {
-  const bad = checkPreset(name, stockCodes) ?? (db.presets.length >= MAX_PRESETS ? '프리셋은 5개까지예요' : null);
-  if (bad) return Promise.reject(new Error(bad));
-  db.presets = [...db.presets, { presetId: db.nextId++, name: name.trim(), stockCodes: [...stockCodes] }];
-  return presetState();
+  return list.map((f) => ({
+    stockId: f.stock_id,
+    stockCode: f.stock_code,
+    stockName: f.stock_name,
+    startDate: f.start_date,
+    endDate: f.end_date,
+    days: f.days,
+    finalReturnRate: f.final_return_rate,
+  }));
 }
-
-/** PUT /rooms/me/presets/:presetId { name, stockCodes } — 지금 거실에 선 프리셋이면 거실도 바뀐다 */
-export function updatePreset(presetId: number, name: string, stockCodes: string[]): Promise<PresetState> {
-  const bad = checkPreset(name, stockCodes) ?? (db.presets.some((p) => p.presetId === presetId) ? null : '프리셋이 없어요');
-  if (bad) return Promise.reject(new Error(bad));
-  db.presets = db.presets.map((p): CharacterPreset => (p.presetId === presetId ? { presetId, name: name.trim(), stockCodes: [...stockCodes] } : p));
-  return presetState();
-}
-
-/** DELETE /rooms/me/presets/:presetId — 마지막 하나는 못 지운다. 거실에 선 걸 지우면 첫 번째 프리셋이 선다 */
-export function deletePreset(presetId: number): Promise<PresetState> {
-  if (db.presets.length <= 1) return Promise.reject(new Error('프리셋은 하나 이상 있어야 해요'));
-  db.presets = db.presets.filter((p) => p.presetId !== presetId);
-  if (db.activePresetId === presetId) db.activePresetId = db.presets[0].presetId;
-  return presetState();
-}
-
-/** PUT /rooms/me/presets/active { presetId } — 이 프리셋의 캐릭터를 거실에 세운다 */
-export function activatePreset(presetId: number): Promise<PresetState> {
-  if (!db.presets.some((p) => p.presetId === presetId)) return Promise.reject(new Error('프리셋이 없어요'));
-  db.activePresetId = presetId;
-  return presetState();
-}
-
-/* ── Item API ─────────────────────────────────────────────────── */
-
-/** GET /items/inventory */
-export const getInventory = (): Promise<InventoryItem[]> => wait(db.inventory);
-
-/** POST /items/give { stockCode, itemId } → 오른 호감도 */
-export function giveItem(stockCode: string, itemId: number): Promise<{ affinityScore: number; affinityLevel: number; delta: number }> {
-  const it = db.inventory.find((i) => i.itemId === itemId);
-  const ch = db.holdings.find((c) => c.stockCode === stockCode);
-  if (!it || !ch || it.quantity <= 0) return Promise.reject(new Error('지급할 수 없어요'));
-  it.quantity -= 1;
-  const before = ch.affinityScore;
-  ch.affinityScore = Math.min(100, ch.affinityScore + it.effect);
-  if (ch.affinityScore >= 100) ch.affinityLevel = 5;
-  return wait({ affinityScore: ch.affinityScore, affinityLevel: ch.affinityLevel, delta: ch.affinityScore - before }, 60);
-}
-
-/** GET /items/attendance {DB 미비 — 출석 테이블 없음, 보류} */
-export const getAttendance = (): Promise<AttendanceState> => wait(db.attendance);
-
-/** POST /items/attendance {DB 미비} */
-export function claimAttendance(): Promise<AttendanceState> {
-  if (!db.attendance.claimedToday) {
-    db.attendance = { ...db.attendance, claimedToday: true };
-    const r = db.attendance.rewards[db.attendance.todayIndex];
-    const it = db.inventory.find((i) => i.name === r.itemName);
-    if (it) it.quantity += r.quantity;
-  }
-  return wait(db.attendance);
-}
-
-/** GET /rooms/me/farewells — transaction_history 에서 전량 매도 종목을 파생 */
-export const getFarewells = (): Promise<FarewellCard[]> => wait(D.FAREWELLS);
 
 /* ── Guestbook API ────────────────────────────────────────────── */
 
@@ -375,15 +404,27 @@ export function setFollow(ownerId: string, on: boolean): Promise<boolean> {
   return wait(on, 60);
 }
 
-/* ── Wardrobe API {모듈 위치 미정 · 착용 테이블 없음} ────────────────── */
+/* ── Wardrobe API — 옷 입히기 (OWNER, B1) ───────────────────────────── */
 
-/* 고유 의상 자체(이름·해금 조건·모양)는 캐릭터 카탈로그(getCharacterDefs)에 실려 온다 */
+/** GET /rooms/me/characters/:stockId/clothes — 그 종목 전용 옷 + 공용 옷, 해금 · 착용 여부와 호감도 */
+export async function getClothes(stockId: number): Promise<CharacterClothes> {
+  const r = await getAuthed<{
+    equipped_clothes_id: number | null;
+    affinity_level: number;
+    affinity_progress: number | null;
+    clothes: { clothes_id: number; clothes_name: string; is_unlocked: boolean; is_equipped: boolean; unlock_level: number | null }[];
+  }>(`/rooms/me/characters/${stockId}/clothes`);
+  return {
+    equippedClothesId: r.equipped_clothes_id,
+    affinityLevel: r.affinity_level,
+    affinityProgress: r.affinity_progress,
+    clothes: r.clothes.map((c) => ({ clothesId: c.clothes_id, name: c.clothes_name, unlocked: c.is_unlocked, equipped: c.is_equipped, unlockLevel: c.unlock_level })),
+  };
+}
 
-/** PUT /wardrobes/:stockCode { clothesId | null } */
-export function setOutfit(stockCode: string, clothesId: number | null): Promise<number | null> {
-  const ch = db.holdings.find((c) => c.stockCode === stockCode);
-  if (ch) ch.ownedClothesId = clothesId;
-  return wait(clothesId, 60);
+/** PUT /rooms/me/characters/:stockId/clothes { clothes_id } — null 이면 기본 옷으로(벗기). 해금 안 된 옷은 서버가 거절 */
+export async function setClothes(stockId: number, clothesId: number | null): Promise<void> {
+  await authed('put', `/rooms/me/characters/${stockId}/clothes`, { clothes_id: clothesId });
 }
 
 /* ── 보유 종목 · 시세 — GET /holdings (실 API, 지시서 3-②) ──────────────── */

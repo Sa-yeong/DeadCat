@@ -29,7 +29,7 @@ export class RoomFeed implements EmotionFeed {
     };
   }
 
-  /** 지금 다시 잇는다 — 새 snapshot 으로 새로 세운 캐릭터의 감정을 바로 받는다(1-5 B, 프리셋 연결은 S6) */
+  /** 지금 다시 잇는다 — 새 snapshot 으로 새로 세운 캐릭터의 감정을 바로 받는다(1-5 B — 캐릭터 탭에서 거실 조합이 바뀌면 페이지가 부른다) */
   reconnect(): void {
     this.stream?.reconnect();
   }

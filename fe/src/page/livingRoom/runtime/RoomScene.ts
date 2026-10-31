@@ -4,7 +4,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMHumanBoneName } from '@pixiv/three-vrm';
 import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionProxy, type VRMAnimation } from '@pixiv/three-vrm-animation';
 import type { CharacterDef } from '../types';
-import { wornOutfit, type FurnitureCatalog } from './catalogs';
+import { outfitOf } from '../catalog';
+import type { FurnitureCatalog } from './catalogs';
 import { shapeOf, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
 import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
@@ -1307,8 +1308,8 @@ export class RoomScene implements RoomRenderer {
     const c = this.chars.get(charId);
     if (!c) return;
     c.clothesId = clothesId;
-    // 옷 입히기 창의 미리보기와 같은 규칙(wornOutfit) — 도형은 몸통만 옷 색. VRM 은 옷 모델이 생기면 여기서 갈아 끼운다
-    c.materials.body.color.set(wornOutfit(c.def, clothesId)?.color ?? c.def.color);
+    // 옷 입히기 창의 미리보기와 같은 규칙(outfitOf) — 도형은 몸통만 옷 색. VRM 은 옷 모델이 생기면 여기서 갈아 끼운다
+    c.materials.body.color.set(outfitOf(clothesId)?.color ?? c.def.color);
     this.invalidate();
   }
 

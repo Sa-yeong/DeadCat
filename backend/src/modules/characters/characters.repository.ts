@@ -67,7 +67,7 @@ export class CharactersRepository {
     async updateEquippedClothes(
         userId: bigint,
         stockId: bigint,
-        clothesId: bigint,
+        clothesId: bigint | null,
     ) {
         return await this.prisma.holdings.update({
             where: {

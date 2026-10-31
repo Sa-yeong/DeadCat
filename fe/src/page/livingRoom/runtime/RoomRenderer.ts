@@ -76,7 +76,7 @@ export interface RoomRenderer {
   /** 선택 표시 · 들림 · 숨김(배치 모드 — 그림자까지, 클릭도 안 됨) */
   setCharacterState(charId: string, s: { selected?: boolean; lifted?: boolean; hidden?: boolean }): void;
   /**
-   * 옷을 입힌다(clothesId) / 기본 옷으로 돌린다(null). 모양은 spawn 때 받은 CharacterDef.outfit 에서 찾는다.
+   * 옷을 입힌다(clothesId) / 기본 옷으로 돌린다(null). 모양은 옷 번호로 정한다(catalog.outfitOf).
    * 평면 더미는 몸통 색만 바꾸고, 3D 는 옷 모델을 바꿔 끼운다 (추가, 제안)
    */
   setOutfit(charId: string, clothesId: number | null): void;

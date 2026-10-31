@@ -2,19 +2,21 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { pct, toneSoft } from '../../stockDetail/format';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
+import { characterDef, colorOf } from '../catalog';
 import type { CharacterCatalog } from '../runtime/catalogs';
-import type { HoldingDto, RoomCharacterDto } from '../types';
+import { charIdOf, type OwnedStock, type RoomCharacterDto } from '../types';
 import { PanelHeader } from './SidePanel';
 import { C, accentBtn, ghostBtn } from './style';
 import { Icon } from './ui';
 
 /**
  * 캐릭터 — 오른쪽 창의 한 탭(OWNER 전용, 2026-10-12 아트보드 「캐릭터 탭」 그대로).
- * 거실엔 5명까지만 서니, 이름 붙인 5명 조합(프리셋)을 여럿 두고 골라 세운다.
+ * 거실엔 5명까지만 서니, 이름 붙인 5명 조합(프리셋)을 여럿 두고 골라 세운다(3-⑥ — 선택은 서버가 is_active 로 기억).
  *   ① 목록 — 프리셋 카드를 아래로 나열. 카드를 누르면 거실이 그 조합으로(초록 테두리 + '선택'). + 로 새 프리셋
  *   ② 편집 — 위에 5칸(얼굴), 아래에 보유 종목(가나다순 · 수익률순). 누르면 넣고 다시 누르면 뺀다
  * 끌어서 넣고 빼는 방식은 쓰지 않는다 — 캐릭터는 자리가 의미가 없어 끌기가 직관적이지 않다(도휘).
  * 창은 씬을 만지지 않는다 — 바뀐 거실 캐릭터를 onRoom 으로 올려 보내면 조율자(RoomHud)가 런타임에 넘긴다.
+ * 종목은 stock_id 로 다룬다(A2). 이름은 보유 목록(GET /holdings)에서, 다 판 종목은 프리셋 응답의 이름으로.
  */
 
 const MAX = api.MAX_ROOM_CHARACTERS;
@@ -28,52 +30,64 @@ type Sort = 'name' | 'rate';
 /** null = 목록, 'new' = 새 프리셋, 숫자 = 그 프리셋 편집 */
 type Edit = null | 'new' | number;
 
+/** 거실 조합이 바뀌었나 — 선 순서는 따지지 않는다 */
+const sameRoster = (a: RoomCharacterDto[], b: RoomCharacterDto[]) => a.length === b.length && a.every((c) => b.some((d) => d.stockId === c.stockId));
+
 export function CharacterPanel({
   catalog,
+  holdings,
   onRoom,
   onClose,
+  onNeedLogin,
 }: {
-  /** 이름·색을 찾는 종목 캐시 — 보유 종목 것까지 여기서 받아 넣는다 */
+  /** 거실 캐릭터 정보 캐시 — 새로 세울 캐릭터를 여기 넣고 올려 보낸다 */
   catalog: CharacterCatalog;
+  /** 내 보유 종목(GET /holdings 3초 폴링, 페이지가 받는다) — 편집의 후보 목록 · 이름 · 썸네일 */
+  holdings: OwnedStock[] | null;
   /** 거실에 선 캐릭터가 바뀌었다(프리셋을 고르거나, 거실의 프리셋을 고치거나 지웠다) */
   onRoom: (characters: RoomCharacterDto[]) => void;
   onClose: () => void;
+  onNeedLogin: () => void;
 }) {
   const [state, setState] = useState<api.PresetState | null>(null);
-  const [holdings, setHoldings] = useState<HoldingDto[] | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [edit, setEdit] = useState<Edit>(null);
   const [nameDraft, setNameDraft] = useState('');
-  const [draft, setDraft] = useState<string[]>([]);
+  const [draft, setDraft] = useState<number[]>([]);
   const [sort, setSort] = useState<Sort>('name');
   const [busy, setBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   /** 프리셋을 빠르게 연달아 누르면 마지막 누름이 이긴다 */
   const pickSeq = useRef(0);
 
+  /** 로그인이 풀렸으면 로그인 창도 띄운다. 안내 글은 서버가 준 이유, 없으면 fallback */
+  const failWith = (e: unknown, fallback: string, show: (msg: string) => void) => {
+    if (e instanceof api.AuthRequiredError) onNeedLogin();
+    show(e instanceof Error && e.message ? e.message : fallback);
+  };
+
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const [list, hold] = await Promise.all([api.getPresets(), api.getHoldings()]);
-      const codes = [...new Set([...hold.map((h) => h.stockCode), ...list.presets.flatMap((p) => p.stockCodes)])];
-      catalog.load(await api.getCharacterDefs(codes));
-      if (!alive) return;
-      setState(list);
-      setHoldings(hold);
-    })().catch(() => alive && setFailed('캐릭터 정보를 불러오지 못했어요'));
+    api.getPresets().then(
+      (list) => alive && setState(list),
+      (e: unknown) => alive && failWith(e, '캐릭터 정보를 불러오지 못했어요', setFailed),
+    );
     return () => {
       alive = false;
     };
-  }, [catalog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const presets = state?.presets ?? [];
-  // 프리셋 · 보유 목록이 아직 더미라 종목 코드로 찾는다 — S6 에서 stock_id 로 바꾼다
-  const nameOf = (code: string) => catalog.byCode(code)?.stockName ?? code;
-  const colorOf = (code: string) => catalog.byCode(code)?.color ?? '#6E6E68';
+  const nameOf = (stockId: number) =>
+    holdings?.find((h) => h.stockId === stockId)?.stockName ?? presets.flatMap((p) => p.stocks).find((x) => x.stockId === stockId)?.stockName ?? `#${stockId}`;
 
-  /** 서버가 돌려준 새 상태를 받는다 — 거실 캐릭터도 같이 맞춘다(안 바뀌었으면 런타임이 그냥 넘긴다) */
+  /** 서버가 돌려준 새 상태를 받는다 — 거실 조합이 바뀌었으면 새 캐릭터 정보를 캐시에 넣고 올려 보낸다(페이지가 감정 스트림도 다시 잇는다) */
   const accept = (next: api.PresetState) => {
+    const changed = !state || !sameRoster(state.characters, next.characters);
     setState(next);
+    if (!changed) return;
+    catalog.load(next.characters.map((c) => characterDef(c, holdings?.find((h) => h.stockId === c.stockId)?.imgUrl ?? catalog.def(charIdOf(c))?.imgUrl)));
     onRoom(next.characters);
   };
 
@@ -87,10 +101,10 @@ export function CharacterPanel({
     setFailed(null);
     api.activatePreset(presetId).then(
       (next) => req === pickSeq.current && accept(next),
-      () => {
+      (e: unknown) => {
         if (req !== pickSeq.current) return;
-        setState((s) => (s ? { ...s, activePresetId: prev } : s));
-        setFailed('거실을 바꾸지 못했어요 — 다시 눌러 주세요');
+        setState((st) => (st ? { ...st, activePresetId: prev } : st));
+        failWith(e, '', () => setFailed('거실을 바꾸지 못했어요 — 다시 눌러 주세요'));
       },
     );
   };
@@ -98,7 +112,7 @@ export function CharacterPanel({
   const openEdit = (e: Exclude<Edit, null>) => {
     const p = typeof e === 'number' ? presets.find((x) => x.presetId === e) : undefined;
     setEdit(e);
-    setDraft(p ? [...p.stockCodes] : []);
+    setDraft(p ? p.stocks.map((x) => x.stockId) : []);
     setNameDraft(p ? p.name : `프리셋 ${presets.length + 1}`);
     setEditError(null);
   };
@@ -106,14 +120,14 @@ export function CharacterPanel({
   /* ── ② 편집 ── */
 
   const full = draft.length >= MAX;
-  const toggle = (code: string) => setDraft((d) => (d.includes(code) ? d.filter((x) => x !== code) : d.length >= MAX ? d : [...d, code]));
+  const toggle = (stockId: number) => setDraft((d) => (d.includes(stockId) ? d.filter((x) => x !== stockId) : d.length >= MAX ? d : [...d, stockId]));
 
   const run = async (call: () => Promise<api.PresetState>) => {
     if (busy) return;
     setBusy(true);
     setEditError(null);
     const next = await call().catch((e: unknown) => {
-      setEditError(e instanceof Error ? e.message : '저장하지 못했어요');
+      failWith(e, '저장하지 못했어요', setEditError);
       return null;
     });
     setBusy(false);
@@ -123,11 +137,13 @@ export function CharacterPanel({
   };
   const save = () => {
     const name = nameDraft.trim() || `프리셋 ${presets.length + 1}`;
-    void run(() => (edit === 'new' ? api.createPreset(name, draft) : api.updatePreset(edit as number, name, draft)));
+    // 선택된 프리셋이 없을 때(처음) 만든 프리셋은 바로 거실에 세운다(S6 도휘 결정)
+    void run(() => (edit === 'new' ? api.createPreset(name, draft, state?.activePresetId == null) : api.updatePreset(edit as number, name, draft)));
   };
   const remove = () => typeof edit === 'number' && void run(() => api.deletePreset(edit));
 
-  const sorted = [...(holdings ?? [])].sort((a, b) => (sort === 'rate' ? b.returnRate - a.returnRate : nameOf(a.stockCode).localeCompare(nameOf(b.stockCode), 'ko')));
+  // 수익률은 3초 폴링 값이라 수익률순은 가끔 자리가 바뀔 수 있다
+  const sorted = [...(holdings ?? [])].sort((a, b) => (sort === 'rate' ? b.returnRate - a.returnRate : a.stockName.localeCompare(b.stockName, 'ko')));
 
   if (edit !== null) {
     return (
@@ -163,23 +179,23 @@ export function CharacterPanel({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${MAX}, minmax(0, 1fr))`, gap: 8 }}>
             {Array.from({ length: MAX }, (_, i) => {
-              const code = draft[i];
+              const id = draft[i];
               return (
-                <div key={code ?? `empty-${i}`} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  {code ? (
+                <div key={id ?? `empty-${i}`} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  {id !== undefined ? (
                     <>
                       <button
                         type="button"
-                        onClick={() => toggle(code)}
-                        aria-label={`${nameOf(code)} 빼기`}
+                        onClick={() => toggle(id)}
+                        aria-label={`${nameOf(id)} 빼기`}
                         style={{ ...faceBox, padding: 0, border: '1px solid rgba(255,255,255,0.14)', background: C.panel, cursor: 'pointer' }}
                       >
-                        <Face color={colorOf(code)} />
+                        <Face color={colorOf(id)} />
                         <span aria-hidden="true" style={{ position: 'absolute', right: 3, top: 3, width: 18, height: 18, borderRadius: '50%', background: 'rgba(20,20,24,0.85)', color: C.text2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Icon name="close" size={9} />
                         </span>
                       </button>
-                      <span style={{ ...nameLine, fontSize: 11, color: C.text }}>{nameOf(code)}</span>
+                      <span style={{ ...nameLine, fontSize: 11, color: C.text }}>{nameOf(id)}</span>
                     </>
                   ) : (
                     <>
@@ -215,15 +231,15 @@ export function CharacterPanel({
         </div>
         <ul style={{ listStyle: 'none', margin: 0, padding: '0 0 8px', flexGrow: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {sorted.map((h) => {
-            const on = draft.includes(h.stockCode);
+            const on = draft.includes(h.stockId);
             const blocked = !on && full;
             return (
-              <li key={h.stockCode} style={{ flexShrink: 0 }}>
+              <li key={h.stockId} style={{ flexShrink: 0 }}>
                 <button
                   type="button"
                   aria-pressed={on}
                   disabled={blocked}
-                  onClick={() => toggle(h.stockCode)}
+                  onClick={() => toggle(h.stockId)}
                   title={blocked ? `거실엔 ${MAX}명까지 세울 수 있어요` : undefined}
                   style={{
                     width: '100%', height: 50, boxSizing: 'border-box', padding: '0 10px', display: 'flex', alignItems: 'center', gap: 10, borderRadius: R.card,
@@ -231,9 +247,9 @@ export function CharacterPanel({
                     cursor: blocked ? 'default' : 'pointer', opacity: blocked ? 0.45 : 1, fontFamily: "'Gothic A1', sans-serif",
                   }}
                 >
-                  <MiniFace color={colorOf(h.stockCode)} />
+                  <MiniFace color={colorOf(h.stockId)} />
                   <span style={{ flexGrow: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{nameOf(h.stockCode)}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.stockName}</span>
                     <span style={{ fontSize: 11, color: C.faint }}>{h.quantity}주</span>
                   </span>
                   <span style={{ flexShrink: 0, fontFamily: FONT_NUM, fontSize: 12, fontWeight: 700, color: toneSoft(h.returnRate) }}>{pct(h.returnRate)}</span>
@@ -251,7 +267,8 @@ export function CharacterPanel({
         <div style={{ flexShrink: 0, padding: '12px 0 14px', borderTop: `1px solid ${C.lineSoft}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {editError && <span role="alert" style={{ fontSize: 12, color: '#FF7A70' }}>{editError}</span>}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {typeof edit === 'number' && presets.length > 1 && (
+            {/* 마지막 하나도 지울 수 있다 — 거실에 선 걸 지우면 서버가 다른 프리셋을 세우고, 없으면 거실이 빈다 */}
+            {typeof edit === 'number' && (
               <button type="button" onClick={remove} disabled={busy} style={{ ...ghostBtn, height: 34, padding: '0 10px', color: '#FF7A70', fontSize: 12.5, fontWeight: 700 }}>
                 삭제
               </button>
@@ -280,6 +297,9 @@ export function CharacterPanel({
       <ul style={{ listStyle: 'none', margin: 0, padding: '12px 0', flexGrow: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {state === null && !failed && <li style={{ fontSize: 12.5, color: C.faint }}>불러오는 중…</li>}
         {failed && <li role="alert" style={{ fontSize: 12.5, color: '#FF7A70' }}>{failed}</li>}
+        {state && presets.length === 0 && (
+          <li style={{ fontSize: 12.5, lineHeight: 1.6, color: C.faint }}>아직 프리셋이 없어요. 아래 「프리셋 추가」로 거실에 세울 캐릭터를 골라 보세요</li>
+        )}
         {presets.map((p) => {
           const on = p.presetId === state?.activePresetId;
           return (
@@ -303,18 +323,18 @@ export function CharacterPanel({
                     </span>
                   )}
                   <span style={{ flexShrink: 0, fontFamily: FONT_NUM, fontSize: 12, fontWeight: 700, color: C.faint }}>
-                    {p.stockCodes.length}/{MAX}
+                    {p.stocks.length}/{MAX}
                   </span>
                 </span>
                 <span style={{ display: 'grid', gridTemplateColumns: `repeat(${MAX}, minmax(0, 1fr))`, gap: 6 }}>
                   {Array.from({ length: MAX }, (_, j) => {
-                    const code = p.stockCodes[j];
+                    const st = p.stocks[j];
                     return (
                       <span key={j} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <span style={{ ...faceBox, border: code ? '1px solid rgba(255,255,255,0.12)' : '1px dashed rgba(255,255,255,0.16)', background: code ? C.panel : 'transparent' }}>
-                          {code && <Face color={colorOf(code)} />}
+                        <span style={{ ...faceBox, border: st ? '1px solid rgba(255,255,255,0.12)' : '1px dashed rgba(255,255,255,0.16)', background: st ? C.panel : 'transparent' }}>
+                          {st && <Face color={colorOf(st.stockId)} />}
                         </span>
-                        <span style={{ ...nameLine, height: 14, fontSize: 10.5, color: C.text2 }}>{code ? nameOf(code) : ''}</span>
+                        <span style={{ ...nameLine, height: 14, fontSize: 10.5, color: C.text2 }}>{st ? nameOf(st.stockId) : ''}</span>
                       </span>
                     );
                   })}

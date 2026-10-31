@@ -4,6 +4,7 @@ import { FurnitureInventoryDto } from './dto/furniture-inventory-response.dto';
 import { PrismaService } from 'src/providers/database/prisma.service';
 import { ItemInventoryDto } from './dto/item-inventory-response.dto copy';
 import { ItemsRepository } from './items.repository';
+import { giftAffinityPoints, toItemGrade } from 'src/common/items/item-grade';
 
 @Injectable()
 export class ItemsService {
@@ -18,9 +19,12 @@ export class ItemsService {
         const inventories =
             await this.itemsRepository.findConsumableInventory(userId);
 
+        // 등급 · 선물 점수는 선물 API 와 같은 함수로(item-grade.ts) — 프론트는 계산하지 않고 표시만. 표에 없는 등급이면 null(선물 불가)
         return inventories.map((inv) => ({
             item_id: Number(inv.item_id),
             item_name: inv.items.name,
+            item_level: toItemGrade(inv.items.level),
+            affinity_points: giftAffinityPoints(inv.items.level),
             quantity: inv.quantity,
             item_img_url: `https://assets.deadcat.com/items/${inv.item_id}.png`,
         }));

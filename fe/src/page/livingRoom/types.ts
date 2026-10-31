@@ -49,7 +49,7 @@ export interface RoomCharacterDto {
   affinityScore: number;
   /** 지금 레벨 안에서의 진행률 0~100, MAX 면 null (서버가 계산 — 지시서 3-⑤) */
   affinityProgress: number | null;
-  /** 보유 = 착용 (DB에 착용 칸이 없어 좁힘). 없으면 null */
+  /** 입은 옷(서버 clothes_id = holdings.equipped_clothes_id). 기본 옷이면 null */
   ownedClothesId: number | null;
   receivedReactionCount: number;
 }
@@ -92,8 +92,6 @@ export interface CharacterDef {
   modelUrl: string;
   /** 평면 더미에서 쓰는 색. 3D가 붙으면 쓰지 않는다 */
   color: string;
-  /** 이 캐릭터의 고유 의상 — 캐릭터당 1벌. 종목 고정값이라 카탈로그에 싣는다 {제안 — 서버 카탈로그 응답에 추가 필요} */
-  outfit: Outfit | null;
 }
 
 export type FurnitureKind = 'box' | 'sofa' | 'chair' | 'armchair' | 'plant' | 'lamp' | 'rug' | 'shelf' | 'beanbag' | 'fountain' | 'set';
@@ -137,13 +135,26 @@ export interface FurnitureDef {
 
 /* ── 패널이 열릴 때 각자 받는 것 ─────────────────────────────────────── */
 
+/** 보유 아이템 한 줄 — GET /rooms/me/items */
 export interface InventoryItem {
   itemId: number;
   name: string;
   quantity: number;
-  /** 지급 시 오르는 호감도 (DB items.effect_value) */
-  effect: number;
-  icon: 'cookie' | 'coffee' | 'flower' | 'gift';
+  /** 등급(NORMAL · RARE · EPIC · UNIQUE) — 표에 없는 등급이면 null */
+  grade: string | null;
+  /** 선물 1개가 올리는 호감도 점수 — 서버가 등급으로 정한다(3-⑤). null 이면 선물할 수 없는 아이템 */
+  points: number | null;
+}
+
+/** 선물 결과 — POST /rooms/me/characters/:stockId/gift */
+export interface GiftResult {
+  affinityLevel: number;
+  affinityScore: number;
+  affinityProgress: number | null;
+  /** 오른 점수 */
+  delta: number;
+  /** 이번에 해금된 옷 — 없으면 null */
+  unlockedClothes: { clothesId: number; name: string } | null;
 }
 
 export interface StorageItem {
@@ -175,29 +186,21 @@ export interface GuestbookPost {
   replies: GuestbookComment[];
 }
 
-/* ── 캐릭터 탭 — 거실에 세울 캐릭터 조합(프리셋) {제안 — DB 에 프리셋 테이블 없음, 추가 필요} ── */
+/* ── 캐릭터 탭 — 거실에 세울 캐릭터 조합(프리셋) — GET /rooms/me/presets (3-⑥) ── */
 
 /** 거실에 세울 캐릭터 조합 하나 — 이름을 바꿀 수 있고 최대 5명 */
 export interface CharacterPreset {
   presetId: number;
   name: string;
-  /** 넣은 순서 그대로. 1~5개. 다 판 종목은 서버가 빼고 준다 */
-  stockCodes: string[];
+  /** 넣은 순서 그대로. 1~5개. 종목 이름은 보유 목록에 없을 때(다 판 종목) 쓴다 */
+  stocks: { stockId: number; stockName: string }[];
 }
 
 export interface PresetList {
-  /** 최대 5개, 늘 1개 이상 */
+  /** 최대 5개. 0개일 수 있다(처음 · 다 지움) */
   presets: CharacterPreset[];
-  /** 지금 거실에 선 프리셋 */
-  activePresetId: number;
-}
-
-/** 보유 종목 한 줄 — 프리셋에 넣을 후보. 이름·그림은 캐릭터 카탈로그에서 */
-export interface HoldingDto {
-  stockCode: string;
-  quantity: number;
-  /** 서버가 보낸 시점의 수익률 % — 수익률순 정렬과 표시용(실시간 아님) */
-  returnRate: number;
+  /** 지금 거실에 선 프리셋(서버 is_active) — 한 번도 안 골랐으면 null */
+  activePresetId: number | null;
 }
 
 export interface ReactionKind {
@@ -212,30 +215,60 @@ export interface RoomReactions {
   mine: number | null;
 }
 
+/** 전량 매도로 떠난 캐릭터 한 회차 — GET /rooms/me/farewells (3-⑦-d). 같은 종목도 회차마다 한 장 */
 export interface FarewellCard {
+  stockId: number;
   stockCode: string;
   stockName: string;
-  color: string;
+  /** KST YYYY-MM-DD */
   startDate: string;
   endDate: string;
   days: number;
   finalReturnRate: number;
-  message: string;
 }
 
+/** 출석 보드 — GET /rooms/me/attendance (3-⑦-b). 누적 방식: 빠진 날이 있어도 다음 칸, 7번마다 처음 칸 */
 export interface AttendanceState {
+  /** 누적 출석 횟수(오늘 받았으면 오늘 포함) */
+  attendanceCount: number;
   /** 7일 보드에서 오늘이 몇 번째 칸인가 (0부터) */
   todayIndex: number;
   claimedToday: boolean;
-  rewards: { itemName: string; quantity: number; icon: InventoryItem['icon'] }[];
+  /** 칸마다 등급 · 수량 — 받을 때 그 등급 아이템 중 하나가 무작위로 온다 */
+  rewards: { grade: string; quantity: number }[];
 }
 
+/** 출석 받기 결과 — 그 등급 아이템이 DB 에 없으면 출석만 기록되고 rewardItem 은 null */
+export interface AttendanceClaim {
+  attendanceCount: number;
+  todayIndex: number;
+  rewardItem: { itemId: number; name: string; quantity: number } | null;
+}
+
+/** 입은 옷 — 착용 옷 번호로 조립한다(3-③ 4, catalog.outfitOf). 기본 옷이면 null */
 export interface Outfit {
   clothesId: number;
-  name: string;
-  /** 해금 조건 — 호감도 레벨 */
-  unlockLevel: number;
+  /** 옷 모델 자리 — 파일 구조는 모델 만들 때 확정. 3D 는 아직 몸통 색만 바꾼다 */
+  modelUrl: string;
+  /** 평면 더미 · 도형 몸통 색 */
   color: string;
+}
+
+/** 옷 입히기 창의 한 벌 — GET /rooms/me/characters/:stockId/clothes (그 종목 전용 + 공용) */
+export interface ClothesOption {
+  clothesId: number;
+  name: string;
+  unlocked: boolean;
+  equipped: boolean;
+  /** 해금에 필요한 호감도 레벨 — 호감도로 풀리는 옷이 아니면 null */
+  unlockLevel: number | null;
+}
+
+export interface CharacterClothes {
+  equippedClothesId: number | null;
+  affinityLevel: number;
+  affinityProgress: number | null;
+  clothes: ClothesOption[];
 }
 
 /**

@@ -27,6 +27,8 @@ interface Runtime {
   characters: CharacterCatalog;
   furniture: FurnitureCatalog;
   reactionKinds: ReactionKind[];
+  /** 내 거실 감정 피드 — 거실 조합이 바뀌면 다시 잇는다(1-5 B). 남의 거실은 null */
+  feed: RoomFeed | null;
 }
 
 /** 버튼 줌 애니메이션을 멈춘다 — 휠·끌기·슬라이더가 끼어들면 그쪽이 이긴다 */
@@ -131,10 +133,11 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
       renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
       renderer.holdMissingClips(debug ? DEBUG_HOLD_MS : null);
       // 엔진 — 내 거실만 감정 스트림이 있다. 남의 거실 스트림(2-7)은 S7·S8 이라 그때까지 빈 엔진(걷기 · 대기 · 들기만)
-      const createEngine: EngineFactory = mine
+      const feed = mine ? new RoomFeed(() => alive && setNeedLogin(true)) : null;
+      const createEngine: EngineFactory = feed
         ? (onCommand) =>
             createRoomEngine({
-              feed: new RoomFeed(() => alive && setNeedLogin(true)),
+              feed,
               onCommand,
               log: debug ? (line) => console.log(`[엔진] ${line}`) : undefined,
               labelOf: (id) => characters.def(id)?.stockName,
@@ -158,7 +161,7 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
       loop.start();
       setSnapshot(snap);
       setHoldings(owned);
-      setRt({ loop, renderer, characters, furniture, reactionKinds });
+      setRt({ loop, renderer, characters, furniture, reactionKinds, feed });
     })().catch((e: unknown) => {
       if (!alive) return;
       if (e instanceof api.AuthRequiredError) {
@@ -322,7 +325,16 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
           rt?.loop.pointerCancel();
         }}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes(ITEM_MIME)) e.preventDefault();
+          if (!e.dataTransfer.types.includes(ITEM_MIME)) return;
+          e.preventDefault();
+          // 끌고 있는 아이템 밑의 캐릭터 — 호감도 MAX 면 HUD 가 「이미 MAX」를 띄운다(3-⑦-a)
+          if (!rt) return;
+          const p = local(e);
+          const charId = rt.loop.charAt(p.x, p.y);
+          hud.current?.onItemOver(charId ?? null);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) hud.current?.onItemOver(null);
         }}
         onDrop={(e) => {
           const itemId = Number(e.dataTransfer.getData(ITEM_MIME));
@@ -379,7 +391,11 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
             api.setFollow(userId, on).catch(() => req === followRequest.current && setFollowing(prev));
           }}
           onPlacementsSaved={(p) => rt.loop.setPlacements(p)}
-          onRoster={(characters) => setSnapshot((s) => (s ? { ...s, characters } : s))}
+          onRoster={(characters) => {
+            setSnapshot((s) => (s ? { ...s, characters } : s));
+            // 새로 세운 캐릭터의 감정을 다음 1분 주기까지 기다리지 않고 새 snapshot 으로 받는다(1-5 B)
+            rt.feed?.reconnect();
+          }}
           loginOpen={needLogin}
           onNeedLogin={() => setNeedLogin(true)}
         />

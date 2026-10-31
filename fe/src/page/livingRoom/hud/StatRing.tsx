@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { pct, toneSoft } from '../../stockDetail/format';
 import { R } from '../../stockDetail/radius';
 import type { CharacterDef, Quote, ReactionKind, RoomCharacterDto, ViewMode } from '../types';
+import { isMaxAffinity, levelLabel } from './labels';
 import { Icon } from './ui';
 import { C, REACTION_COLOR } from './style';
 
@@ -59,7 +60,15 @@ export function StatRing({
       case 'rate':
         return <span style={{ ...num, color: rate === undefined ? C.faint : toneSoft(rate) }}>{rate === undefined ? '—' : pct(rate)}</span>;
       case 'affinity':
-        return <span style={num}>{character.affinityLevel >= 5 ? 'MAX' : `Lv.${character.affinityLevel}`}</span>;
+        // 서버가 준 레벨 · 지금 단계 진행률 그대로(3-⑤) — 배지가 작아 두 줄로
+        return isMaxAffinity(character.affinityProgress) ? (
+          <span style={num}>MAX</span>
+        ) : (
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1 }}>
+            <span style={num}>{levelLabel(character.affinityLevel, character.affinityProgress)}</span>
+            <span style={{ ...num, fontSize: 10, fontWeight: 500, color: C.dim }}>{character.affinityProgress}%</span>
+          </span>
+        );
       case 'reaction':
         return <span style={num}>{character.receivedReactionCount}</span>;
       case 'stock':

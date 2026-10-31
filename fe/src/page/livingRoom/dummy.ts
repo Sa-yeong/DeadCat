@@ -1,17 +1,12 @@
 /**
- * 더미 데이터 — 백엔드 rooms·placements·items·guestbooks… 모듈이 아직 없다.
+ * 더미 데이터 — 남의 거실(S8 에서 실 API 로) · 가구(가구 묶음 보류)만 남았다. 내 거실 패널은 S6 에서 실 API 로 바뀌었다.
  * api.ts 가 이 값을 돌려준다. 연결할 때는 api.ts 만 바꾸고 이 파일은 지운다.
  * 숫자는 화면 확인용이다. 실제 시세·실적과 무관하다.
  */
 import type {
-  AttendanceState,
   CharacterDef,
-  CharacterPreset,
-  FarewellCard,
   FurnitureDef,
   GuestbookPost,
-  InventoryItem,
-  Outfit,
   OwnerProfileDto,
   PlacementDto,
   ReactionKind,
@@ -26,18 +21,15 @@ const SLOT_TIER: 1 | 2 | 3 = 2;
 
 /* ── 종목 고정값 (Catalog API) ─────────────────────────────────────── */
 
-/** 고유 의상 — 캐릭터당 1벌, 호감도 MAX 에서 해금 */
-const outfit = (clothesId: number, stockName: string, color: string): Outfit => ({ clothesId, name: `${stockName} 고유 의상`, unlockLevel: 5, color });
-
-/** 더미 종목 번호는 9001~ — 실제 DB 번호(1, 2 …)와 겹치지 않게(캐릭터 탭이 더미 카탈로그를 같은 캐시에 넣는다, S6 까지) */
+/** 남의 거실(더미, S8 까지) 캐릭터 — 종목 번호는 9001~ 로 실제 DB 번호(1, 2 …)와 겹치지 않게 */
 export const CHARACTER_DEFS: CharacterDef[] = ([
-  { stockId: 9001, stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7', outfit: outfit(101, '삼성전자', '#7E6FD8') },
-  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF', outfit: outfit(102, 'SK하이닉스', '#4F78D6') },
-  { stockId: 9003, stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B', outfit: outfit(103, '카카오', '#D69A4F') },
-  { stockId: 9004, stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', color: '#9FD3C7', outfit: outfit(104, 'NAVER', '#5FA592') },
-  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3', outfit: outfit(105, '엔비디아', '#D66F8A') },
-  { stockId: 9006, stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9', outfit: outfit(106, '현대차', '#7F93AD') },
-  { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0', outfit: outfit(107, '테슬라', '#C86A6A') },
+  { stockId: 9001, stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7' },
+  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF' },
+  { stockId: 9003, stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B' },
+  { stockId: 9004, stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', color: '#9FD3C7' },
+  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3' },
+  { stockId: 9006, stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9' },
+  { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0' },
 ] satisfies Omit<CharacterDef, 'modelUrl'>[]).map((d) => ({ ...d, modelUrl: modelUrlOf(d.stockId) }));
 
 /* ── 가구 고정값 (Catalog API) ─────────────────────────────────────── */
@@ -164,28 +156,6 @@ export const PLACEMENTS: PlacementDto[] = [
   pl(30, 26.6, 1.0),
 ];
 
-/** 내 보유 종목 전부 — 이 중 지금 프리셋의 종목만 거실에 선다 */
-export const OWNER_HOLDINGS: RoomCharacterDto[] = [
-  { stockId: 9001, stockCode: '005930', stockName: '삼성전자', quantity: 40, meanPrice: 66500, affinityLevel: 3, affinityScore: 40, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 12 },
-  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', quantity: 8, meanPrice: 191000, affinityLevel: 4, affinityScore: 87, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 31 },
-  { stockId: 9003, stockCode: '035720', stockName: '카카오', quantity: 25, meanPrice: 44000, affinityLevel: 2, affinityScore: 25, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 5 },
-  { stockId: 9004, stockCode: '035420', stockName: 'NAVER', quantity: 6, meanPrice: 187500, affinityLevel: 1, affinityScore: 10, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 2 },
-  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', quantity: 10, meanPrice: 212600, affinityLevel: 5, affinityScore: 100, affinityProgress: null, ownedClothesId: 105, receivedReactionCount: 47 },
-  { stockId: 9006, stockCode: '005380', stockName: '현대차', quantity: 3, meanPrice: 250300, affinityLevel: 1, affinityScore: 5, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 0 },
-  { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', quantity: 2, meanPrice: 555600, affinityLevel: 2, affinityScore: 20, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 3 },
-];
-
-/** 캐릭터 탭의 프리셋 — 처음엔 첫 번째가 거실에 서 있다 */
-export const PRESETS: CharacterPreset[] = [
-  { presetId: 1, name: '내 거실', stockCodes: ['005930', '000660', '035720', '035420', 'NVDA'] },
-  { presetId: 2, name: '반도체 라인', stockCodes: ['000660', 'NVDA', '005930', 'TSLA'] },
-  { presetId: 3, name: '배당 모음', stockCodes: ['005930', '035420', '005380'] },
-];
-export const ACTIVE_PRESET_ID = 1;
-
-/** 더미 시세 — 캐릭터 탭(더미 보유 목록)의 수익률 계산용. S6 에서 실 API 로 바꾸면 지운다 */
-export const START_PRICES: Record<string, number> = { '005930': 71400, '000660': 214000, '035720': 42200, '035420': 190000, NVDA: 260400, '005380': 245000, TSLA: 610000 };
-
 /* ── 남의 거실 (VISITOR·GUEST) ──────────────────────────────────── */
 
 export const VISIT_OWNER: OwnerProfileDto = {
@@ -200,22 +170,15 @@ export const VISIT_OWNER: OwnerProfileDto = {
 };
 
 export const VISIT_CHARACTERS: RoomCharacterDto[] = [
-  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', returnRate: 18.2, affinityLevel: 4, affinityScore: 70, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 54 },
-  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', returnRate: 31.5, affinityLevel: 5, affinityScore: 100, affinityProgress: null, ownedClothesId: 105, receivedReactionCount: 88 },
-  { stockId: 9003, stockCode: '035720', stockName: '카카오', returnRate: -9.4, affinityLevel: 2, affinityScore: 30, affinityProgress: null, ownedClothesId: null, receivedReactionCount: 9 },
+  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', returnRate: 18.2, affinityLevel: 4, affinityScore: 170, affinityProgress: 39, ownedClothesId: null, receivedReactionCount: 54 },
+  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', returnRate: 31.5, affinityLevel: 5, affinityScore: 248, affinityProgress: null, ownedClothesId: 105, receivedReactionCount: 88 },
+  { stockId: 9003, stockCode: '035720', stockName: '카카오', returnRate: -9.4, affinityLevel: 2, affinityScore: 30, affinityProgress: 18, ownedClothesId: null, receivedReactionCount: 9 },
 ];
 
 /** /room/999 — 비공개 거실 확인용 */
 export const PRIVATE_OWNER_ID = '999';
 
 /* ── 패널 데이터 ──────────────────────────────────────────────── */
-
-export const INVENTORY: InventoryItem[] = [
-  { itemId: 1, name: '쿠키', quantity: 6, effect: 10, icon: 'cookie' },
-  { itemId: 2, name: '커피', quantity: 2, effect: 15, icon: 'coffee' },
-  { itemId: 3, name: '꽃다발', quantity: 1, effect: 30, icon: 'flower' },
-  { itemId: 4, name: '선물 상자', quantity: 2, effect: 20, icon: 'gift' },
-];
 
 export const STORAGE: StorageItem[] = [
   { furnitureId: 8, quantity: 2 },
@@ -261,23 +224,3 @@ export const REACTION_KINDS: ReactionKind[] = [
   { reactionId: 3, label: '웃겨요', icon: 'smile' },
 ];
 export const ROOM_REACTION_COUNTS: Record<number, number> = { 1: 64, 2: 21, 3: 12 };
-
-export const FAREWELLS: FarewellCard[] = [
-  { stockCode: '000270', stockName: '기아', color: '#B9B9C6', startDate: '2025-02-04', endDate: '2026-06-30', days: 512, finalReturnRate: 34.2, message: '512일 동안 고마웠어요. 수익 실현 축하해요!' },
-  { stockCode: '373220', stockName: 'LG에너지솔루션', color: '#A6AEB8', startDate: '2026-01-15', endDate: '2026-04-12', days: 87, finalReturnRate: -18.4, message: '아쉽지만 여기까지… 다음엔 더 좋은 타이밍에 만나요.' },
-  { stockCode: '005490', stockName: 'POSCO홀딩스', color: '#B4AFA6', startDate: '2025-07-13', endDate: '2026-02-28', days: 230, finalReturnRate: 8.1, message: '조용히 벌고, 조용히 떠납니다.' },
-];
-
-export const ATTENDANCE: AttendanceState = {
-  todayIndex: 3,
-  claimedToday: false,
-  rewards: [
-    { itemName: '쿠키', quantity: 2, icon: 'cookie' },
-    { itemName: '커피', quantity: 1, icon: 'coffee' },
-    { itemName: '쿠키', quantity: 3, icon: 'cookie' },
-    { itemName: '커피', quantity: 2, icon: 'coffee' },
-    { itemName: '선물 상자', quantity: 1, icon: 'gift' },
-    { itemName: '쿠키', quantity: 3, icon: 'cookie' },
-    { itemName: '꽃다발', quantity: 1, icon: 'flower' },
-  ],
-};
