@@ -15,11 +15,16 @@ export function OwnerProfileHud({
 }: {
   owner: OwnerProfileDto;
   roomReturnRate: number | undefined;
-  onFollow: (on: boolean) => void;
+  /** 팔로우 토글 — 비로그인이면 RoomHud 가 로그인 창 열기를 넣는다 */
+  onFollow: () => void;
 }) {
   return (
     <div style={{ position: 'absolute', left: 12, top: 10, display: 'flex', alignItems: 'center', gap: 12, zIndex: 5 }}>
-      <span style={{ width: 44, height: 44, borderRadius: '50%', background: '#5B49D8', flexShrink: 0 }} aria-hidden="true" />
+      {owner.profileImgUrl ? (
+        <img src={owner.profileImgUrl} alt="" width={44} height={44} style={{ borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+      ) : (
+        <span style={{ width: 44, height: 44, borderRadius: '50%', background: '#5B49D8', flexShrink: 0 }} aria-hidden="true" />
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 16, fontWeight: 900 }}>{owner.nickname}의 거실</span>
@@ -28,7 +33,8 @@ export function OwnerProfileHud({
           )}
           <button
             type="button"
-            onClick={() => onFollow(!owner.isFollowing)}
+            aria-pressed={owner.isFollowing}
+            onClick={onFollow}
             style={{
               height: 26, padding: '0 10px', border: owner.isFollowing ? `1px solid ${C.line}` : 'none', borderRadius: R.control,
               background: owner.isFollowing ? 'transparent' : '#3D6DF2', color: owner.isFollowing ? C.text2 : '#FFFFFF',
@@ -41,7 +47,7 @@ export function OwnerProfileHud({
         <div style={{ display: 'flex', gap: 4 }}>
           {owner.tags.map((t) => (
             <span
-              key={t.content}
+              key={t.tagId}
               style={{
                 height: 20, padding: '0 7px', display: 'inline-flex', alignItems: 'center', borderRadius: R.bar, fontSize: 11, fontWeight: 700,
                 background: t.isSelf ? 'rgba(91,140,255,0.16)' : 'rgba(111,167,127,0.18)', color: t.isSelf ? '#8FB3FF' : '#8FCB9F',

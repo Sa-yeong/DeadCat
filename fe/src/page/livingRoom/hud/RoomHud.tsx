@@ -16,6 +16,7 @@ import {
   type Quote,
   type ReactionKind,
   type RoomCharacterDto,
+  type RoomReactions,
   type RoomSnapshot,
 } from '../types';
 import { AssetSummary } from './AssetSummary';
@@ -91,6 +92,7 @@ export function RoomHud({
   onStock,
   onVisit,
   onFollow,
+  onRoomReactions,
   onPlacementsSaved,
   onRoster,
   loginOpen,
@@ -116,7 +118,10 @@ export function RoomHud({
   onSidePanel: (open: boolean) => void;
   onStock: (stockCode: string) => void;
   onVisit: (userId: number) => void;
-  onFollow: (on: boolean) => void;
+  /** 팔로우 버튼 — 토글 하나(POST /users/:userId/follow). 페이지가 보내고 서버 값으로 맞춘다 */
+  onFollow: () => void;
+  /** 거실 반응이 바뀌었다(방명록 탭에서 남김 · 교체 · 취소) — 페이지가 스냅샷을 맞춘다 */
+  onRoomReactions: (r: RoomReactions) => void;
   onPlacementsSaved: (p: PlacementDto[]) => void;
   /** 거실에 선 캐릭터가 바뀌었다(캐릭터 탭) — 페이지가 스냅샷을 맞춘다 */
   onRoster: (characters: RoomCharacterDto[]) => void;
@@ -346,12 +351,13 @@ export function RoomHud({
           quote={quotes[selected]}
           reactions={reactionKinds}
           onSelectBadge={onBadge}
-          onReact={(id) => {
+          onReact={(reactionType) => {
+            if (!ownerId) return;
             const target = selected;
-            // 남긴 반응은 받은 반응 수에 바로 보이게 — 실패하면 조용히 넘긴다(링에 안내 자리가 없음). 반응 API 는 아직 더미(S8) — 종목 코드로 보낸다
-            void api.reactToCharacter(ownerId, sel.stockCode, id).then(
-              () => setChars((list) => list.map((c) => (charIdOf(c) === target ? { ...c, receivedReactionCount: c.receivedReactionCount + 1 } : c))),
-              () => {},
+            // 1인 1개 — 서버가 준 개수 · 내 반응(교체 · 취소 반영)을 그대로 받는다. 로그인이 풀렸으면 로그인 창, 그 밖의 실패는 조용히(링에 안내 자리가 없음)
+            void api.reactToCharacter(ownerId, sel.stockId, reactionType).then(
+              (r) => setChars((list) => list.map((c) => (charIdOf(c) === target ? { ...c, receivedReactionCount: r.receivedReactionCount, myReaction: r.myReaction } : c))),
+              (e: unknown) => e instanceof api.AuthRequiredError && askLogin(),
             );
           }}
           onNeedLogin={askLogin}
@@ -392,6 +398,8 @@ export function RoomHud({
             ownerId={ownerId}
             mode={mode}
             reactionKinds={reactionKinds}
+            roomReactions={snapshot.roomReactions}
+            onRoomReactions={onRoomReactions}
             onClose={closePanel}
             onVisit={onVisit}
             onNeedLogin={askLogin}

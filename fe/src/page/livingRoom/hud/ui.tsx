@@ -126,3 +126,12 @@ export function ConfirmDialog({
     </>
   );
 }
+
+/**
+ * 반응 종류 하나의 얼굴 — 서버가 준 그림(img)이 있으면 그림, 없으면 종류 이름을 글자로.
+ * 반응 종류는 DB 에서 온다(GET /rooms/reaction-types) — 화면이 종류를 정해 두지 않는다
+ */
+export function ReactionFace({ kind, size = 16 }: { kind: { reactionType: string; img: string }; size?: number }) {
+  if (kind.img) return <img src={kind.img} alt="" width={size} height={size} style={{ display: 'block', objectFit: 'contain' }} />;
+  return <span style={{ fontSize: Math.max(11, size - 4), fontWeight: 700, whiteSpace: 'nowrap' }}>{kind.reactionType}</span>;
+}

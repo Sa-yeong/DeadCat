@@ -1,35 +1,12 @@
 /**
- * 더미 데이터 — 남의 거실(S8 에서 실 API 로) · 가구(가구 묶음 보류)만 남았다. 내 거실 패널은 S6 에서 실 API 로 바뀌었다.
- * api.ts 가 이 값을 돌려준다. 연결할 때는 api.ts 만 바꾸고 이 파일은 지운다.
- * 숫자는 화면 확인용이다. 실제 시세·실적과 무관하다.
+ * 더미 데이터 — 가구(가구 묶음 보류)만 남았다. 내 거실은 S4 · S6, 남의 거실은 S8 에서 실 API 로 바뀌었다.
+ * api.ts 가 이 값을 돌려준다. 가구를 연결할 때는 api.ts 만 바꾸고 이 파일은 지운다.
  */
-import type {
-  CharacterDef,
-  FurnitureDef,
-  GuestbookPost,
-  OwnerProfileDto,
-  PlacementDto,
-  ReactionKind,
-  RoomCharacterDto,
-  StorageItem,
-} from './types';
+import type { FurnitureDef, PlacementDto, StorageItem } from './types';
 import { FURNITURE_MODELS } from './runtime/furnitureAssets';
 
 /** 슬롯머신 단계 — 1 낡은 것 · 2 수리한 것 · 3 제일 좋은 것. {잠정 — 단계를 저장할 곳이 서버에 없어 고정값} */
 const SLOT_TIER: 1 | 2 | 3 = 2;
-
-/* ── 종목 고정값 (Catalog API) ─────────────────────────────────────── */
-
-/** 남의 거실(더미, S8 까지) 캐릭터 — 종목 번호는 9001~ 로 실제 DB 번호(1, 2 …)와 겹치지 않게 */
-export const CHARACTER_DEFS: CharacterDef[] = [
-  { stockId: 9001, stockCode: '005930', stockName: '삼성전자', imgUrl: '/images/005930.svg', color: '#C9C1F7' },
-  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', imgUrl: '/images/000660.svg', color: '#8FB3FF' },
-  { stockId: 9003, stockCode: '035720', stockName: '카카오', imgUrl: '/images/035720.svg', color: '#F2C38B' },
-  { stockId: 9004, stockCode: '035420', stockName: 'NAVER', imgUrl: '/images/035420.svg', color: '#9FD3C7' },
-  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', imgUrl: '/images/NVDA.svg', color: '#F2A0B3' },
-  { stockId: 9006, stockCode: '005380', stockName: '현대차', imgUrl: '/images/005380.svg', color: '#B8C7D9' },
-  { stockId: 9007, stockCode: 'TSLA', stockName: '테슬라', imgUrl: '/images/TSLA.svg', color: '#E8A0A0' },
-];
 
 /* ── 가구 고정값 (Catalog API) ─────────────────────────────────────── */
 
@@ -85,7 +62,7 @@ export const FURNITURE_DEFS: FurnitureDef[] = [
   { furnitureId: 30, name: '슬롯머신', kind: 'box', w: 2, d: 2, h: 2.5, colors: ['#5A2A2A', '#3A1E22', '#2E181C'], interactive: true, model: FURNITURE_MODELS[`slot${SLOT_TIER}`] },
 ];
 
-/* ── 내 거실 (RoomQuery API · OWNER) ──────────────────────────────── */
+/* ── 가구 배치 (내 거실 그대로 · 남의 거실은 api.ts 가 일부를 뺀다) ──────────────────────────────── */
 
 let pid = 1;
 const pl = (furnitureId: number, x: number, y: number, rotation = 0): PlacementDto => ({
@@ -155,28 +132,6 @@ export const PLACEMENTS: PlacementDto[] = [
   pl(30, 26.6, 1.0),
 ];
 
-/* ── 남의 거실 (VISITOR·GUEST) ──────────────────────────────────── */
-
-export const VISIT_OWNER: OwnerProfileDto = {
-  nickname: '밤샘단타',
-  profileImgUrl: '',
-  tags: [
-    { content: '단타', isSelf: true },
-    { content: '반도체', isSelf: true },
-    { content: '고위험', isSelf: false },
-  ],
-  isFollowing: false,
-};
-
-export const VISIT_CHARACTERS: RoomCharacterDto[] = [
-  { stockId: 9002, stockCode: '000660', stockName: 'SK하이닉스', returnRate: 18.2, affinityLevel: 4, affinityScore: 170, affinityProgress: 39, ownedClothesId: null, receivedReactionCount: 54 },
-  { stockId: 9005, stockCode: 'NVDA', stockName: '엔비디아', returnRate: 31.5, affinityLevel: 5, affinityScore: 248, affinityProgress: null, ownedClothesId: 105, receivedReactionCount: 88 },
-  { stockId: 9003, stockCode: '035720', stockName: '카카오', returnRate: -9.4, affinityLevel: 2, affinityScore: 30, affinityProgress: 18, ownedClothesId: null, receivedReactionCount: 9 },
-];
-
-/** /room/999 — 비공개 거실 확인용 */
-export const PRIVATE_OWNER_ID = '999';
-
 /* ── 패널 데이터 ──────────────────────────────────────────────── */
 
 export const STORAGE: StorageItem[] = [
@@ -184,42 +139,3 @@ export const STORAGE: StorageItem[] = [
   { furnitureId: 11, quantity: 1 },
   { furnitureId: 10, quantity: 1 },
 ];
-
-const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
-
-export const GUESTBOOK: GuestbookPost[] = [
-  { postId: 1, userId: 21, nickname: '주식하는고양이', content: '하이닉스 표정 너무 좋다ㅋㅋ 오늘 날았네요', writeTime: hoursAgo(0.2), isSecret: false, replies: [] },
-  { postId: 2, userId: 22, nickname: '밤샘단타', content: '거실 구경 왔다 갑니다. 소파 어디서 구했어요?', writeTime: hoursAgo(1), isSecret: false,
-    replies: [{ commentId: 1, userId: 1, nickname: '나', content: '고마워요! 자주 놀러 오세요', writeTime: hoursAgo(0.8), isSecret: false }] },
-  { postId: 7, userId: 27, nickname: '조용한매수', content: '혹시 하이닉스 평단 얼마에 잡으셨어요? 저도 들어갈까 고민 중이라…', writeTime: hoursAgo(2), isSecret: true,
-    replies: [{ commentId: 2, userId: 1, nickname: '나', content: '19만 원 초반이요. 나눠서 사세요!', writeTime: hoursAgo(1.5), isSecret: true }] },
-  { postId: 3, userId: 23, nickname: '익명의개미', content: '카카오 언제 웃을까요… 같이 버텨요', writeTime: hoursAgo(3), isSecret: false,
-    replies: [
-      { commentId: 3, userId: 28, nickname: '존버장인', content: '저도 카카오 물려 있어요ㅠ', writeTime: hoursAgo(2.5), isSecret: false },
-      { commentId: 4, userId: 23, nickname: '익명의개미', content: '평단 알려 드릴게요, 비밀로', writeTime: hoursAgo(2.2), isSecret: true },
-    ] },
-  { postId: 4, userId: 24, nickname: 'NVDA러버', content: '엔비디아 Lv.5 부럽습니다', writeTime: hoursAgo(26), isSecret: false, replies: [] },
-  { postId: 5, userId: 25, nickname: '가치투자자', content: '삼성전자 40주 꾸준하시네요', writeTime: hoursAgo(50), isSecret: false, replies: [] },
-  { postId: 6, userId: 26, nickname: '첫매수', content: '방 분위기 좋아요. 스탠드 색감 예쁘네요', writeTime: hoursAgo(80), isSecret: false, replies: [] },
-];
-
-/** 남의 거실(밤샘단타, userId 22)의 방명록 — 주인 답글은 22, '나'(1)는 아직 안 씀 */
-export const VISIT_GUESTBOOK: GuestbookPost[] = [
-  { postId: 101, userId: 31, nickname: '반도체한우물', content: '하이닉스 +18% 실화인가요… 축하드려요', writeTime: hoursAgo(0.5), isSecret: false,
-    replies: [{ commentId: 101, userId: 22, nickname: '밤샘단타', content: '운이 좋았어요ㅎㅎ', writeTime: hoursAgo(0.4), isSecret: false }] },
-  { postId: 102, userId: 27, nickname: '조용한매수', content: '엔비디아 언제 사셨는지 여쭤봐도 될까요?', writeTime: hoursAgo(2), isSecret: true,
-    replies: [{ commentId: 102, userId: 22, nickname: '밤샘단타', content: '작년 봄이요. 그때 많이 샀어요', writeTime: hoursAgo(1.6), isSecret: true }] },
-  { postId: 103, userId: 32, nickname: '카카오존버', content: '카카오 같이 버텨요 우리', writeTime: hoursAgo(5), isSecret: false,
-    replies: [
-      { commentId: 103, userId: 33, nickname: '물타기달인', content: '저도 물렸어요ㅠ', writeTime: hoursAgo(4.5), isSecret: false },
-      { commentId: 104, userId: 22, nickname: '밤샘단타', content: '평단 공유해 드릴게요', writeTime: hoursAgo(4), isSecret: true },
-    ] },
-  { postId: 104, userId: 34, nickname: '단타초보', content: '거실 분수대 예뻐요!', writeTime: hoursAgo(30), isSecret: false, replies: [] },
-];
-
-export const REACTION_KINDS: ReactionKind[] = [
-  { reactionId: 1, label: '좋아요', icon: 'heart' },
-  { reactionId: 2, label: '멋져요', icon: 'star' },
-  { reactionId: 3, label: '웃겨요', icon: 'smile' },
-];
-export const ROOM_REACTION_COUNTS: Record<number, number> = { 1: 64, 2: 21, 3: 12 };

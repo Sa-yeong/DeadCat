@@ -27,7 +27,7 @@ interface Runtime {
   characters: CharacterCatalog;
   furniture: FurnitureCatalog;
   reactionKinds: ReactionKind[];
-  /** 내 거실 감정 피드 — 거실 조합이 바뀌면 다시 잇는다(1-5 B). 남의 거실은 null */
+  /** 감정 피드 — 내 거실은 거실 조합이 바뀌면 다시 잇는다(1-5 B). 비공개 거실은 열지 않아 null */
   feed: RoomFeed | null;
 }
 
@@ -52,7 +52,10 @@ function stopAnim(r: { current: { raf: number; target: number } | null }) {
  * 평면 더미(PlaceholderScene, SVG)는 주소에 `?r=2d` 를 붙이면 쓴다(확인·테스트용).
  * 3D 는 three.js 를 쓰므로 따로 불러온다(평면 더미만 볼 때는 내려받지 않는다).
  *
- * 내 거실은 실 API(S4) — 거실 조회 · 감정 스트림(엔진) · 보유 종목 3초 폴링(HUD). 남의 거실은 아직 더미라 엔진 없이 걷기만 한다(S7·S8).
+ * 내 거실은 실 API(S4) — 거실 조회 · 감정 스트림(엔진) · 보유 종목 3초 폴링(HUD).
+ * 남의 거실도 실 API(S8) — 거실 조회 · 방 주인 기준 감정 스트림(엔진) · 반응 · 방명록 · 팔로우. 보는 사람(VISITOR · GUEST)은 서버가 토큰으로 정한다.
+ *   자기 id 로 들어오면(서버가 OWNER 응답) /room 으로 보낸다. 비공개(403)면 빈 방에 블러 + 안내, 스트림은 열지 않는다.
+ *   마주침 · 확률은 브라우저마다 따로 판단한다(서버 기준으로 맞추지 않음).
  * 개발 모드 `?debug=motion` — 머리 위에 모션 · 감정 글자, 파일 없는 모션을 3초 대기 자세로, 엔진 사건 로그를 콘솔에(지시서 1-3 · 1-11).
  * 실제 서비스 화면에는 이 주소를 걸지 않는다.
  *
@@ -62,16 +65,14 @@ function stopAnim(r: { current: { raf: number; target: number } | null }) {
 export function LivingRoomPage() {
   const { userId } = useParams();
   const { search } = useLocation();
-  // 더미 전용 — 실제로는 서버가 토큰으로 판정한다. 실 API 로 바꿀 때 api.getRoom 의 인자와 함께 지운다
   const params = new URLSearchParams(search);
-  const asGuest = params.has('guest');
   const use3d = params.get('r') !== '2d';
   const debug = params.get('debug') === 'motion';
   // 다른 거실로 옮겨 가면 통째로 새로 만든다 — 이전 거실의 런타임·패널 상태를 끌고 가지 않게
-  return <RoomView key={`${userId ?? 'me'}|${asGuest}|${use3d}|${debug}`} userId={userId} asGuest={asGuest} use3d={use3d} debug={debug} />;
+  return <RoomView key={`${userId ?? 'me'}|${use3d}|${debug}`} userId={userId} use3d={use3d} debug={debug} />;
 }
 
-function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefined; asGuest: boolean; use3d: boolean; debug: boolean }) {
+function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d: boolean; debug: boolean }) {
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -92,7 +93,8 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
   /** 내 거실을 비로그인으로 열었다 — 로그인 창을 띄운다 */
   /** 로그인 창 — 화면에 하나만. 내 거실을 비로그인으로 열었을 때와 비로그인이 참여하려 할 때 */
   const [needLogin, setNeedLogin] = useState(false);
-  const followRequest = useRef(0);
+  /** 팔로우 요청이 가는 중 — 토글 API 라 겹쳐 보내지 않는다 */
+  const followBusy = useRef(false);
   /** 씬 축척이 바뀐 횟수 — HUD 가 런타임에 자리를 다시 묻게 한 번 더 그린다 */
   const [, setSceneVersion] = useState(0);
   /** 줌 · 끌기 — 1배(FIT_VIEW)가 방 전체 구도 */
@@ -114,14 +116,21 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
     (async () => {
       const mine = !userId;
       // 내 거실은 보유 목록도 같이 — 캐릭터 썸네일(stock_img)이 여기 있고(3-③) HUD 자산의 첫 값이 된다
-      const [snap, owned] = await Promise.all([api.getRoom(userId, asGuest), mine ? api.getMyHoldings() : null]);
+      const [snap, owned] = await Promise.all([api.getRoom(userId), mine ? api.getMyHoldings() : null]);
+      // 내 id 로 남의 거실 주소에 들어왔다 — 서버가 OWNER 응답을 줬으니 내 거실 주소로 보낸다
+      if (!mine && snap.mode === 'OWNER') {
+        if (alive) navigate(`/room${roomQuery(use3d, debug)}`, { replace: true });
+        return;
+      }
+      const isPrivateRoom = !snap.shareOption && snap.mode !== 'OWNER';
+      // 남의 거실 썸네일은 응답에 없다 — 빈 칸(평면 더미는 색, 3D 는 모델이라 쓰지 않음)
       const imgOf = (stockId: number) => owned?.find((h) => h.stockId === stockId)?.imgUrl ?? '';
-      const [charDefs, furnDefs, reactionKinds] = await Promise.all([
-        // 남의 거실은 아직 더미 카탈로그(S8)
-        mine ? snap.characters.map((c) => characterDef(c, imgOf(c.stockId))) : api.getCharacterDefs(snap.characters.map((c) => c.stockCode)),
+      const [furnDefs, reactionKinds] = await Promise.all([
         api.getFurnitureDefs(),
-        api.getReactionKinds(),
+        // 반응 종류를 못 받아도 거실은 연다 — 반응 칸만 빈다(지금 DB 는 0개라 원래 빈 목록)
+        api.getReactionKinds().catch((): ReactionKind[] => []),
       ]);
+      const charDefs = snap.characters.map((c) => characterDef(c, imgOf(c.stockId)));
       const Scene3D = use3d ? (await import('./runtime/RoomScene')).RoomScene : null;
       if (!alive || !(Scene3D ? canvasRef.current : svgRef.current)) return;
 
@@ -132,8 +141,14 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
       // 축척은 아래 layout effect 가 rt 가 생기자마자(첫 화면을 그리기 전에) 맞춘다
       renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
       renderer.holdMissingClips(debug ? DEBUG_HOLD_MS : null);
-      // 엔진 — 내 거실만 감정 스트림이 있다. 남의 거실 스트림(2-7)은 S7·S8 이라 그때까지 빈 엔진(걷기 · 대기 · 들기만)
-      const feed = mine ? new RoomFeed(() => alive && setNeedLogin(true)) : null;
+      // 엔진 — 내 거실 · 남의 거실 모두 감정 스트림으로(남의 거실은 방 주인 기준, 2-7). 비공개 거실은 스트림을 열지 않고 빈 엔진
+      const feed = isPrivateRoom
+        ? null
+        : new RoomFeed(userId, (status) => {
+            if (!alive) return;
+            if (status === 401) setNeedLogin(true); // 내 거실 — 로그인이 풀렸다
+            else console.warn(`[거실 스트림] ${status} — 다시 잇지 않습니다`); // 남의 거실 — 그 사이 비공개로 바뀌었거나 없어졌다
+          });
       const createEngine: EngineFactory = feed
         ? (onCommand) =>
             createRoomEngine({
@@ -167,14 +182,15 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
       if (e instanceof api.AuthRequiredError) {
         setError('로그인하면 내 거실을 볼 수 있어요');
         setNeedLogin(true);
-      } else setError('거실을 불러오지 못했어요');
+      } else if (e instanceof api.HttpError && e.status === 404) setError('없는 거실이에요');
+      else setError('거실을 불러오지 못했어요');
     });
     return () => {
       alive = false;
       loop?.stop();
       renderer?.dispose();
     };
-  }, [userId, asGuest, use3d, debug]);
+  }, [userId, use3d, debug, navigate]);
 
   // 보유 종목 3초 폴링 — 내 거실을 다 받은 뒤부터. 로그인이 풀리면 멈추고 로그인 창
   useHoldingsPoll(!!rt && snapshot?.mode === 'OWNER', setHoldings, () => setNeedLogin(true));
@@ -285,7 +301,7 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
 
   // 비공개 거실 — 주인이 아니면 블러만 보이고 아무것도 누를 수 없다(방명록·팔로우 포함).
   // 거실 탐색 검색에서 빼는 것은 서버 몫. 여기는 링크(방명록 닉네임·커뮤니티·팔로우 목록)로 들어온 경우다
-  const isPrivate = snapshot?.visibility === 'PRIVATE' && snapshot.mode !== 'OWNER';
+  const isPrivate = !!snapshot && !snapshot.shareOption && snapshot.mode !== 'OWNER';
   useLayoutEffect(() => {
     wheelOn.current = !!snapshot && !!rt && !isPrivate;
   });
@@ -385,16 +401,25 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
           furniture={rt.furniture}
           onSidePanel={setSideOpen}
           onStock={(code) => navigate(`/stocks/${code}`)}
-          onVisit={(id) => navigate(`/room/${id}${roomQuery(asGuest, use3d, debug)}`)} // ?guest 는 더미 전용
-          onFollow={(on) => {
-            if (!userId) return;
-            const prev = snapshot.owner?.isFollowing ?? false;
+          onVisit={(id) => navigate(`/room/${id}${roomQuery(use3d, debug)}`)}
+          onFollow={() => {
+            if (!userId || !snapshot.owner || followBusy.current) return;
+            const prev = snapshot.owner.isFollowing;
             const setFollowing = (v: boolean) => setSnapshot((s) => (s && s.owner ? { ...s, owner: { ...s.owner, isFollowing: v } } : s));
-            // 먼저 바꿔 보이고, 실패하면 되돌린다 — 단 그 사이 다시 눌렀으면 마지막 누름이 이긴다
-            const req = ++followRequest.current;
-            setFollowing(on);
-            api.setFollow(userId, on).catch(() => req === followRequest.current && setFollowing(prev));
+            // 먼저 바꿔 보이고 서버 값으로 맞춘다. 실패하면 되돌린다(로그인이 풀렸으면 로그인 창). 가는 동안 또 누르면 무시 — 토글이라 겹치면 어긋난다
+            followBusy.current = true;
+            setFollowing(!prev);
+            api
+              .toggleFollow(userId)
+              .then(setFollowing, (e: unknown) => {
+                setFollowing(prev);
+                if (e instanceof api.AuthRequiredError) setNeedLogin(true);
+              })
+              .finally(() => {
+                followBusy.current = false;
+              });
           }}
+          onRoomReactions={(roomReactions) => setSnapshot((s) => (s ? { ...s, roomReactions } : s))}
           onPlacementsSaved={(p) => rt.loop.setPlacements(p)}
           onRoster={(characters) => {
             setSnapshot((s) => (s ? { ...s, characters } : s));
@@ -415,9 +440,9 @@ function RoomView({ userId, asGuest, use3d, debug }: { userId: string | undefine
   );
 }
 
-/** 다른 거실로 갈 때도 미리보기 표시(비로그인 흉내 · 평면 더미 · 개발 모드)를 이어 간다 */
-function roomQuery(asGuest: boolean, use3d: boolean, debug: boolean): string {
-  const parts = [asGuest ? 'guest' : '', use3d ? '' : 'r=2d', debug ? 'debug=motion' : ''].filter(Boolean);
+/** 다른 거실로 갈 때도 미리보기 표시(평면 더미 · 개발 모드)를 이어 간다 */
+function roomQuery(use3d: boolean, debug: boolean): string {
+  const parts = [use3d ? '' : 'r=2d', debug ? 'debug=motion' : ''].filter(Boolean);
   return parts.length ? `?${parts.join('&')}` : '';
 }
 

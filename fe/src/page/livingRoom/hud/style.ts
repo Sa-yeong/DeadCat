@@ -59,5 +59,3 @@ export const floatBar: CSSProperties = {
   borderRadius: R.card,
   background: C.glass,
 };
-
-export const REACTION_COLOR = { heart: '#FF7A70', star: '#F2C38B', smile: '#9FD3C7' } as const;

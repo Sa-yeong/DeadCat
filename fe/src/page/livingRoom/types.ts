@@ -6,7 +6,6 @@
 
 /** 보는 사람 — 서버가 토큰으로 판정한다. 클라는 받은 값을 따른다 */
 export type ViewMode = 'OWNER' | 'VISITOR' | 'GUEST';
-export type Visibility = 'PUBLIC' | 'PRIVATE';
 /** 같은 클릭이 모드에 따라 스탯 링 / 증여 / 배치로 갈린다 */
 export type InteractionMode = 'NORMAL' | 'PLACEMENT';
 /** 한 번에 하나만 열린다 */
@@ -16,14 +15,16 @@ export type Panel = 'attendance' | 'farewell' | 'guestbook' | 'items' | 'charact
 /* ── RoomQuery API 응답 — GET /rooms/me · GET /rooms/:ownerId ───────────── */
 
 export interface TagDto {
+  tagId: number;
   content: string;
   /** true = 본인이 고른 성향 태그(파랑), false = 시스템 태그(초록) */
   isSelf: boolean;
 }
 
 export interface OwnerProfileDto {
+  userId: number;
   nickname: string;
-  profileImgUrl: string;
+  profileImgUrl: string | null;
   tags: TagDto[];
   isFollowing: boolean;
 }
@@ -51,7 +52,10 @@ export interface RoomCharacterDto {
   affinityProgress: number | null;
   /** 고른 옷(서버 clothes_id = holdings.equipped_clothes_id) — null = 기본 옷, 값 = MAX 옷(3-⑩) */
   ownedClothesId: number | null;
+  /** 받은 반응 수(종류 합) */
   receivedReactionCount: number;
+  /** VISITOR 전용 · 내가 이 캐릭터에 남긴 반응 종류(캐릭터마다 1인 1개). 없거나 비로그인이면 null */
+  myReaction?: string | null;
 }
 
 export interface PlacementDto {
@@ -66,12 +70,14 @@ export interface PlacementDto {
 
 export interface RoomSnapshot {
   mode: ViewMode;
-  visibility: Visibility;
-  /** VISITOR·GUEST 전용 */
+  /** 거실 공개 여부(서버 share_option). 남의 비공개 거실은 서버가 403 을 주고 화면은 빈 방에 블러만 얹는다 */
+  shareOption: boolean;
+  /** VISITOR·GUEST 전용 — 비공개(403)면 서버가 주지 않아 없다 */
   owner?: OwnerProfileDto;
   characters: RoomCharacterDto[];
   placements: PlacementDto[];
-  roomReactionCount: number;
+  /** 거실이 받은 반응 — 종류별 개수와 내가 남긴 것(VISITOR 만, 거실 전체 1인 1개) */
+  roomReactions: RoomReactions;
   /** VISITOR·GUEST 전용 · 거실에 세운 캐릭터 기준 % */
   roomReturnRate?: number;
 }
@@ -160,28 +166,38 @@ export interface StorageItem {
   quantity: number;
 }
 
-export interface GuestbookComment {
-  commentId: number;
-  userId: number;
+/** 방명록 답글 — 비밀 여부는 원글을 따라간다(답글마다 고르지 않음, 3-⑧) */
+export interface GuestbookReply {
+  replyId: number;
+  /** 탈퇴한 사람이면 null — 거실로 갈 수 없다 */
+  userId: number | null;
   nickname: string;
-  /** 비밀 답글을 볼 수 없는 사람에겐 서버가 null 로 준다 */
+  /** 비밀글의 답글을 볼 수 없는 사람에겐 서버가 null 로 준다 */
   content: string | null;
+  /** UTC ISO — 화면은 KST 로 */
   writeTime: string;
-  /** 거실 주인 · 답글 쓴 사람 · 원글 쓴 사람만 본다. 비밀글에 단 답글은 늘 비밀 {DB 칸 없음 — 추가 필요} */
-  isSecret: boolean;
 }
 
 export interface GuestbookPost {
   postId: number;
-  userId: number;
+  /** 탈퇴한 사람이면 null — 거실로 갈 수 없다 */
+  userId: number | null;
   nickname: string;
-  /** 비밀글을 볼 수 없는 사람에겐 서버가 null 로 준다 */
+  profileImgUrl: string | null;
+  /** 비밀글을 볼 수 없는 사람에겐 서버가 null 로 준다(「비밀글입니다」는 화면이 쓴다) */
   content: string | null;
+  /** UTC ISO — 화면은 KST 로 */
   writeTime: string;
-  /** 거실 주인과 쓴 사람만 본다 {DB에 비밀글 칸 없음 — 추가 필요} */
+  /** 거실 주인과 쓴 사람만 본다 */
   isSecret: boolean;
-  /** 답글(대댓글)은 1단 — 주인·방문자 모두 단다 (comments 에 부모 칸이 없음) */
-  replies: GuestbookComment[];
+  /** 답글은 1단 — 주인·방문자 모두 단다. 작성순 */
+  replies: GuestbookReply[];
+}
+
+/** 방명록 한 쪽 — 최신순. nextCursor 를 넘기면 다음 쪽, 마지막 쪽이면 null */
+export interface GuestbookPage {
+  posts: GuestbookPost[];
+  nextCursor: number | null;
 }
 
 /* ── 캐릭터 탭 — 거실에 세울 캐릭터 조합(프리셋) — GET /rooms/me/presets (3-⑥) ── */
@@ -201,16 +217,26 @@ export interface PresetList {
   activePresetId: number | null;
 }
 
+/** 반응 종류 — GET /rooms/reaction-types (DB reactions). 비어 있을 수 있다 */
 export interface ReactionKind {
-  reactionId: number;
-  label: string;
-  icon: 'heart' | 'star' | 'smile';
+  /** 종류 이름 = 식별 값(서버 reaction_type) */
+  reactionType: string;
+  /** 그림 주소 — 비었으면 이름을 글자로 보인다 */
+  img: string;
 }
 
 export interface RoomReactions {
-  counts: Record<number, number>;
-  /** 내가 남긴 것 — 거실 전체는 1인 1개 */
-  mine: number | null;
+  /** 종류 이름 → 개수 */
+  counts: Record<string, number>;
+  /** 내가 남긴 것 — 1인 1개(다른 종류 = 교체, 같은 종류 다시 = 취소). 주인 · 비로그인은 null */
+  mine: string | null;
+}
+
+/** 캐릭터 반응 결과 — POST /rooms/:userId/characters/:stockId/reactions */
+export interface CharacterReactions {
+  stockId: number;
+  receivedReactionCount: number;
+  myReaction: string | null;
 }
 
 /** 전량 매도로 떠난 캐릭터 한 회차 — GET /rooms/me/farewells (3-⑦-d). 같은 종목도 회차마다 한 장 */

@@ -3,8 +3,8 @@ import { pct, toneSoft } from '../../stockDetail/format';
 import { R } from '../../stockDetail/radius';
 import type { CharacterDef, Quote, ReactionKind, RoomCharacterDto, ViewMode } from '../types';
 import { isMaxAffinity, levelLabel } from './labels';
-import { Icon } from './ui';
-import { C, REACTION_COLOR } from './style';
+import { Icon, ReactionFace } from './ui';
+import { C } from './style';
 
 /** 배지 다섯 — OWNER 5종 / VISITOR·GUEST 4종(옷 없음) */
 export type BadgeKind = 'rate' | 'affinity' | 'reaction' | 'stock' | 'clothes';
@@ -40,7 +40,8 @@ export function StatRing({
   quote: Quote | undefined;
   reactions: ReactionKind[];
   onSelectBadge: (kind: BadgeKind) => void;
-  onReact: (reactionId: number) => void;
+  /** 반응 종류를 골랐다 — 1인 1개라 내 반응과 같은 걸 다시 고르면 서버가 취소한다 */
+  onReact: (reactionType: string) => void;
   /** 비로그인이 반응을 남기려 했다 */
   onNeedLogin: () => void;
 }) {
@@ -128,24 +129,32 @@ export function StatRing({
       {picker && (
         <div
           style={{
-            position: 'absolute', left: -70, top: 24, width: 140, display: 'flex', justifyContent: 'center', gap: 4, padding: 4,
+            position: 'absolute', left: 0, top: 24, transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', gap: 4, padding: 4,
             border: `1px solid ${C.line}`, borderRadius: R.card, background: C.panel,
           }}
         >
-          {reactions.map((r) => (
-            <button
-              key={r.reactionId}
-              type="button"
-              aria-label={`${def.stockName}에게 ${r.label}`}
-              onClick={() => {
-                onReact(r.reactionId);
-                setPicker(false);
-              }}
-              style={{ width: 32, height: 28, border: 'none', borderRadius: R.control, background: 'transparent', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Icon name={r.icon} size={16} fill={r.icon !== 'smile'} color={REACTION_COLOR[r.icon]} />
-            </button>
-          ))}
+          {reactions.length === 0 && <span style={{ padding: '4px 6px', fontSize: 11, color: C.faint, whiteSpace: 'nowrap' }}>아직 반응 종류가 없어요</span>}
+          {reactions.map((r) => {
+            const mine = character.myReaction === r.reactionType;
+            return (
+              <button
+                key={r.reactionType}
+                type="button"
+                aria-label={mine ? `${def.stockName}에게 남긴 ${r.reactionType} 취소` : `${def.stockName}에게 ${r.reactionType}`}
+                aria-pressed={mine}
+                onClick={() => {
+                  onReact(r.reactionType);
+                  setPicker(false);
+                }}
+                style={{
+                  minWidth: 32, height: 28, padding: '0 4px', border: mine ? `1px solid ${C.accent}` : '1px solid transparent', borderRadius: R.control,
+                  background: 'transparent', color: C.text, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <ReactionFace kind={r} />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
