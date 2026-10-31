@@ -41,7 +41,7 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
     const got: unknown[] = [];
-    const s = api.streamRoom((d) => got.push(d), () => {});
+    const s = api.streamRoom(undefined, (d) => got.push(d), () => {});
     await flush();
     await flush();
     s.close();
@@ -53,22 +53,75 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
     ]);
   });
 
-  it('401 이면 다시 잇지 않고 onAuthFailed 한 번', async () => {
+  it('401 이면 다시 잇지 않고 onStopped(401) 한 번', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
     vi.stubGlobal('fetch', fetchMock);
     const failed = vi.fn();
-    api.streamRoom(() => {}, failed);
+    api.streamRoom(undefined, () => {}, failed);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(failed).toHaveBeenCalledTimes(1);
+    expect(failed).toHaveBeenCalledWith(401);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('남의 거실은 /rooms/:userId/stream — 토큰이 있으면 Bearer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(sseBody([]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const s = api.streamRoom('22', () => {}, () => {});
+    await flush();
+    s.close();
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/rooms\/22\/stream$/);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('비로그인은 남의 거실 스트림을 헤더 없이 연다 · 내 거실은 열지 않고 401', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => null });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(sseBody([]), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const s = api.streamRoom('22', () => {}, () => {});
+    await flush();
+    s.close();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+    const stopped = vi.fn();
+    api.streamRoom(undefined, () => {}, stopped);
+    await flush();
+    expect(stopped).toHaveBeenCalledWith(401);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([403, 404])('남의 거실 %i(비공개 · 없는 거실)이면 다시 잇지 않고 onStopped 한 번', async (status) => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(null, { status })));
+    vi.stubGlobal('fetch', fetchMock);
+    const stopped = vi.fn();
+    const off = new RoomFeed('22', stopped).subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(60_000);
+    off();
+    expect(stopped).toHaveBeenCalledTimes(1);
+    expect(stopped).toHaveBeenCalledWith(status);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('500 은 멈추지 않고 다시 잇는다', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(null, { status: 500 })));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const stopped = vi.fn();
+    const s = api.streamRoom('22', () => {}, stopped);
+    await vi.advanceTimersByTimeAsync(1000);
+    s.close();
+    expect(stopped).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('끊기면 간격을 두고 다시 잇는다(1초 → 2초)', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(sseBody([]), { status: 200 })));
     vi.stubGlobal('fetch', fetchMock);
-    const s = api.streamRoom(() => {}, () => {});
+    const s = api.streamRoom(undefined, () => {}, () => {});
     await vi.advanceTimersByTimeAsync(0);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1000);
@@ -93,7 +146,7 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
       ),
     );
     const got: FeedEvent[] = [];
-    const off = new RoomFeed(() => {}).subscribe((e) => got.push(e));
+    const off = new RoomFeed(undefined, () => {}).subscribe((e) => got.push(e));
     await flush();
     await flush();
     off();
@@ -145,11 +198,11 @@ const ch = (stockId: number): RoomCharacterDto => ({
   stockId, stockCode: `C${stockId}`, stockName: `종목${stockId}`, affinityLevel: 0, affinityScore: 0, affinityProgress: 0, ownedClothesId: null, receivedReactionCount: 0,
 });
 
-function setup() {
+function setup(chars: RoomCharacterDto[] = [ch(1), ch(2)], mode: 'OWNER' | 'VISITOR' = 'OWNER') {
   const r = fakeRenderer();
   const e = fakeEngine();
   const characters = new CharacterCatalog();
-  characters.load([characterDef(ch(1)), characterDef(ch(2))]);
+  characters.load(chars.map((c) => characterDef(c)));
   const loop = new RoomLoop({
     renderer: r.renderer,
     createEngine: (onCommand) => {
@@ -161,7 +214,7 @@ function setup() {
     motions: ROOM_MOTIONS,
     events: { onPicked: () => {}, onEmptyPick: () => {}, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {} },
   });
-  loop.load({ mode: 'OWNER', visibility: 'PUBLIC', characters: [ch(1), ch(2)], placements: [], roomReactionCount: 0 });
+  loop.load({ mode, shareOption: true, characters: chars, placements: [], roomReactions: { counts: {}, mine: null } });
   return { loop, ...r, ...e };
 }
 
@@ -246,5 +299,11 @@ describe('옷 모습 — 고른 옷 × 수익률 상태 (3-⑩)', () => {
     t.loop.setRoster([ch(1), ch(2)]);
     t.loop.updateReturnRates({ '2': -19 }); // 여유 구간 없이 — 일반
     expect(t.loop.outfitStateOf('2')).toBe('normal');
+  });
+
+  it('남의 거실은 진입 때 서버 수익률로 한 번 — 여유 구간 없이 ±20%', () => {
+    const t = setup([{ ...ch(1), returnRate: -20 }, { ...ch(2), returnRate: 20 }, { ...ch(3), returnRate: 19.9 }], 'VISITOR');
+    expect(looks(t.calls)).toEqual(['look 1 base_ragged', 'look 2 base_fancy', 'look 3 base_normal']);
+    expect(t.loop.outfitStateOf('3')).toBe('normal');
   });
 });

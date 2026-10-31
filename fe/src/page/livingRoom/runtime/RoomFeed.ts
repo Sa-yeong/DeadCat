@@ -4,24 +4,32 @@ import { isEmotion } from '../engine/ruleLoader';
 import { MARKET_EVENTS, type MarketEventType } from '../engine/type/type';
 
 /**
- * 감정 피드 — 엔진의 EmotionFeed(subscribe → unsubscribe)를 내 거실 스트림(GET /rooms/me/stream)으로 구현한다(지시서 2-2).
- * 연결 · 재연결 · 401 은 api.streamRoom 이 맡고, 여기는 메시지를 엔진 양식(FeedEvent)으로 거른다.
+ * 감정 피드 — 엔진의 EmotionFeed(subscribe → unsubscribe)를 거실 스트림으로 구현한다(지시서 2-2 · 2-7).
+ *   내 거실 GET /rooms/me/stream · 남의 거실 GET /rooms/:ownerId/stream(감정은 방 주인 기준 — 주인 · 방문자가 같은 감정을 받는다)
+ * 연결 · 재연결 · 401/403/404 멈춤은 api.streamRoom 이 맡고, 여기는 메시지를 엔진 양식(FeedEvent)으로 거른다.
  *   이름표가 아니라 내용 속 type 으로 나눈다(2-1). 모르는 감정 이름 · 모양이 틀린 메시지는 버린다 — 엔진에 들어가면 기본 자세 표를 못 찾는다
  */
 export class RoomFeed implements EmotionFeed {
-  private readonly onAuthFailed: () => void;
+  private readonly ownerId: api.OwnerId;
+  private readonly onStopped: (status: number) => void;
   private stream: api.RoomStream | null = null;
 
-  constructor(onAuthFailed: () => void) {
-    this.onAuthFailed = onAuthFailed;
+  /** ownerId 가 undefined 면 내 거실. onStopped — 다시 잇지 않고 멈췄다(401 로그인 풀림 · 403 비공개 · 404 없는 거실) */
+  constructor(ownerId: api.OwnerId, onStopped: (status: number) => void) {
+    this.ownerId = ownerId;
+    this.onStopped = onStopped;
   }
 
   subscribe(handler: (e: FeedEvent) => void): () => void {
     this.stream?.close();
-    const stream = api.streamRoom((data) => {
-      const e = toFeedEvent(data);
-      if (e) handler(e);
-    }, this.onAuthFailed);
+    const stream = api.streamRoom(
+      this.ownerId,
+      (data) => {
+        const e = toFeedEvent(data);
+        if (e) handler(e);
+      },
+      this.onStopped,
+    );
     this.stream = stream;
     return () => {
       stream.close();

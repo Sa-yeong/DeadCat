@@ -4,7 +4,8 @@
  * **실 API로 바꿀 곳은 이 파일뿐이다.** 서버 칸 이름(snake_case) → 화면 이름(camelCase) 변환도 여기 한 곳(이름 통일 기준 4).
  *   실 API (S4)   내 거실 조회 GET /rooms/me · 감정 스트림 GET /rooms/me/stream · 보유 종목 GET /holdings
  *   실 API (S6)   프리셋 · 아이템 · 선물 · 출석 · 이별 흔적 · 옷 — 모두 /rooms/me/… (C1 경로표)
- *   더미          남의 거실(S8: 조회 · 방명록 · 반응 · 팔로우 · 반응 종류 · 카탈로그) · 가구(가구 묶음 보류). 주석의 주소는 옛 가정
+ *   실 API (S8)   남의 거실 GET /rooms/:userId · 스트림 GET /rooms/:userId/stream · 반응 종류 · 반응 · 방명록 · 팔로우
+ *   더미          가구(가구 묶음 보류 — 카탈로그 · 배치 · 보관함). 거실 응답의 placed_furniture 는 옛 모양이라 쓰지 않는다
  *
  * 한 객체로 묶지 않는다(God class 방지) — 패널이 필요한 묶음만 가져다 쓴다.
  */
@@ -15,12 +16,11 @@ import type {
   AttendanceClaim,
   AttendanceState,
   CharacterClothes,
-  CharacterDef,
+  CharacterReactions,
   FarewellCard,
   FurnitureDef,
   GiftResult,
-  GuestbookComment,
-  GuestbookPost,
+  GuestbookPage,
   InventoryItem,
   OwnedStock,
   PlacementDto,
@@ -30,15 +30,22 @@ import type {
   RoomReactions,
   RoomSnapshot,
   StorageItem,
-  ViewMode,
 } from './types';
 
 /** 거실 주인 — undefined 면 내 거실 (/rooms/me) */
 export type OwnerId = string | undefined;
 
-/** 로그인이 필요하다 — 토큰이 없거나 서버가 401 을 주면 이 에러로 바꿔 던진다 (내 거실을 비로그인으로 열었을 때) */
+/** 로그인이 필요하다 — 토큰이 없거나 서버가 401 을 주면 이 에러로 바꿔 던진다 */
 export class AuthRequiredError extends Error {}
-const roomPath = (ownerId: OwnerId) => (ownerId ? `/rooms/${ownerId}` : '/rooms/me');
+
+/** 서버가 거절했다(400 · 403 · 404 …) — 안내 글(서버 message)과 상태 번호를 같이 든다 */
+export class HttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.status = status;
+  }
+}
 
 /* ── 서버 공통 — 토큰 · 응답 껍질 ─────────────────────────────────── */
 
@@ -46,31 +53,59 @@ const roomPath = (ownerId: OwnerId) => (ownerId ? `/rooms/${ownerId}` : '/rooms/
 const tokenOf = (): string | null => localStorage.getItem('token');
 
 /**
- * 로그인 필수 요청 — 응답 껍질({ success, data })을 벗겨 data 만 준다. 토큰이 없거나 401 이면 AuthRequiredError.
- * 그 밖의 거절(400 · 403 · 404)은 서버가 준 안내 글(`{ success: false, message }`)을 담은 Error 로 바꿔 던진다 — 패널이 그대로 보여 준다
+ * 내 사용자 번호 — 토큰(JWT)의 sub 를 읽기만 한다(검증은 서버). 방명록처럼 내 거실에도 /rooms/:userId 경로를 쓰는 API 에 넣는다.
+ * 토큰이 없거나 읽을 수 없으면 null
  */
-async function authed<T>(method: 'get' | 'post' | 'put' | 'delete', path: string, body?: unknown): Promise<T> {
-  const token = tokenOf();
-  if (!token) throw new AuthRequiredError('로그인이 필요해요');
+export function myUserId(): string | null {
+  const part = tokenOf()?.split('.')[1];
+  if (!part) return null;
   try {
-    const res = await http.request<{ success: boolean; data: T }>({ method, url: path, data: body, headers: { Authorization: `Bearer ${token}` } });
-    return res.data.data;
-  } catch (e) {
-    if (axios.isAxiosError(e) && e.response?.status === 401) throw new AuthRequiredError('로그인이 필요해요');
-    const msg: unknown = axios.isAxiosError(e) ? (e.response?.data as { message?: unknown } | undefined)?.message : undefined;
-    if (typeof msg === 'string' || Array.isArray(msg)) throw new Error(Array.isArray(msg) ? msg.join(' · ') : msg, { cause: e });
-    throw e;
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const sub: unknown = (JSON.parse(json) as { sub?: unknown }).sub;
+    return typeof sub === 'string' || typeof sub === 'number' ? String(sub) : null;
+  } catch {
+    return null;
   }
 }
-const getAuthed = <T,>(path: string) => authed<T>('get', path);
+
+/**
+ * 요청 하나 — 응답 껍질({ success, data })을 벗겨 data 만 준다.
+ *   required  로그인 필수. 토큰이 없거나 401 이면 AuthRequiredError
+ *   optional  로그인 선택. 토큰이 있으면 붙이고, 없으면 그냥 보낸다(서버가 GUEST 로 본다)
+ * 그 밖의 거절(400 · 403 · 404)은 서버가 준 안내 글(`{ success: false, message }`)을 담은 HttpError 로 바꿔 던진다 — 패널이 그대로 보여 준다
+ */
+async function request<T>(method: 'get' | 'post' | 'put' | 'delete', path: string, opts: { body?: unknown; auth?: 'required' | 'optional' } = {}): Promise<T> {
+  const token = tokenOf();
+  const auth = opts.auth ?? 'required';
+  if (!token && auth === 'required') throw new AuthRequiredError('로그인이 필요해요');
+  try {
+    const res = await http.request<{ success: boolean; data: T }>({
+      method,
+      url: path,
+      data: opts.body,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    return res.data.data;
+  } catch (e) {
+    if (!axios.isAxiosError(e) || !e.response) throw e;
+    const status = e.response.status;
+    if (status === 401) throw new AuthRequiredError('로그인이 필요해요', { cause: e });
+    const msg: unknown = (e.response.data as { message?: unknown } | undefined)?.message;
+    const text = Array.isArray(msg) ? msg.join(' · ') : typeof msg === 'string' ? msg : `요청이 거절됐어요 (${status})`;
+    throw new HttpError(status, text, { cause: e });
+  }
+}
+const authed = <T,>(method: 'get' | 'post' | 'put' | 'delete', path: string, body?: unknown) => request<T>(method, path, { body });
+const getAuthed = <T,>(path: string) => request<T>('get', path);
 
 interface ReactionCountRes {
   reaction_type: string;
   count: number;
 }
 const sumCounts = (list: ReactionCountRes[] | undefined) => (list ?? []).reduce((n, r) => n + r.count, 0);
+const countsOf = (list: ReactionCountRes[] | undefined): Record<string, number> => Object.fromEntries((list ?? []).map((r) => [r.reaction_type, r.count]));
 
-/** GET /rooms/me 응답 (백엔드 MyRoomResponseDto) */
+/** GET /rooms/me 응답 (백엔드 MyRoomResponseDto) — 자기 id 로 GET /rooms/:userId 를 불러도 이 모양 */
 interface MyRoomRes {
   viewer_mode: 'OWNER';
   share_option: boolean;
@@ -90,6 +125,34 @@ interface MyRoomRes {
   }[];
 }
 
+/** GET /rooms/:userId 응답 (백엔드 VisitorRoomResponseDto) — 수량 · 평단가는 없다(남에게 투자금 비공개) */
+interface VisitorRoomRes {
+  viewer_mode: 'VISITOR' | 'GUEST';
+  share_option: boolean;
+  owner_info: {
+    user_id: number;
+    nickname: string;
+    profile_img_url: string | null;
+    tags: { tag_id: number; content: string; self: boolean }[];
+    is_following: boolean;
+  };
+  room_return_rate: number;
+  received_reactions: ReactionCountRes[];
+  my_reaction: string | null;
+  placed_characters: {
+    stock_id: number;
+    stock_code: string;
+    stock_name: string;
+    return_rate: number;
+    affinity_level: number;
+    affinity_score: number;
+    affinity_progress: number | null;
+    clothes_id: number | null;
+    received_reactions: ReactionCountRes[];
+    my_reaction: string | null;
+  }[];
+}
+
 /** GET /holdings 한 줄 (백엔드 HoldingItemDto) — 금액은 글자로 온다 */
 interface HoldingRes {
   stock_id: number;
@@ -106,75 +169,96 @@ interface HoldingRes {
 
 const wait = <T,>(v: T, ms = 120): Promise<T> => new Promise((r) => setTimeout(() => r(structuredClone(v)), ms));
 
-/* 더미 서버의 상태(남의 거실 · 가구) — 화면에서 바꾼 것이 새로고침 전까지 유지되게 */
+/* 더미 서버의 상태(가구) — 화면에서 바꾼 것이 새로고침 전까지 유지되게 */
 const db = {
   placements: D.PLACEMENTS.map((p) => ({ ...p })),
   storage: D.STORAGE.map((s) => ({ ...s })),
-  guestbook: structuredClone(D.GUESTBOOK),
-  /** 남의 거실 방명록 — 더미는 남의 거실이 하나(22)라 하나만 둔다 */
-  visitGuestbook: structuredClone(D.VISIT_GUESTBOOK),
-  reactions: { counts: { ...D.ROOM_REACTION_COUNTS }, mine: null as number | null },
-  following: false,
   nextId: 1000,
 };
 
+/** 남의 거실 가구 — 가구 묶음 보류라 더미 배치. 내 거실과 달라 보이게 카페 쪽(카페 세트·카운터·진열장·스툴·분수대·파란 러그)을 뺀다 */
+const visitPlacements = (): PlacementDto[] => D.PLACEMENTS.filter((p) => ![16, 17, 18, 19, 20, 26].includes(p.furnitureId)).map((p) => ({ ...p }));
+
 /* ── RoomQuery API ────────────────────────────────────────────── */
 
+function myRoomSnapshot(d: MyRoomRes): RoomSnapshot {
+  return {
+    mode: 'OWNER',
+    shareOption: d.share_option,
+    characters: d.placed_characters.map((c) => ({
+      stockId: c.stock_id,
+      stockCode: c.stock_code,
+      stockName: c.stock_name,
+      quantity: c.quantity,
+      meanPrice: c.mean_price,
+      affinityLevel: c.affinity_level,
+      affinityScore: c.affinity_score,
+      affinityProgress: c.affinity_progress,
+      ownedClothesId: c.clothes_id,
+      receivedReactionCount: sumCounts(c.received_reactions),
+    })),
+    // 가구는 가구 묶음 결정 전까지 더미 배치 그대로 보여 준다(S4 도휘 결정) — 응답의 placed_furniture 는 옛 모양이라 쓰지 않는다
+    placements: db.placements,
+    roomReactions: { counts: countsOf(d.received_reactions), mine: null },
+  };
+}
+
+function visitorRoomSnapshot(d: VisitorRoomRes): RoomSnapshot {
+  const o = d.owner_info;
+  return {
+    mode: d.viewer_mode,
+    shareOption: d.share_option,
+    owner: {
+      userId: o.user_id,
+      nickname: o.nickname,
+      profileImgUrl: o.profile_img_url,
+      tags: o.tags.map((t) => ({ tagId: t.tag_id, content: t.content, isSelf: t.self })),
+      isFollowing: o.is_following,
+    },
+    characters: d.placed_characters.map((c) => ({
+      stockId: c.stock_id,
+      stockCode: c.stock_code,
+      stockName: c.stock_name,
+      returnRate: c.return_rate,
+      affinityLevel: c.affinity_level,
+      affinityScore: c.affinity_score,
+      affinityProgress: c.affinity_progress,
+      ownedClothesId: c.clothes_id,
+      receivedReactionCount: sumCounts(c.received_reactions),
+      myReaction: c.my_reaction,
+    })),
+    placements: visitPlacements(),
+    roomReactions: { counts: countsOf(d.received_reactions), mine: d.my_reaction },
+    roomReturnRate: d.room_return_rate,
+  };
+}
+
 /**
- * GET /rooms/me (실 API) · GET /rooms/:ownerId (더미 — S8)
- * 보는 사람은 서버가 토큰으로 안다 — 클라는 userId를 넘기지 않는다.
- * `asGuest` 는 더미 전용(비로그인 확인용). 남의 거실을 실 API 로 바꿀 때 빠진다.
+ * GET /rooms/me (로그인 필수) · GET /rooms/:ownerId (로그인 선택 — 토큰이 없으면 서버가 GUEST 로 본다).
+ *   자기 id 로 부르면 서버가 OWNER 응답(내 거실과 같은 모양)을 준다 — mode 'OWNER' 로 돌려주고 페이지가 /room 으로 보낸다
+ *   비공개(403) — 서버가 아무것도 주지 않는다. 빈 방(shareOption false)으로 돌려주고 화면은 블러 + 안내만 얹는다
+ *   없는 사용자(404) — HttpError 그대로
  */
-export async function getRoom(ownerId: string | undefined, asGuest = false): Promise<RoomSnapshot> {
-  if (!ownerId && asGuest) throw new AuthRequiredError('로그인이 필요해요');
-  if (!ownerId) {
-    const d = await getAuthed<MyRoomRes>('/rooms/me');
-    return {
-      mode: 'OWNER',
-      visibility: d.share_option ? 'PUBLIC' : 'PRIVATE',
-      characters: d.placed_characters.map((c) => ({
-        stockId: c.stock_id,
-        stockCode: c.stock_code,
-        stockName: c.stock_name,
-        quantity: c.quantity,
-        meanPrice: c.mean_price,
-        affinityLevel: c.affinity_level,
-        affinityScore: c.affinity_score,
-        affinityProgress: c.affinity_progress,
-        ownedClothesId: c.clothes_id,
-        receivedReactionCount: sumCounts(c.received_reactions),
-      })),
-      // 가구는 가구 묶음 결정 전까지 더미 배치 그대로 보여 준다(S4 도휘 결정) — 응답의 placed_furniture 는 옛 모양이라 쓰지 않는다
-      placements: db.placements,
-      roomReactionCount: sumCounts(d.received_reactions),
-    };
+export async function getRoom(ownerId: OwnerId): Promise<RoomSnapshot> {
+  if (!ownerId) return myRoomSnapshot(await getAuthed<MyRoomRes>('/rooms/me'));
+  try {
+    const d = await request<MyRoomRes | VisitorRoomRes>('get', `/rooms/${encodeURIComponent(ownerId)}`, { auth: 'optional' });
+    return d.viewer_mode === 'OWNER' ? myRoomSnapshot(d) : visitorRoomSnapshot(d);
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 403) {
+      return { mode: tokenOf() ? 'VISITOR' : 'GUEST', shareOption: false, characters: [], placements: [], roomReactions: { counts: {}, mine: null } };
+    }
+    throw e;
   }
-  const mode = asGuest ? 'GUEST' : 'VISITOR';
-  if (ownerId === D.PRIVATE_OWNER_ID) {
-    // 비공개 — 서버가 비워서 준다. 화면은 그 위에 블러만 얹는다
-    return wait<RoomSnapshot>({ mode, visibility: 'PRIVATE', owner: { ...D.VISIT_OWNER, nickname: '비공개거실' }, characters: [], placements: [], roomReactionCount: 0 });
-  }
-  const rates = D.VISIT_CHARACTERS.map((c) => c.returnRate ?? 0);
-  return wait({
-    mode,
-    visibility: 'PUBLIC',
-    owner: { ...D.VISIT_OWNER, isFollowing: mode === 'GUEST' ? false : db.following },
-    characters: D.VISIT_CHARACTERS,
-    // 내 거실과 달라 보이게 — 카페 쪽(카페 세트·카운터·진열장·스툴·분수대·파란 러그)을 뺀 배치
-    placements: D.PLACEMENTS.filter((p) => ![16, 17, 18, 19, 20, 26].includes(p.furnitureId)),
-    roomReactionCount: 151,
-    roomReturnRate: rates.reduce((a, b) => a + b, 0) / rates.length,
-  });
 }
 
 /* ── Catalog API — 앱에서 한 번 받아 캐시 ─────────────────────────── */
 
-/** GET /catalog/reactions — 이모티콘 종류 (DB reactions) */
-export const getReactionKinds = (): Promise<ReactionKind[]> => wait(D.REACTION_KINDS);
-
-/** GET /catalog/characters?codes=… */
-export const getCharacterDefs = (codes: string[]): Promise<CharacterDef[]> =>
-  wait(D.CHARACTER_DEFS.filter((d) => codes.includes(d.stockCode)));
+/** GET /rooms/reaction-types — 반응 종류(DB reactions, 로그인 불필요). 비어 있을 수 있다(지금 DB 는 0개) */
+export async function getReactionKinds(): Promise<ReactionKind[]> {
+  const list = await request<{ reaction_type: string; img: string | null }[]>('get', '/rooms/reaction-types', { auth: 'optional' });
+  return list.map((k) => ({ reactionType: k.reaction_type, img: k.img ?? '' }));
+}
 
 /** GET /catalog/furnitures */
 export const getFurnitureDefs = (): Promise<FurnitureDef[]> => wait(D.FURNITURE_DEFS);
@@ -328,80 +412,96 @@ export async function getFarewells(): Promise<FarewellCard[]> {
   }));
 }
 
-/* ── Guestbook API ────────────────────────────────────────────── */
+/* ── Guestbook API — /rooms/:userId/guestbook (내 거실도 내 번호로) ───────────── */
 
-/** 더미의 '나' — 실 API 에서는 서버가 토큰으로 안다 */
-const ME = 1;
+/** 방명록 경로의 거실 주인 번호 — 내 거실이면 토큰의 내 번호 */
+function guestbookOwner(ownerId: OwnerId): string {
+  const id = ownerId ?? myUserId();
+  if (!id) throw new AuthRequiredError('로그인이 필요해요');
+  return encodeURIComponent(id);
+}
 
-/**
- * 비밀글 가리기 — **서버 몫**이다. 볼 수 없는 사람에겐 내용을 null 로 보낸다(클라가 숨기는 게 아니다).
- *   비밀글     거실 주인 · 쓴 사람
- *   비밀 답글  거실 주인 · 답글 쓴 사람 · 원글 쓴 사람
- * 비로그인은 누구의 비밀글도 못 본다.
- */
-function maskFor(viewer: ViewMode, posts: GuestbookPost[]): GuestbookPost[] {
-  if (viewer === 'OWNER') return posts;
-  const me = viewer === 'GUEST' ? null : ME;
-  return posts.map((p) => ({
-    ...p,
-    content: p.isSecret && p.userId !== me ? null : p.content,
-    replies: p.replies.map((r) => ({ ...r, content: r.isSecret && r.userId !== me && p.userId !== me ? null : r.content })),
-  }));
+/** 방명록 한 번에 받는 글 수 — 서버 기본 20, 최대 50 */
+export const GUESTBOOK_PAGE = 20;
+/** 글 · 답글 글자 수 — 서버 칸 크기(posts 500 · comments 150) */
+export const GUESTBOOK_MAX = 500;
+export const REPLY_MAX = 150;
+
+interface GuestbookListRes {
+  posts: {
+    post_id: number;
+    writer_id: number | null;
+    writer_nickname: string;
+    writer_profile_img_url: string | null;
+    content: string | null;
+    is_secret: boolean;
+    created_at: string;
+    replies: { reply_id: number; writer_id: number | null; writer_nickname: string; content: string | null; created_at: string }[];
+  }[];
+  next_cursor: number | null;
 }
 
 /**
- * GET {roomPath}/guestbook?page=
- * `viewer` 는 더미 전용(비밀글 가리기 흉내) — 실 API 에서는 서버가 토큰과 거실 주인으로 안다.
+ * GET /rooms/:userId/guestbook?cursor=&limit= — 로그인 선택, 최신순. cursor 는 앞 쪽의 마지막 글 번호.
+ * 비밀글을 볼 수 없는 사람에겐 서버가 내용을 null 로 준다(클라가 숨기는 게 아니다)
  */
-export const getGuestbook = (ownerId: OwnerId, viewer: ViewMode): Promise<GuestbookPost[]> => {
-  void roomPath(ownerId); // 더미는 내 거실 / 남의 거실(하나) 두 방명록만 있다
-  return wait(maskFor(viewer, ownerId ? db.visitGuestbook : db.guestbook));
-};
-
-/** POST /rooms/:ownerId/guestbook (VISITOR) — isSecret 이면 주인과 나만 본다 */
-export function writeGuestbook(ownerId: OwnerId, content: string, isSecret: boolean): Promise<GuestbookPost> {
-  if (!ownerId) return Promise.reject(new Error('내 거실에는 방명록을 쓸 수 없어요'));
-  const post: GuestbookPost = { postId: db.nextId++, userId: ME, nickname: '나', content, writeTime: new Date().toISOString(), isSecret, replies: [] };
-  db.visitGuestbook = [post, ...db.visitGuestbook];
-  return wait(post);
+export async function getGuestbook(ownerId: OwnerId, cursor: number | null = null): Promise<GuestbookPage> {
+  const q = new URLSearchParams({ limit: String(GUESTBOOK_PAGE) });
+  if (cursor !== null) q.set('cursor', String(cursor));
+  const d = await request<GuestbookListRes>('get', `/rooms/${guestbookOwner(ownerId)}/guestbook?${q.toString()}`, { auth: 'optional' });
+  return {
+    posts: d.posts.map((p) => ({
+      postId: p.post_id,
+      userId: p.writer_id,
+      nickname: p.writer_nickname,
+      profileImgUrl: p.writer_profile_img_url,
+      content: p.content,
+      writeTime: p.created_at,
+      isSecret: p.is_secret,
+      replies: p.replies.map((r) => ({ replyId: r.reply_id, userId: r.writer_id, nickname: r.writer_nickname, content: r.content, writeTime: r.created_at })),
+    })),
+    nextCursor: d.next_cursor,
+  };
 }
 
-/** POST /guestbooks/posts/:postId/replies (OWNER · VISITOR) — 1단만. 비밀글에 단 답글은 서버가 비밀로 단다 */
-export function replyGuestbook(postId: number, content: string, isSecret: boolean): Promise<GuestbookComment> {
-  const p = [...db.guestbook, ...db.visitGuestbook].find((x) => x.postId === postId);
-  if (!p) return Promise.reject(new Error('글이 없어요'));
-  const reply: GuestbookComment = { commentId: db.nextId++, userId: ME, nickname: '나', content, writeTime: new Date().toISOString(), isSecret: isSecret || p.isSecret };
-  p.replies = [...p.replies, reply];
-  return wait(reply);
+/** POST /rooms/:userId/guestbook { content(1~500자), is_secret } — 로그인 필수, 남의 거실에만 */
+export async function writeGuestbook(ownerId: string, content: string, isSecret: boolean): Promise<{ postId: number; writeTime: string }> {
+  const r = await authed<{ post_id: number; created_at: string }>('post', `/rooms/${encodeURIComponent(ownerId)}/guestbook`, { content, is_secret: isSecret });
+  return { postId: r.post_id, writeTime: r.created_at };
 }
 
-/** GET {roomPath}/reactions */
-export const getRoomReactions = (ownerId: OwnerId): Promise<RoomReactions> => {
-  void roomPath(ownerId);
-  return wait(db.reactions);
-};
-
-/** PUT /rooms/:ownerId/reactions — 1인 1개, 같은 걸 다시 누르면 취소 (VISITOR) */
-export function reactToRoom(ownerId: OwnerId, reactionId: number): Promise<RoomReactions> {
-  if (!ownerId) return Promise.reject(new Error('내 거실에는 반응을 남길 수 없어요'));
-  const r = db.reactions;
-  if (r.mine !== null) r.counts[r.mine] = (r.counts[r.mine] ?? 1) - 1;
-  r.mine = r.mine === reactionId ? null : reactionId;
-  if (r.mine !== null) r.counts[r.mine] = (r.counts[r.mine] ?? 0) + 1;
-  return wait(r, 60);
+/** POST /rooms/:userId/guestbook/:postId/replies { content(1~150자) } — 주인 · 방문자 모두, 1단. 비밀글엔 주인 · 원글 쓴 사람만(그 외 403) */
+export async function replyGuestbook(ownerId: OwnerId, postId: number, content: string): Promise<{ replyId: number; writeTime: string }> {
+  const r = await authed<{ reply_id: number; created_at: string }>('post', `/rooms/${guestbookOwner(ownerId)}/guestbook/${postId}/replies`, { content });
+  return { replyId: r.reply_id, writeTime: r.created_at };
 }
 
-/** POST /rooms/:ownerId/characters/:stockCode/reactions (VISITOR) */
-export const reactToCharacter = (ownerId: OwnerId, stockCode: string, reactionId: number): Promise<{ stockCode: string; reactionId: number }> =>
-  ownerId ? wait({ stockCode, reactionId }, 60) : Promise.reject(new Error('내 캐릭터에는 반응을 남길 수 없어요'));
+/* ── 반응 — 1인 1개: 다른 종류 = 교체, 같은 종류 다시 = 취소 (3-⑦-c) ─────────── */
+
+/** POST /rooms/:userId/reactions { reaction_type } — 로그인 필수. 내 거실 · 없는 종류는 서버가 400 */
+export async function reactToRoom(ownerId: string, reactionType: string): Promise<RoomReactions> {
+  const r = await authed<{ received_reactions: ReactionCountRes[]; my_reaction: string | null }>('post', `/rooms/${encodeURIComponent(ownerId)}/reactions`, {
+    reaction_type: reactionType,
+  });
+  return { counts: countsOf(r.received_reactions), mine: r.my_reaction };
+}
+
+/** POST /rooms/:userId/characters/:stockId/reactions { reaction_type } — 캐릭터마다 1인 1개 */
+export async function reactToCharacter(ownerId: string, stockId: number, reactionType: string): Promise<CharacterReactions> {
+  const r = await authed<{ stock_id: number; received_reactions: ReactionCountRes[]; my_reaction: string | null }>(
+    'post',
+    `/rooms/${encodeURIComponent(ownerId)}/characters/${stockId}/reactions`,
+    { reaction_type: reactionType },
+  );
+  return { stockId: r.stock_id, receivedReactionCount: sumCounts(r.received_reactions), myReaction: r.my_reaction };
+}
 
 /* ── Follow API ──────────────────────────────────────────────── */
 
-/** POST·DELETE /users/:ownerId/follow */
-export function setFollow(ownerId: string, on: boolean): Promise<boolean> {
-  void ownerId;
-  db.following = on;
-  return wait(on, 60);
+/** POST /users/:userId/follow — 토글 하나. 바뀐 뒤 팔로우 중인지를 돌려준다. 로그인 필수, 자기 자신은 서버가 400 */
+export async function toggleFollow(ownerId: string): Promise<boolean> {
+  const r = await authed<{ is_following: boolean }>('post', `/users/${encodeURIComponent(ownerId)}/follow`);
+  return r.is_following;
 }
 
 /* ── Wardrobe API — 옷 입히기 (OWNER, B1) ───────────────────────────── */
@@ -444,7 +544,7 @@ export async function getMyHoldings(): Promise<OwnedStock[]> {
   }));
 }
 
-/* ── 감정 스트림 — GET /rooms/me/stream (실 API, 지시서 2-1 · 2-2) ─────────── */
+/* ── 감정 스트림 — GET /rooms/me/stream · GET /rooms/:userId/stream (실 API, 지시서 2-1 · 2-2 · 2-7) ── */
 
 /** 열린 스트림 손잡이 — 닫기 · 지금 다시 잇기(프리셋을 바꿨을 때, 1-5 B) */
 export interface RoomStream {
@@ -455,22 +555,27 @@ export interface RoomStream {
 /** 끊겼을 때 다시 잇는 간격(ms) — 1초에서 두 배씩, 30초까지 */
 const RETRY_MIN = 1000;
 const RETRY_MAX = 30_000;
+/** 다시 이어도 소용없는 응답 — 로그인 풀림(401) · 비공개(403) · 없는 거실(404). 스트림을 열기 전 HTTP 상태로 온다 */
+const STOP_STATUS = [401, 403, 404];
 
 /**
- * 내 거실 감정 스트림을 연다. 브라우저 EventSource 는 헤더를 못 붙여서(401) fetch 로 열고 SSE 를 직접 읽는다.
+ * 거실 감정 스트림을 연다 — 내 거실 GET /rooms/me/stream(로그인 필수) · 남의 거실 GET /rooms/:ownerId/stream(로그인 선택).
+ * 브라우저 EventSource 는 헤더를 못 붙여서(401) fetch 로 열고 SSE 를 직접 읽는다.
  *   메시지마다 data 줄의 JSON 을 onMessage 로 — 이름표(event:)는 보지 않는다. 내용 속 type 으로 나누는 건 받는 쪽(2-1)
  *   끊기면 간격을 두고 다시 잇는다(백엔드가 이을 때마다 snapshot 을 다시 보낸다 — 엔진은 중복 등록하지 않는다, 1-5 A)
- *   토큰이 없거나 401 이면 다시 잇지 않고 onAuthFailed 를 한 번 부른다(토큰 만료 · 로그아웃)
+ *   401 · 403 · 404 면 다시 잇지 않고 onStopped(상태)를 한 번 부른다. 내 거실을 토큰 없이 열려 하면 401 로 친다.
+ *   남의 거실은 토큰이 없으면 헤더 없이 연다(비로그인 구경)
  */
-export function streamRoom(onMessage: (data: unknown) => void, onAuthFailed: () => void): RoomStream {
+export function streamRoom(ownerId: OwnerId, onMessage: (data: unknown) => void, onStopped: (status: number) => void): RoomStream {
   let ctrl: AbortController | null = null;
   let timer = 0;
   let retry = 0;
   let closed = false;
+  const path = ownerId ? `/rooms/${encodeURIComponent(ownerId)}/stream` : '/rooms/me/stream';
 
-  const fail = () => {
+  const stop = (status: number) => {
     closed = true;
-    onAuthFailed();
+    onStopped(status);
   };
 
   const connect = async () => {
@@ -479,14 +584,14 @@ export function streamRoom(onMessage: (data: unknown) => void, onAuthFailed: () 
     const mine = new AbortController();
     ctrl = mine;
     const token = tokenOf();
-    if (!token) return fail();
+    if (!token && !ownerId) return stop(401);
     try {
-      const res = await fetch(`${http.defaults.baseURL ?? ''}/rooms/me/stream`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
+      const res = await fetch(`${http.defaults.baseURL ?? ''}${path}`, {
+        headers: token ? { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' } : { Accept: 'text/event-stream' },
         cache: 'no-store',
         signal: mine.signal,
       });
-      if (res.status === 401) return fail();
+      if (STOP_STATUS.includes(res.status)) return stop(res.status);
       if (!res.ok || !res.body) throw new Error(`스트림 응답 ${res.status}`);
       retry = 0;
       await readSse(res.body, onMessage);
