@@ -18,6 +18,7 @@ import { PriceService } from 'src/price/price.service';
 import { StockHistoryRepository } from 'src/modules/stock-history/stock-history.repository';
 import { PrismaService } from 'src/providers/database/prisma.service';
 import { concat, finalize, map, Observable, of, Subject } from 'rxjs';
+import { parseUserIdParam } from 'src/common/rooms/room-access';
 
 // 거실 감정 다시 계산 주기 — 1분. 시세 갱신(price.scheduler, 매분 0초)과 겹치지 않게 30초에
 const EMOTION_PUSH_CRON = '30 * * * * *';
@@ -26,13 +27,13 @@ const EMOTION_PUSH_CRON = '30 * * * * *';
 export class EmotionService {
     private readonly logger = new Logger(EmotionService.name);
 
-    //  유저별 SSE 스트림 관리를 위한 Subject Map (키 = 스트림이 열린 사용자)
-    private userStreams = new Map<string, Subject<FeedEvent>>();
+    //  거실별 SSE 스트림 (키 = 방 주인 id, 지시서 2-7). 같은 방을 보는 주인·방문자는 같은 묶음을 받는다
+    private roomStreams = new Map<string, Subject<FeedEvent>>();
 
-    //  유저별 열린 연결 수 — 탭이 여러 개면 마지막 연결이 닫힐 때 정리
+    //  거실별 열린 연결 수 — 그 방을 보는 마지막 연결이 닫힐 때 정리
     private connectionCounts = new Map<string, number>();
 
-    //  유저별 이전 감정 상태 저장소 (감정이 '실제로 변했을 때만' SSE 전송). 안쪽 키 = String(stock_id)
+    //  거실별 이전 감정 상태 저장소 (감정이 '실제로 변했을 때만' SSE 전송). 안쪽 키 = String(stock_id)
     private previousEmotions = new Map<string, Map<string, Emotion>>();
 
     private isPushing = false;
@@ -136,14 +137,21 @@ export class EmotionService {
 
     // 2. FE 런타임 엔진용 SSE 스트림 관리 로직
 
-    //  유저 거실 SSE 스트림 생성
+    //  남의 거실 스트림 — 없는 거실·비공개 거절은 컨트롤러 가드(ViewableRoomGuard)가 먼저 한다(2-7 ④)
+    async getVisitorRoomStream(
+        ownerIdParam: string,
+    ): Promise<Observable<{ data: FeedEvent }>> {
+        return this.getLivingRoomStream(String(parseUserIdParam(ownerIdParam)));
+    }
+
+    //  거실 SSE 스트림 생성 — 감정은 방 주인 기준(주인의 배치 종목 · 주인의 수익률)
     async getLivingRoomStream(
         userId: string,
     ): Promise<Observable<{ data: FeedEvent }>> {
-        if (!this.userStreams.has(userId)) {
-            this.userStreams.set(userId, new Subject<FeedEvent>());
+        if (!this.roomStreams.has(userId)) {
+            this.roomStreams.set(userId, new Subject<FeedEvent>());
         }
-        const userSubject = this.userStreams.get(userId)!;
+        const userSubject = this.roomStreams.get(userId)!;
         this.connectionCounts.set(
             userId,
             (this.connectionCounts.get(userId) ?? 0) + 1,
@@ -165,7 +173,7 @@ export class EmotionService {
         );
     }
 
-    // 연결 하나가 닫힘 — 그 사용자의 마지막 연결이면 스트림·직전 감정 기록을 지운다
+    // 연결 하나가 닫힘 — 그 방을 보는 마지막 연결이면 스트림·직전 감정 기록을 지운다
     private releaseStream(userId: string) {
         const count = (this.connectionCounts.get(userId) ?? 1) - 1;
         if (count > 0) {
@@ -173,18 +181,18 @@ export class EmotionService {
             return;
         }
         this.connectionCounts.delete(userId);
-        this.userStreams.delete(userId);
+        this.roomStreams.delete(userId);
         this.previousEmotions.delete(userId);
     }
 
-    // 1분마다 스트림이 열린 사용자의 거실 캐릭터 감정을 다시 계산 → 바뀐 것만 push
+    // 1분마다 지금 누군가 보고 있는 거실마다 캐릭터 감정을 한 번 다시 계산 → 바뀐 것만 그 방을 보는 모두에게 push
     @Cron(EMOTION_PUSH_CRON)
     async pushEmotionChanges(): Promise<void> {
-        if (this.isPushing || this.userStreams.size === 0) return;
+        if (this.isPushing || this.roomStreams.size === 0) return;
         this.isPushing = true;
         let characterCount = 0;
         try {
-            for (const userId of [...this.userStreams.keys()]) {
+            for (const userId of [...this.roomStreams.keys()]) {
                 const placedHoldings = await this.prisma.holdings.findMany({
                     where: { user_id: BigInt(userId), is_placed: true },
                     include: { stocks: true },
@@ -209,7 +217,7 @@ export class EmotionService {
                 }
             }
             this.logger.debug(
-                `감정 주기: 사용자 ${this.userStreams.size}명 · 캐릭터 ${characterCount}명 계산`,
+                `감정 주기: 거실 ${this.roomStreams.size}개 · 캐릭터 ${characterCount}명 계산`,
             );
         } catch (e) {
             this.logger.error(
@@ -286,13 +294,13 @@ export class EmotionService {
     }
 
     // 백엔드 시세 변화 등으로 감정이 실제 변경되었을 때 FE로 Push
-    // characterId = String(stock_id). 스트림이 닫힌 사용자는 기록하지 않는다(정리된 뒤 다시 쌓이지 않게)
+    // userId = 방 주인, characterId = String(stock_id). 아무도 안 보는 방은 기록하지 않는다(정리된 뒤 다시 쌓이지 않게)
     notifyEmotionChange(
         userId: string,
         characterId: string,
         newEmotion: Emotion,
     ) {
-        const userSubject = this.userStreams.get(userId);
+        const userSubject = this.roomStreams.get(userId);
         if (!userSubject) return;
 
         if (!this.previousEmotions.has(userId)) {
@@ -324,7 +332,7 @@ export class EmotionService {
         eventType: MarketEventType,
         durationMs: number,
     ) {
-        const userSubject = this.userStreams.get(userId);
+        const userSubject = this.roomStreams.get(userId);
         if (userSubject) {
             userSubject.next({
                 type: 'marketEvent',

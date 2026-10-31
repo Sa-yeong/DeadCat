@@ -36,4 +36,23 @@ export class RelationRepository {
             },
         });
     }
+
+    // 팔로우 토글 — 있으면 취소, 없으면 팔로우. 결과 = 팔로우 중인지
+    async toggleFollow(followerId: bigint, followeeId: bigint) {
+        const key = { follower_id: followerId, followee_id: followeeId };
+        return this.prisma.$transaction(async (tx) => {
+            const { count } = await tx.follow.deleteMany({ where: key });
+            if (count > 0) return false;
+            await tx.follow.create({ data: key });
+            return true;
+        });
+    }
+
+    async userExists(userId: bigint) {
+        const user = await this.prisma.users.findUnique({
+            where: { id: userId },
+            select: { id: true },
+        });
+        return !!user;
+    }
 }
