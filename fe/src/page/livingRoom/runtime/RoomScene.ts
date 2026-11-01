@@ -74,6 +74,10 @@ interface EngineRun {
   /** 지금 단계 — 파일을 받는 중이면 action 이 null */
   i: number;
   action: THREE.AnimationAction | null;
+  /** action 이 몇 번째 단계 것인지 — 다음 단계 파일을 받는 동안엔 앞 단계 action 이 남아 있다(남은 시간 표시용) */
+  actionStep: number;
+  /** 개발 모드 — 파일 없는 지금 단계를 대기 자세로 채우는 끝 시각(performance.now ms, 반복이면 Infinity). 남은 시간 표시용 */
+  holdEnd: number | null;
   onFinish: () => void;
 }
 /** 마지막으로 움직인 뒤 이만큼 지나면 멈춘 것으로 본다(ms) — 걷는 동안 매 프레임 move 가 온다 */
@@ -1183,7 +1187,7 @@ export class RoomScene implements RoomRenderer {
     if (!c) return;
     if (c.lifted) return; // 들려 있는 동안 온 요청은 받지 않는다(onFinish 없음)
     const token = ++c.engineToken; // 앞 요청은 여기서 끝 — onFinish 없이
-    c.engine = { token, steps, i: -1, action: null, onFinish };
+    c.engine = { token, steps, i: -1, action: null, actionStep: -1, holdEnd: null, onFinish };
     void this.engineStep(c, token, 0);
   }
 
@@ -1236,6 +1240,20 @@ export class RoomScene implements RoomRenderer {
     this.holdMs = ms;
   }
 
+  /** 실제 파일은 (클립 길이 − 재생한 시간) ÷ 재생 속도, 파일 없는 단계는 대기 자세를 채우는 끝 시각까지 */
+  motionTimeLeft(charId: string): number | 'loop' | null {
+    const run = this.chars.get(charId)?.engine;
+    if (!run || run.i < 0) return null;
+    const loop = run.i === run.steps.length - 1 && run.steps[run.i].loop;
+    if (run.action && run.actionStep === run.i) {
+      if (loop) return 'loop';
+      const a = run.action;
+      return Math.max(0, (a.getClip().duration - a.time) / Math.max(1e-3, Math.abs(a.timeScale)));
+    }
+    if (run.holdEnd === null) return null; // 파일을 받는 중
+    return loop ? 'loop' : Math.max(0, (run.holdEnd - performance.now()) / 1000);
+  }
+
   /** 엔진 요청을 버린다 — onFinish 를 부르지 않는다. 늦게 오는 파일·끝 신호는 요청 번호로 걸러진다 */
   private dropEngine(c: CharNode): void {
     c.engine = null;
@@ -1253,13 +1271,18 @@ export class RoomScene implements RoomRenderer {
       return;
     }
     run.i = i;
+    run.holdEnd = null;
     const step = run.steps[i];
     const action = step.clip ? await this.engineAction(c, step.clip) : null;
     if (c.engine !== run || run.token !== token) return;
     if (!action) {
       // 파일 없음 — 개발 모드면 대기 자세로 시간을 채운다(반복 마지막 단계는 cancel 까지), 아니면 건너뜀(까닭은 engineAction 이 남긴다)
       if (this.holdMs === null) return this.engineStep(c, token, i + 1);
-      if (i === run.steps.length - 1 && step.loop) return;
+      if (i === run.steps.length - 1 && step.loop) {
+        run.holdEnd = Infinity;
+        return;
+      }
+      run.holdEnd = performance.now() + this.holdMs;
       window.setTimeout(() => void this.engineStep(c, token, i + 1), this.holdMs);
       return;
     }
@@ -1270,6 +1293,7 @@ export class RoomScene implements RoomRenderer {
       action.clampWhenFinished = true; // 다음 단계와 섞이는 동안 마지막 자세를 붙잡는다
     }
     run.action = action;
+    run.actionStep = i;
     this.fadeOthers(c, action, POSE_FADE_S);
     action.reset().setEffectiveWeight(1).fadeIn(POSE_FADE_S).play(); // 쉬고 있던 쪽이라 0 부터 올려도 튀지 않는다
     c.pose = 'engine';

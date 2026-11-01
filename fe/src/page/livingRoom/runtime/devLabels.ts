@@ -1,3 +1,5 @@
+import type { DebugMotion } from './RoomLoop';
+
 /**
  * 개발 모드(`?debug=motion`, 지시서 1-3) 머리 위 글자에 쓰는 표 — UI 글자라 엔진 데이터에 넣지 않고 런타임 쪽에 둔다.
  * 표에 없는 이름은 영어 이름 그대로 보인다.
@@ -33,6 +35,15 @@ const MOTION_LABEL: Record<string, string> = {
 };
 
 export const motionLabel = (name: string): string => MOTION_LABEL[name] ?? name;
+
+/**
+ * 모션 줄 글자 — `놀라기 · 2.4s`, 여러 단계면 `덜덜 떨기 2/3 · 1.7s`, 반복이면 `· 반복`, behavior 는 `· 이동 중`.
+ * 남은 시간은 0.1초 단위로 올림 — 끝나기 직전엔 0.1s(0.0s 가 남아 보이지 않게). 모르면(파일을 받는 중) 시간 없이
+ */
+export function motionText(m: DebugMotion): string {
+  const time = m.left === 'loop' ? '반복' : m.left === 'moving' ? '이동 중' : m.left === null ? '' : `${(Math.ceil(m.left * 10 - 1e-6) / 10).toFixed(1)}s`;
+  return `${motionLabel(m.name)}${m.of > 1 ? ` ${m.step}/${m.of}` : ''}${time ? ` · ${time}` : ''}`;
+}
 
 /** 감정 줄 배경색 — 구분만 되면 된다(바꿔도 무방). 글자색은 배경 밝기에 맞춘다 */
 export const EMOTION_COLOR: Record<string, { bg: string; fg: string }> = {

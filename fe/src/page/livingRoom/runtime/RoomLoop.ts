@@ -26,13 +26,22 @@ export interface RoomLoopEvents {
   onLifted(charId: string): void;
 }
 
-/** 개발 모드(?debug=motion) 머리 위 글자 한 명분 — 지금 단계 모션 이름 · 감정(지시서 1-3) */
+/** 개발 모드 머리 위 글자의 지금 단계 — 엔진 이름 · 몇 번째(1부터) / 전체 단계 수 · 남은 시간 */
+export interface DebugMotion {
+  name: string;
+  step: number;
+  of: number;
+  /** 남은 초 · 반복 · behavior 로 걷는 중 · 모름(파일을 받는 중) */
+  left: number | 'loop' | 'moving' | null;
+}
+
+/** 개발 모드(?debug=motion) 머리 위 글자 한 명분 — 지금 단계 모션 · 감정(지시서 1-3) */
 export interface DebugLabel {
   id: string;
   /** 머리 위 화면 자리 */
   at: Pt;
-  /** 지금 단계의 모션 이름(엔진 이름) — 없으면 null */
-  motion: string | null;
+  /** 지금 단계 — 엔진 모션이 없으면 null */
+  motion: DebugMotion | null;
   emotion: Emotion | undefined;
   /** 거실에 섰지만 감정을 아직 모름(지시서 1-5) */
   waiting: boolean;
@@ -452,14 +461,22 @@ export class RoomLoop {
     this.renderer.cancel(h.id);
   }
 
-  /** 개발 모드 머리 위 글자 — 세운 캐릭터마다 지금 단계 · 감정(지시서 1-3). 화면에 안 보이는 캐릭터는 뺀다 */
+  /**
+   * 개발 모드 머리 위 글자 — 세운 캐릭터마다 지금 단계 · 남은 시간 · 감정(지시서 1-3). 화면에 안 보이는 캐릭터는 뺀다.
+   * 스탯 링이 열린 캐릭터(held)도 뺀다 — 링 메뉴와 겹치지 않게. 남은 시간은 clip 이면 렌더러에 묻고, behavior 는 걷는 중
+   */
   debugLabels(): DebugLabel[] {
     if (this.mode === 'PLACEMENT') return [];
     return [...this.handles.values()].flatMap((h) => {
+      if (h.held) return [];
       const at = this.renderer.screenOf(h.id);
       if (!at) return [];
-      const step = h.run ? h.run.steps[h.run.i] : undefined;
-      return [{ id: h.id, at, motion: step?.name ?? null, emotion: this.engine.emotionOf(h.id), waiting: this.engine.isWaitingEmotion(h.id) }];
+      const step = h.run?.steps[h.run.i];
+      const motion: DebugMotion | null =
+        h.run && step
+          ? { name: step.name, step: h.run.i + 1, of: h.run.steps.length, left: step.kind === 'behavior' ? 'moving' : this.renderer.motionTimeLeft(h.id) }
+          : null;
+      return [{ id: h.id, at, motion, emotion: this.engine.emotionOf(h.id), waiting: this.engine.isWaitingEmotion(h.id) }];
     });
   }
 

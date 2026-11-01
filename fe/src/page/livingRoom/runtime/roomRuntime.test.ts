@@ -8,6 +8,8 @@ import { RoomLoop } from './RoomLoop';
 import type { MotionStep, RoomRenderer } from './RoomRenderer';
 import type { FeedEvent } from '../engine/Engine';
 import { characterDef } from '../catalog';
+import { stackLabels } from '../hud/labelStack';
+import { motionText } from './devLabels';
 import type { RoomCharacterDto } from '../types';
 
 // 거실 런타임 S4 — 감정 스트림 읽기(2-1 · 2-2)와 엔진 명령 단계 처리(1-1 · 1-2). 브라우저 없이 확인할 수 있는 것만
@@ -160,7 +162,10 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
 function fakeRenderer() {
   const plays: { id: string; steps: MotionStep[]; finish: () => void }[] = [];
   const calls: string[] = [];
+  /** motionTimeLeft 가 돌려줄 값 — 테스트가 바꾼다 */
+  const timeLeft: { v: number | 'loop' | null } = { v: null };
   const base: Partial<RoomRenderer> = {
+    motionTimeLeft: () => timeLeft.v,
     play: (id, steps, finish) => {
       plays.push({ id, steps, finish });
       calls.push(`play ${steps.map((s) => s.clip).join(',')}`);
@@ -173,7 +178,7 @@ function fakeRenderer() {
     pick: () => null,
   };
   const renderer = new Proxy(base, { get: (t, k) => (k in t ? t[k as keyof RoomRenderer] : () => undefined) }) as RoomRenderer;
-  return { renderer, plays, calls };
+  return { renderer, plays, calls, timeLeft };
 }
 
 function fakeEngine() {
@@ -232,7 +237,7 @@ describe('엔진 명령 처리 (RoomLoop.onCommand)', () => {
     ] });
     expect(t.plays).toHaveLength(1);
     expect(t.plays[0].steps).toEqual([{ clip: null, loop: false }]); // motions.json 의 clip 이 비어 있음 → null
-    expect(t.loop.debugLabels().find((l) => l.id === '1')?.motion).toBe('wake_up');
+    expect(t.loop.debugLabels().find((l) => l.id === '1')?.motion?.name).toBe('wake_up');
     t.plays[0].finish();
     expect(t.calls).toContain('cancel 1'); // behavior 단계 — 제자리 모션을 내려놓고 걷게
     await flush();
@@ -267,6 +272,82 @@ describe('엔진 명령 처리 (RoomLoop.onCommand)', () => {
     for (let i = 0; i < 100 && t.finished.length === 0; i++) t.loop.tick(0.1);
     await flush();
     expect(t.finished).toEqual(['1:avoid']);
+  });
+});
+
+describe('개발 모드 머리 위 글자 (RoomLoop.debugLabels · motionText)', () => {
+  const label = (t: ReturnType<typeof setup>, id: string) => t.loop.debugLabels().find((l) => l.id === id);
+
+  it('여러 단계 명령 — 단계 번호 · clip 은 렌더러의 남은 시간 · behavior 는 이동 중', async () => {
+    const t = setup();
+    t.timeLeft.v = 1.68;
+    t.send({ type: 'play', characterId: '1', steps: [
+      { name: 'trembling', kind: 'clip', loop: false },
+      { name: 'surprise', kind: 'clip', loop: false },
+      { name: 'avoid', kind: 'behavior', loop: false },
+    ] });
+    expect(label(t, '1')?.motion).toEqual({ name: 'trembling', step: 1, of: 3, left: 1.68 });
+    expect(motionText(label(t, '1')!.motion!)).toBe('덜덜 떨기 1/3 · 1.7s');
+    t.plays[0].finish();
+    await flush();
+    t.plays[1].finish();
+    await flush();
+    expect(label(t, '1')?.motion).toMatchObject({ name: 'avoid', step: 3, left: 'moving' });
+    expect(motionText(label(t, '1')!.motion!)).toBe('비켜 가기 3/3 · 이동 중');
+  });
+
+  it('한 단계 — 번호 없이 · 반복 · 모르면(파일 받는 중) 시간 없이', () => {
+    const t = setup();
+    t.timeLeft.v = 'loop';
+    t.send({ type: 'play', characterId: '2', steps: [{ name: 'crying', kind: 'clip', loop: true }] });
+    expect(motionText(label(t, '2')!.motion!)).toBe('울기 · 반복');
+    t.timeLeft.v = null;
+    expect(motionText(label(t, '2')!.motion!)).toBe('울기');
+  });
+
+  it('남은 시간은 0.1초 단위로 올림 — 끝나기 직전엔 0.1s', () => {
+    const m = (left: number) => motionText({ name: 'surprise', step: 1, of: 1, left });
+    expect(m(3)).toBe('놀라기 · 3.0s');
+    expect(m(2.4)).toBe('놀라기 · 2.4s');
+    expect(m(2.41)).toBe('놀라기 · 2.5s');
+    expect(m(0.3)).toBe('놀라기 · 0.3s');
+    expect(m(0.02)).toBe('놀라기 · 0.1s');
+    expect(motionText({ name: 'new_move', step: 1, of: 1, left: 1 })).toBe('new_move · 1.0s'); // 표에 없는 이름은 그대로
+  });
+
+  it('스탯 링이 열린 캐릭터는 글자를 뺀다 — 닫으면 다시', () => {
+    const t = setup();
+    t.loop.onPick('1');
+    expect(label(t, '1')).toBeUndefined();
+    expect(label(t, '2')).toBeDefined();
+    t.loop.release();
+    expect(label(t, '1')).toBeDefined();
+  });
+});
+
+describe('글자 쌓기 (stackLabels)', () => {
+  const box = (id: string, x: number, y: number) => ({ id, x, y, w: 60, h: 30 });
+
+  it('안 겹치면 제자리', () => {
+    const { lift } = stackLabels([box('a', 0, 100), box('b', 200, 100)], []);
+    expect([lift.get('a'), lift.get('b')]).toEqual([0, 0]);
+  });
+
+  it('겹치면 화면 아래쪽 글자가 제자리, 위쪽 글자를 그 위로 올린다', () => {
+    const { lift, order } = stackLabels([box('a', 0, 100), box('b', 10, 110)], []);
+    expect(order).toEqual(['b', 'a']);
+    expect(lift.get('b')).toBe(0);
+    expect(lift.get('a')).toBe(100 - (110 - 30 - 2)); // b 의 윗변 − 틈까지 → 22
+  });
+
+  it('셋이 겹치면 블록처럼 차례로 쌓는다', () => {
+    const { lift } = stackLabels([box('a', 0, 100), box('b', 0, 100), box('c', 0, 100)], ['a', 'b', 'c']);
+    expect([lift.get('a'), lift.get('b'), lift.get('c')]).toEqual([0, 32, 64]);
+  });
+
+  it('높이 차이가 작으면 지난 순서를 지킨다 — 매 프레임 위아래가 뒤바뀌지 않게', () => {
+    expect(stackLabels([box('a', 0, 105), box('b', 0, 100)], ['b', 'a']).order).toEqual(['b', 'a']);
+    expect(stackLabels([box('a', 0, 130), box('b', 0, 100)], ['b', 'a']).order).toEqual(['a', 'b']); // 차이가 분명하면 바꾼다
   });
 });
 

@@ -57,6 +57,11 @@ export interface RoomRenderer {
    */
   holdMissingClips(ms: number | null): void;
   /**
+   * 개발 모드 머리 위 글자(지시서 1-3) — 지금 엔진 단계의 남은 시간(초). 반복 단계면 'loop',
+   * 엔진 모션이 없거나 파일을 받는 중이라 아직 모르면 null. 읽기만 한다
+   */
+  motionTimeLeft(charId: string): number | 'loop' | null;
+  /**
    * 시점이 바뀌었다(창 크기 · 줌 · 끌기) — 1칸 px(scale)와 뒤 꼭짓점의 화면 자리(ox, oy), 그릴 영역 크기.
    * 줌·끌기는 이것만 다시 부른다 — 씬은 그대로, 보는 자리만 바뀐다
    */

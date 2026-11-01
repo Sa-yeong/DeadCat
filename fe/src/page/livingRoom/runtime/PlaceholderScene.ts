@@ -37,6 +37,8 @@ interface CharNode {
   engineTimer: number;
   /** 지금 엔진 단계 클립 — 툴팁용(없으면 '') */
   clip: string;
+  /** 지금 엔진 단계가 끝나는 시각(performance.now ms, 반복이면 Infinity, 없으면 null) — 개발 모드 남은 시간 표시용 */
+  stepEnd: number | null;
 }
 
 interface FurnNode {
@@ -310,7 +312,7 @@ export class PlaceholderScene implements RoomRenderer {
     figure.append(body, head);
     g.append(shadow, figure, title);
     this.objects.append(g);
-    const c: CharNode = { def, pos, g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false, engineTimer: 0, clip: '' };
+    const c: CharNode = { def, pos, g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false, engineTimer: 0, clip: '', stepEnd: null };
     this.chars.set(charId, c);
     this.drawChar(c);
     this.orderDirty = true;
@@ -344,17 +346,24 @@ export class PlaceholderScene implements RoomRenderer {
     if (!c) return;
     window.clearTimeout(c.engineTimer);
     c.engineTimer = 0;
+    c.stepEnd = null;
     if (c.lifted) return;
     const run = (i: number) => {
       if (i >= steps.length) {
         c.engineTimer = 0;
+        c.stepEnd = null;
         this.setClip(c, '');
         onFinish();
         return;
       }
       this.setClip(c, steps[i].clip ?? '');
-      if (i === steps.length - 1 && steps[i].loop) return; // 반복 — 끝나지 않는다
-      c.engineTimer = window.setTimeout(() => run(i + 1), this.holdMs ?? ENGINE_STEP_MS);
+      if (i === steps.length - 1 && steps[i].loop) {
+        c.stepEnd = Infinity; // 반복 — 끝나지 않는다
+        return;
+      }
+      const ms = this.holdMs ?? ENGINE_STEP_MS;
+      c.stepEnd = performance.now() + ms;
+      c.engineTimer = window.setTimeout(() => run(i + 1), ms);
     };
     c.engineTimer = window.setTimeout(() => run(0), 0); // onFinish 는 늘 비동기로
   }
@@ -365,6 +374,7 @@ export class PlaceholderScene implements RoomRenderer {
     if (!c) return;
     window.clearTimeout(c.engineTimer);
     c.engineTimer = 0;
+    c.stepEnd = null;
     this.setClip(c, '');
   }
 
@@ -374,6 +384,12 @@ export class PlaceholderScene implements RoomRenderer {
 
   holdMissingClips(ms: number | null): void {
     this.holdMs = ms;
+  }
+
+  motionTimeLeft(charId: string): number | 'loop' | null {
+    const end = this.chars.get(charId)?.stepEnd ?? null;
+    if (end === null) return null;
+    return end === Infinity ? 'loop' : Math.max(0, (end - performance.now()) / 1000);
   }
 
   private setClip(c: CharNode, clip: string): void {
