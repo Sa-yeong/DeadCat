@@ -21,6 +21,7 @@ export class AssetRepository {
                         stocks: {
                             select: {
                                 code: true,
+                                stock_type: true,
                                 stock_history: {
                                     orderBy: { record_date: 'desc' },
                                     take: 1,

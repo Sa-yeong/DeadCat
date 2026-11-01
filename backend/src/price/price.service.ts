@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../providers/redis/redis.service';
 import {
+    KisProvider,
     StockPrice,
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
+import { DEFAULT_USD_KRW, toValuationKrw } from './valuation';
+import { isForeignStock } from '../modules/orders/order-rules';
 
 // 차트 캔들 데이터 인터페이스
 export interface StockChartItem {
@@ -44,7 +47,12 @@ export interface CachedPrice extends StockPrice {
 
 @Injectable()
 export class PriceService {
-    constructor(private readonly redis: RedisService) {}
+    private readonly logger = new Logger(PriceService.name);
+
+    constructor(
+        private readonly redis: RedisService,
+        private readonly kis: KisProvider,
+    ) {}
 
     // 시세 적재
 
@@ -206,6 +214,71 @@ export class PriceService {
             const raw = values[i];
             if (raw) result.set(code, JSON.parse(raw) as CachedPrice);
         });
+        return result;
+    }
+
+    // ── 평가용 원화 현재가 ──────────────────────────────────────────
+    // 평단가(원)와 비교하는 곳(보유 목록·자산·감정 수익률) 전용. readPrices는 시장 통화 그대로(화면 표시용).
+    private usdKrwCache: { rate: number; at: number } | null = null;
+    private static readonly USD_KRW_CACHE_MS = 60 * 1000;
+
+    /** 평가용 원/달러 — KIS 환율(Redis 1시간 캐시 위에 메모리 1분), 실패하면 기본값 */
+    async usdKrwForValuation(): Promise<number> {
+        const now = Date.now();
+        if (
+            this.usdKrwCache &&
+            now - this.usdKrwCache.at < PriceService.USD_KRW_CACHE_MS
+        ) {
+            return this.usdKrwCache.rate;
+        }
+        let rate = DEFAULT_USD_KRW;
+        try {
+            const r = await this.kis.getUsdKrwRate();
+            if (r > 0) rate = r;
+        } catch (e) {
+            this.logger.warn(
+                `환율 조회 실패, 평가에 기본값 ${DEFAULT_USD_KRW} 사용: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        }
+        this.usdKrwCache = { rate, at: now };
+        return rate;
+    }
+
+    /** 시장 통화 가격 하나 → 원화 평가 가격 (국내는 그대로 반올림, 해외는 × 환율) */
+    async toValuationKrw(
+        price: number,
+        stockType: string | null | undefined,
+    ): Promise<bigint> {
+        return toValuationKrw(
+            price,
+            stockType,
+            await this.usdKrwForValuation(),
+        );
+    }
+
+    /**
+     * 종목코드별 원화 평가 현재가. 캐시 현재가 → 없으면 last_close(stock_history 종가, 시장 통화).
+     * 둘 다 없는 종목은 결과에 없다(부르는 쪽이 평단가로 대신).
+     */
+    async readValuationPricesKrw(
+        stocks: {
+            code: string;
+            stock_type: string | null | undefined;
+            last_close?: number | bigint | null;
+        }[],
+    ): Promise<Map<string, bigint>> {
+        const result = new Map<string, bigint>();
+        if (stocks.length === 0) return result;
+        const cached = await this.readPrices(stocks.map((s) => s.code));
+        const rate = stocks.some((s) => isForeignStock(s.stock_type))
+            ? await this.usdKrwForValuation()
+            : 1;
+        for (const s of stocks) {
+            const live = cached.get(s.code)?.current_price;
+            const price = live ? live : Number(s.last_close ?? 0);
+            if (price > 0)
+                result.set(s.code, toValuationKrw(price, s.stock_type, rate));
+        }
         return result;
     }
 

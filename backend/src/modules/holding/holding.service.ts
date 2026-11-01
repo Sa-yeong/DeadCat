@@ -15,34 +15,31 @@ export class HoldingService {
             await this.holdingRepository.findUserHoldingsData(userId);
         if (userHoldings.length === 0) return [];
 
-        // 1. 유저가 보유한 모든 주식 코드들을 배열로 모음 (예: ['005930', '000660'])
-        const codes = userHoldings
-            .map((h) => h.stocks?.code)
-            .filter((code): code is string => !!code);
-
-        // 2. 캐시(Redis)  현재가 묶음을 달라고 요청
-        const cachedPrices = await this.priceService.readPrices(codes);
+        // 1~2. 원화 평가 현재가 묶음 — 캐시(Redis) 현재가, 없으면 DB 최신 종가. 해외(달러)는 환율로 원화 환산
+        //      (평단가 mean_price_krw가 원이라 같은 단위로 맞춘다. 응답 current_price도 원)
+        const valuationPrices = await this.priceService.readValuationPricesKrw(
+            userHoldings.flatMap((h) =>
+                h.stocks?.code
+                    ? [
+                          {
+                              code: h.stocks.code,
+                              stock_type: h.stocks.stock_type,
+                              last_close:
+                                  h.stocks.stock_history?.[0]?.close_price,
+                          },
+                      ]
+                    : [],
+            ),
+        );
 
         return userHoldings.map((holding) => {
             const quantityBigInt = BigInt(holding.quantity);
             const meanPriceBigInt = holding.mean_price_krw;
             const stockCode = holding.stocks?.code ?? '';
 
-            // 3. 캐시 묶음에서 이 주식 코드가 있는지 찾고, 있으면 해당 현재가를 꺼냅니다.
-            const cachedStock = cachedPrices.get(stockCode);
-
-            let currentPriceBigInt = meanPriceBigInt; // 기본 방어선은 평단가
-
-            if (cachedStock && cachedStock.current_price) {
-                // 캐시에 현재가가 있다면 숫자로 바꿔서 장착! (단위가 string인지 number인지에 따라 BigInt 처리)
-                currentPriceBigInt = BigInt(cachedStock.current_price);
-            } else {
-                // 만약 캐시에도 없으면 기존처럼 DB 최신 이력으로 2차 방어
-                const latestHistory = holding.stocks?.stock_history?.[0];
-                if (latestHistory?.close_price) {
-                    currentPriceBigInt = BigInt(latestHistory.close_price);
-                }
-            }
+            // 3. 현재가가 없으면 평단가(기본 방어선)
+            const currentPriceBigInt =
+                valuationPrices.get(stockCode) ?? meanPriceBigInt;
 
             // 4. 평가손익 계산: (현재가 - 평단가) * 수량
             const valuationProfitBigInt =

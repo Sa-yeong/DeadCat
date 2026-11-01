@@ -25,11 +25,21 @@ export class AssetService {
 
         const holdings = userData.holdings || [];
 
-        // 1. 보유 주식 코드 추출 및 현재 시세 조회
-        const codes: string[] = holdings.flatMap((h) =>
-            h.stocks?.code ? [h.stocks.code] : [],
+        // 1. 원화 평가 현재가 조회 — 캐시 현재가, 없으면 DB 최신 종가. 해외(달러)는 환율로 원화 환산
+        const valuationPrices = await this.priceService.readValuationPricesKrw(
+            holdings.flatMap((h) =>
+                h.stocks?.code
+                    ? [
+                          {
+                              code: h.stocks.code,
+                              stock_type: h.stocks.stock_type,
+                              last_close:
+                                  h.stocks.stock_history?.[0]?.close_price,
+                          },
+                      ]
+                    : [],
+            ),
         );
-        const cachedPrices = await this.priceService.readPrices(codes);
 
         // 2. 총 투자금액 (매입금액) 계산
         const totalInvestmentBigInt = holdings.reduce((sum, holding) => {
@@ -39,18 +49,8 @@ export class AssetService {
         // 3. 총 평가금액 계산
         const totalEvaluationBigInt = holdings.reduce((sum, holding) => {
             const stockCode = holding.stocks?.code ?? '';
-            const cachedStock = cachedPrices.get(stockCode);
-
-            let currentPrice = holding.mean_price_krw;
-
-            if (cachedStock && cachedStock.current_price) {
-                currentPrice = BigInt(cachedStock.current_price);
-            } else {
-                const latestHistory = holding.stocks?.stock_history?.[0];
-                if (latestHistory?.close_price) {
-                    currentPrice = BigInt(latestHistory.close_price);
-                }
-            }
+            const currentPrice =
+                valuationPrices.get(stockCode) ?? holding.mean_price_krw;
 
             return sum + BigInt(holding.quantity) * currentPrice;
         }, BigInt(0));

@@ -99,9 +99,14 @@ export class EmotionService {
         let holdingPeriodDays: number | null = null;
 
         if (holding) {
+            // 평단가는 원 — 현재가(시장 통화, 해외는 달러)를 원화로 바꿔 비교
+            const currentPriceKrw = await this.priceService.toValuationKrw(
+                currentPrice,
+                stock.stock_type,
+            );
             userProfitRate = this.calculateProfitRate(
                 Number(holding.mean_price_krw),
-                currentPrice,
+                Number(currentPriceKrw),
             );
 
             holdingPeriodDays = this.calculateHoldingPeriod(holding.created_at);
