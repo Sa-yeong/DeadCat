@@ -62,4 +62,31 @@ export class TagAssignmentService {
             profile,
         };
     }
+
+    // 전체 회원의 투자 성향 태그 일괄 부여
+    async assignAllUsersInvestmentTags() {
+        // 전체 회원 ID 조회
+        const users = await this.tagRepository.findAllUserIds();
+
+        let successCount = 0;
+        let failCount = 0;
+
+        // 회원별로 기존 태그 부여 로직 실행
+        for (const user of users) {
+            try {
+                await this.assignInvestmentTags(user.id);
+                successCount++;
+            } catch (error) {
+                // 한 회원의 실패가 다른 회원의 처리를 막지 않도록 예외 처리
+                failCount++;
+                console.error(`회원 ${user.id} 태그 부여 실패`, error);
+            }
+        }
+
+        return {
+            totalCount: users.length,
+            successCount,
+            failCount,
+        };
+    }
 }

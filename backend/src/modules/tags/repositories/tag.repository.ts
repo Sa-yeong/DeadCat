@@ -81,4 +81,13 @@ export class TagRepository {
             }
         });
     }
+
+    // 전체 회원의 ID 조회
+    async findAllUserIds() {
+        return this.prisma.users.findMany({
+            select: {
+                id: true,
+            },
+        });
+    }
 }
