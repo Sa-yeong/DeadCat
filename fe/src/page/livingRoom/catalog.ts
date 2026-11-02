@@ -28,6 +28,10 @@ export function modelUrlsOf(stockId: number, look: Look): string[] {
  */
 export const itemImgUrl = (itemId: number): string => `${BASE}items/${itemId}.png`;
 export const furnitureImgUrl = (furnitureId: number): string => `${BASE}furnitures/${furnitureId}.png`;
+/** 반응 그림 — 서버 img 는 쓰지 않고 종류 이름으로 조립한다. 없으면 종류 이름을 글자로(hud/ui.tsx ReactionFace) */
+export const reactionImgUrl = (reactionType: string): string => `${BASE}reactions/${reactionType}.png`;
+/** 가구 3D 모델 — 없으면 3D 는 설치 영역 크기의 상자 + 이름 글자로 대신한다 */
+export const furnitureModelUrl = (furnitureId: number): string => `${BASE}furnitures/models/${furnitureId}.glb`;
 
 /** 평면 더미 · 도형 캐릭터 색 — 구분만 되면 된다 */
 const PALETTE = ['#C9C1F7', '#8FB3FF', '#F2C38B', '#9FD3C7', '#F2A0B3', '#B8C7D9', '#E8A0A0', '#C7E0A0'];

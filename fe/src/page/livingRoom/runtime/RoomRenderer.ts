@@ -1,4 +1,5 @@
 import type { CharacterDef } from '../types';
+import type { Footprint } from './furnitureShape';
 import type { Pt } from './projection';
 import type { Look } from './outfitState';
 
@@ -72,6 +73,8 @@ export interface RoomRenderer {
   /** 배치 모드 — 고른 가구 테두리 / 놓을 자리 미리보기. null 이면 지운다 */
   highlightFurniture(placementId: number | null): void;
   showGhost(furnitureId: number | null, pos?: Pt, rotation?: number): void;
+  /** 배치 모드 — 움직이는 가구의 설치 영역 칸 전체를 반투명 초록(ok) / 빨강(겹침 · 방 밖)으로 칠한다. null 이면 지운다 */
+  showPlacementArea(area: Footprint | null, ok?: boolean): void;
   /** 화면 좌표 → 바닥 좌표 (드래그·드롭) */
   toFloor(x: number, y: number): Pt;
   /** 들고 있는 캐릭터의 목(CHAR.grab)이 화면 (x, y)에 오려면 발을 둘 바닥 좌표 — 커서 끝 = 목 */

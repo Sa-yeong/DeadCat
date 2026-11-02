@@ -5,7 +5,7 @@ import type { FurnitureCatalog } from './catalogs';
 import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
 import { CHAR } from './characterSize';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
-import { shapeOf, type Part } from './furnitureShape';
+import { AREA_COLOR, shapeOf, type Footprint, type Part } from './furnitureShape';
 import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
 
 /**
@@ -80,6 +80,7 @@ export class PlaceholderScene implements RoomRenderer {
   private readonly chars = new Map<string, CharNode>();
   private readonly furn = new Map<number, FurnNode>();
   private highlighted: number | null = null;
+  private area: { area: Footprint; ok: boolean } | null = null;
   private dropTarget: DropTarget | null = null;
   private orderDirty = true;
   /** 개발 모드의 한 단계 길이(ms) — 없으면 ENGINE_STEP_MS */
@@ -122,6 +123,7 @@ export class PlaceholderScene implements RoomRenderer {
     for (const f of this.furn.values()) this.drawFurniture(f);
     for (const c of this.chars.values()) this.drawChar(c);
     this.highlightFurniture(this.highlighted);
+    this.drawArea();
     this.orderDirty = true;
     this.reorder();
   }
@@ -227,8 +229,7 @@ export class PlaceholderScene implements RoomRenderer {
   private drawFurniture(f: FurnNode): void {
     const def = this.furniture.def(f.furnitureId);
     if (!def) return;
-    const shape = shapeOf(def, f.pos, f.rotation);
-    const parts = [...shape.parts].sort((a, b) => Projection.depth((a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2) - Projection.depth((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2));
+    const parts = shapeOf(def, f.pos, f.rotation).sort((a, b) => Projection.depth((a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2) - Projection.depth((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2));
     f.g.replaceChildren();
     f.polys = [];
     for (const pt of parts) {
@@ -238,12 +239,12 @@ export class PlaceholderScene implements RoomRenderer {
         f.polys.push(poly);
       }
     }
-    for (const b of shape.blobs) {
-      const c = this.proj.p(b.x, b.y, b.z);
-      const r = b.r * this.proj.scale;
-      f.g.append(b.flat ? el('ellipse', { cx: c.x, cy: c.y, rx: r, ry: r * 0.4, fill: b.color, opacity: b.opacity }) : el('circle', { cx: c.x, cy: c.y, r, fill: b.color, opacity: b.opacity }));
-      f.polys.push([{ x: c.x - r, y: c.y - r }, { x: c.x + r, y: c.y - r }, { x: c.x + r, y: c.y + r }, { x: c.x - r, y: c.y + r }]);
-    }
+    // 모델이 없는 가구는 윗면 가운데에 이름 글자
+    const [pt] = parts;
+    const mid = this.proj.p((pt.x0 + pt.x1) / 2, (pt.y0 + pt.y1) / 2, pt.z1);
+    const name = el('text', { x: mid.x, y: mid.y, 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 11, 'font-weight': 700, fill: '#EDEDEA', 'pointer-events': 'none' });
+    name.textContent = def.name;
+    f.g.append(name);
     const title = el('title');
     title.textContent = def.name;
     f.g.append(title);
@@ -265,11 +266,7 @@ export class PlaceholderScene implements RoomRenderer {
     const f = this.furn.get(placementId);
     const def = f && this.furniture.def(f.furnitureId);
     if (!f || !def) return;
-    const sh = shapeOf(def, f.pos, f.rotation);
-    const x0 = Math.min(...sh.parts.map((q) => q.x0));
-    const x1 = Math.max(...sh.parts.map((q) => q.x1));
-    const y0 = Math.min(...sh.parts.map((q) => q.y0));
-    const y1 = Math.max(...sh.parts.map((q) => q.y1));
+    const { x0, x1, y0, y1 } = shapeOf(def, f.pos, f.rotation)[0];
     const p = (x: number, y: number) => this.proj.p(x, y, 0.01);
     const hl = this.poly([p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)], 'rgba(242,86,76,0.10)', ACCENT);
     hl.setAttribute('stroke-dasharray', '6 5');
@@ -285,8 +282,27 @@ export class PlaceholderScene implements RoomRenderer {
     if (!def) return;
     const g = el('g', { opacity: 0.55 });
     g.dataset.role = 'ghost';
-    for (const pt of shapeOf(def, pos, rotation).parts) {
+    for (const pt of shapeOf(def, pos, rotation)) {
       for (const { poly, fill } of this.partPolys(pt)) g.append(this.poly(poly, fill, '#EDEDEA'));
+    }
+    this.overlay.append(g);
+  }
+
+  showPlacementArea(area: Footprint | null, ok = true): void {
+    this.area = area ? { area, ok } : null;
+    this.drawArea();
+  }
+
+  private drawArea(): void {
+    this.overlay.querySelectorAll('[data-role="area"]').forEach((n) => n.remove());
+    if (!this.area) return;
+    const { x0, x1, y0, y1 } = this.area.area;
+    const color = this.area.ok ? AREA_COLOR.ok : AREA_COLOR.bad;
+    const g = el('g', { opacity: 0.45 });
+    g.dataset.role = 'area';
+    const p = (x: number, y: number) => this.proj.p(x, y, 0.01);
+    for (let x = x0; x < x1; x++) {
+      for (let y = y0; y < y1; y++) g.append(this.poly([p(x, y), p(x + 1, y), p(x + 1, y + 1), p(x, y + 1)], color, color));
     }
     this.overlay.append(g);
   }

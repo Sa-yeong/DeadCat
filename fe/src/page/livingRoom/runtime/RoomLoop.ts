@@ -601,7 +601,7 @@ export class RoomLoop {
     const under = screen ? this.renderer.pickFurniture(screen.x, screen.y) : null;
     for (const p of this.placements) {
       const def = this.furniture.def(p.furnitureId);
-      if (!def?.interactive) continue;
+      if (!def?.engineName) continue;
       if (p.placementId === under) {
         offer({ kind: 'furniture', placementId: p.placementId }, 0);
         continue;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
 import type { FurnitureCatalog } from '../runtime/catalogs';
+import { footprint } from '../runtime/furnitureShape';
 import { syncPlacements } from '../runtime/placementSync';
 import type { Pt } from '../runtime/projection';
 import type { RoomRenderer } from '../runtime/RoomRenderer';
@@ -10,11 +11,11 @@ import { BottomBar, ModeBanner, TrayTile } from './chrome';
 import { FURN_MIME } from './dnd';
 import {
   movePlacement,
-  nearestFit,
+  placeable,
   placeFromStorage,
   resetPlacements,
   rotatePlacement,
-  slideTo,
+  snapPos,
   storePlacement,
   type PlacementDoc,
 } from './placementDoc';
@@ -67,6 +68,8 @@ export function PlacementEditor({
   const [dragging, setDragging] = useState(false);
   const overlay = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ id: number; offset: Pt; start: Pt; last: Pt } | null>(null);
+  /** 보관함 칸에서 끌어 오는 가구 — 끄는 중에는 dataTransfer 를 읽을 수 없어서 따로 든다 */
+  const trayDrag = useRef<number | null>(null);
   const nextTemp = useRef(-1);
   /** 저장 응답이 오기 전에 화면을 떠났는지 — 떠났으면 런타임을 건드리지 않는다 */
   const mounted = useRef(false);
@@ -102,6 +105,7 @@ export function PlacementEditor({
     () => () => {
       renderer.highlightFurniture(null);
       renderer.showGhost(null);
+      renderer.showPlacementArea(null);
     },
     [renderer],
   );
@@ -114,9 +118,27 @@ export function PlacementEditor({
     renderer.highlightFurniture(id);
   };
 
+  /** 움직이는 가구의 설치 영역을 칠한다 — 놓을 수 있으면 초록, 겹침 · 방 밖이면 빨강 */
+  const paintArea = (placementId: number | null, furnitureId: number, pos: Pt, rotation: number) => {
+    const d = def(furnitureId);
+    if (!doc || !d) return;
+    renderer.showPlacementArea(footprint(d, pos, rotation), placeable(doc, def, { placementId, furnitureId, pos, rotation }));
+  };
+
+  /** 보관함 가구를 포인터 자리에 미리 보인다 */
+  const previewNew = (furnitureId: number, at: Pt) => {
+    const pos = snapPos(at);
+    renderer.showGhost(furnitureId, pos, 0);
+    paintArea(null, furnitureId, pos, 0);
+  };
+  const clearPreview = () => {
+    renderer.showGhost(null);
+    renderer.showPlacementArea(null);
+  };
+
   const stopHolding = () => {
     setHolding(null);
-    renderer.showGhost(null);
+    clearPreview();
   };
 
   /** 문서를 바꾸고 씬을 맞춘 뒤 기록에 쌓는다. 저장 중에는 아무것도 바꾸지 않는다(모든 편집이 여기를 지난다) */
@@ -143,14 +165,10 @@ export function PlacementEditor({
     return renderer.toFloor(p.x, p.y);
   };
 
-  /** 보관함 가구가 놓일 자리 — 누른 곳에서 가장 가까운 빈 자리. 근처에 없으면 null */
-  const spotFor = (furnitureId: number, at: Pt) =>
-    doc ? nearestFit(doc, def, { placementId: null, furnitureId, pos: at, rotation: 0 }) : null;
-
   const place = (furnitureId: number, at: Pt) => {
     if (!doc) return;
-    const pos = spotFor(furnitureId, at);
-    if (!pos) return; // 놓을 자리가 없다 — 들고 있는 채로 다른 곳을 고르게 둔다
+    const pos = snapPos(at);
+    if (!placeable(doc, def, { placementId: null, furnitureId, pos, rotation: 0 })) return; // 빨강 — 들고 있는 채로 다른 곳을 고르게 둔다
     const id = nextTemp.current--;
     const next = placeFromStorage(doc, furnitureId, pos, id);
     stopHolding();
@@ -180,6 +198,9 @@ export function PlacementEditor({
     const start = { x: pl.positionX, y: pl.positionY };
     drag.current = { id, offset: { x: fl.x - start.x, y: fl.y - start.y }, start, last: start };
     setDragging(true);
+    // 끄는 동안은 고른 표시(빨간 점선) 대신 초록 / 빨강만
+    renderer.highlightFurniture(null);
+    paintArea(id, pl.furnitureId, start, pl.rotation);
     overlay.current?.setPointerCapture(e.pointerId);
   };
 
@@ -193,18 +214,18 @@ export function PlacementEditor({
       return;
     }
     if (holding !== null) {
-      // 고스트는 실제로 놓일 자리에 보여 준다 — 근처에 빈 자리가 없으면 안 보인다
-      const pos = spotFor(holding, floorAt(e));
-      renderer.showGhost(pos ? holding : null, pos ?? undefined, 0);
+      previewNew(holding, floorAt(e));
       return;
     }
     const d = drag.current;
     const pl = d && placementOf(d.id);
     if (!d || !pl) return;
     const fl = floorAt(e);
-    const want = { x: fl.x - d.offset.x, y: fl.y - d.offset.y };
-    d.last = slideTo(doc, def, { placementId: pl.placementId, furnitureId: pl.furnitureId, pos: want, rotation: pl.rotation }, d.last);
-    renderer.placeFurniture(pl.placementId, pl.furnitureId, d.last, pl.rotation);
+    const want = snapPos({ x: fl.x - d.offset.x, y: fl.y - d.offset.y });
+    if (want.x === d.last.x && want.y === d.last.y) return;
+    d.last = want;
+    renderer.placeFurniture(pl.placementId, pl.furnitureId, want, pl.rotation);
+    paintArea(pl.placementId, pl.furnitureId, want, pl.rotation);
   };
 
   const endDrag = () => {
@@ -213,7 +234,15 @@ export function PlacementEditor({
     drag.current = null;
     setDragging(false);
     if (!d || !doc) return;
-    if (d.last.x === d.start.x && d.last.y === d.start.y) return;
+    renderer.showPlacementArea(null);
+    renderer.highlightFurniture(d.id);
+    const pl = placementOf(d.id);
+    if (!pl || (d.last.x === d.start.x && d.last.y === d.start.y)) return;
+    // 빨강에서 놓으면 끌기 전 자리로 돌아간다
+    if (!placeable(doc, def, { placementId: d.id, furnitureId: pl.furnitureId, pos: d.last, rotation: pl.rotation })) {
+      renderer.placeFurniture(d.id, pl.furnitureId, d.start, pl.rotation);
+      return;
+    }
     // 씬은 이미 그 자리에 있다 — 기록만 쌓는다
     history.commit(movePlacement(doc, d.id, d.last));
   };
@@ -241,7 +270,7 @@ export function PlacementEditor({
     if (!doc || saving || dragging) return;
     setSaving(true);
     setFailed(null);
-    const saved = await api.savePlacements(doc.placements, doc.storage).catch(() => null);
+    const saved = await api.savePlacements(doc.placements).catch(() => null);
     if (!mounted.current) return;
     if (!saved) {
       setSaving(false);
@@ -275,14 +304,18 @@ export function PlacementEditor({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onLostPointerCapture={endDrag}
-        onPointerLeave={() => holding !== null && renderer.showGhost(null)}
+        onPointerLeave={() => holding !== null && clearPreview()}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes(FURN_MIME)) e.preventDefault();
+          if (!e.dataTransfer.types.includes(FURN_MIME)) return;
+          e.preventDefault();
+          if (trayDrag.current !== null) previewNew(trayDrag.current, floorAt(e));
         }}
+        onDragLeave={clearPreview}
         onDrop={(e) => {
           const id = Number(e.dataTransfer.getData(FURN_MIME));
           if (!id || saving) return;
           e.preventDefault();
+          clearPreview();
           place(id, floorAt(e));
         }}
         style={{ position: 'absolute', left: 0, top: 0, width, height: stageHeight, zIndex: 4, cursor: holding !== null ? 'copy' : 'default', touchAction: 'none' }}
@@ -333,7 +366,7 @@ export function PlacementEditor({
               count={s.quantity}
               gap={4}
               icon={
-                // 그림 파일(public/furnitures/{id}.png)이 없으면 색 상자로. id 는 지금 프론트 카탈로그 번호 — 가구 묶음(D1)에서 DB furnitures.id 와 맞춘다
+                // 그림 파일(public/furnitures/{id}.png)이 없으면 색 상자로
                 <Picture
                   src={furnitureImgUrl(s.furnitureId)}
                   size={30}
@@ -357,6 +390,11 @@ export function PlacementEditor({
               onDragStart={(e) => {
                 e.dataTransfer.setData(FURN_MIME, String(s.furnitureId));
                 e.dataTransfer.effectAllowed = 'copy';
+                trayDrag.current = s.furnitureId;
+              }}
+              onDragEnd={() => {
+                trayDrag.current = null;
+                clearPreview();
               }}
             />
           );

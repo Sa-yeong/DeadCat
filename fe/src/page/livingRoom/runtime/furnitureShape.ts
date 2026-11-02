@@ -9,15 +9,21 @@ export interface Footprint {
   y1: number;
 }
 
+/**
+ * 설치 영역 — 자리(pos)는 정수 칸 좌표, 변은 늘 칸 경계에 맞는다.
+ * 짝수 변은 pos 가 가운데, 홀수 변(피아노 3칸)은 가운데 칸의 위 · 왼쪽 경계가 pos 다(가운데가 x.5 라 정수로 못 적어서)
+ */
 export function footprint(def: FurnitureDef, pos: Pt, rotation: number): Footprint {
   const turned = ((rotation / 90) % 2 + 2) % 2 === 1;
   const w = turned ? def.d : def.w;
   const d = turned ? def.w : def.d;
-  return { x0: pos.x - w / 2, x1: pos.x + w / 2, y0: pos.y - d / 2, y1: pos.y + d / 2 };
+  const x0 = pos.x - Math.floor(w / 2);
+  const y0 = pos.y - Math.floor(d / 2);
+  return { x0, x1: x0 + w, y0, y1: y0 + d };
 }
 
-/** 앉는 면 높이(칸) */
-const SEAT_H = 0.45;
+/** 배치 모드 — 움직이는 가구의 설치 영역을 칠하는 색(놓을 수 있음 / 겹침 · 방 밖) */
+export const AREA_COLOR = { ok: '#3DDC84', bad: '#F2564C' } as const;
 
 /** 상자 하나 — 평면 더미가 그리는 단위 */
 export interface Part {
@@ -30,103 +36,7 @@ export interface Part {
   colors: [string, string, string];
 }
 
-export interface Shape {
-  parts: Part[];
-  /** 화분 잎 · 스탠드 불빛 (방 좌표, 반지름은 칸 단위) */
-  blobs: { x: number; y: number; z: number; r: number; color: string; opacity: number; flat?: boolean }[];
-}
-
-/**
- * 가구 → 상자 몇 개. 등받이가 있는 가구는 회전에 따라 등받이 쪽이 바뀐다.
- *   회전 0 = 등받이가 뒷벽 쪽(y 작은 쪽), 90 = 오른쪽(x 큰 쪽), 180 = 앞, 270 = 왼쪽.
- */
-export function shapeOf(def: FurnitureDef, pos: Pt, rotation: number): Shape {
-  if (def.pieces) return piecesOf(def, pos, rotation);
-  const f = footprint(def, pos, rotation);
-  const c = def.colors;
-  const r = (((rotation / 90) % 4) + 4) % 4;
-  const all = (z1: number, z0 = 0): Part => ({ ...f, z0, z1, colors: c });
-
-  /** 등받이 쪽 띠 — 두께 t */
-  const backStrip = (t: number): Footprint => {
-    switch (r) {
-      case 0: return { ...f, y1: f.y0 + t };
-      case 1: return { ...f, x0: f.x1 - t };
-      case 2: return { ...f, y0: f.y1 - t };
-      default: return { ...f, x1: f.x0 + t };
-    }
-  };
-  const seatRest = (t: number): Footprint => {
-    switch (r) {
-      case 0: return { ...f, y0: f.y0 + t };
-      case 1: return { ...f, x1: f.x1 - t };
-      case 2: return { ...f, y1: f.y1 - t };
-      default: return { ...f, x0: f.x0 + t };
-    }
-  };
-  const darker: [string, string, string] = [c[1], c[2], c[2]];
-
-  switch (def.kind) {
-    case 'sofa':
-    case 'armchair':
-    case 'chair': {
-      const t = def.kind === 'chair' ? 0.15 : def.kind === 'sofa' ? 0.38 : 0.3; // 등받이 두께
-      return {
-        parts: [
-          { ...backStrip(t), z0: 0, z1: def.h, colors: darker },
-          { ...seatRest(t), z0: 0, z1: SEAT_H, colors: c },
-        ],
-        blobs: [],
-      };
-    }
-    case 'plant':
-      return {
-        parts: [all(def.h)],
-        blobs: [
-          { x: pos.x, y: pos.y, z: def.h + 0.55, r: 0.42, color: '#3C5446', opacity: 1 },
-          { x: pos.x - 0.12, y: pos.y, z: def.h + 0.95, r: 0.28, color: '#46624F', opacity: 1 },
-        ],
-      };
-    case 'lamp':
-      return {
-        parts: [all(def.h)],
-        blobs: [{ x: pos.x, y: pos.y, z: def.h + 0.1, r: 0.32, color: '#F2C38B', opacity: 0.55, flat: true }],
-      };
-    case 'rug':
-      return { parts: [{ ...f, z0: 0, z1: 0.01, colors: c }], blobs: [] };
-    case 'fountain': {
-      // 둥근 분수 — 넓은 수반 · 가운데 기둥 · 작은 수반을 상자로, 물은 납작한 원으로
-      const rad = Math.min(f.x1 - f.x0, f.y1 - f.y0) / 2;
-      const sq = (hw: number, z0: number, z1: number, colors: [string, string, string]): Part => ({ x0: pos.x - hw, x1: pos.x + hw, y0: pos.y - hw, y1: pos.y + hw, z0, z1, colors });
-      return {
-        parts: [sq(rad * 0.95, 0, 0.4, c), sq(0.18, 0.4, def.h - 0.1, darker), sq(rad * 0.45, def.h - 0.1, def.h, c)],
-        blobs: [
-          { x: pos.x, y: pos.y, z: 0.41, r: rad * 0.8, color: '#5A86A0', opacity: 0.9, flat: true },
-          { x: pos.x, y: pos.y, z: def.h + 0.01, r: rad * 0.38, color: '#6E9AB4', opacity: 0.9, flat: true },
-        ],
-      };
-    }
-    default:
-      return { parts: [all(def.h)], blobs: [] };
-  }
-}
-
-/** 회전 0·90·180·270 — 회전 0 의 뒤쪽(y 작은 쪽)이 90 에서 오른쪽(x 큰 쪽)으로 가는 방향 */
-function turn(v: Pt, rotation: number): Pt {
-  let { x, y } = v;
-  for (let r = (((rotation / 90) % 4) + 4) % 4; r > 0; r--) [x, y] = [-y, x];
-  return { x, y };
-}
-
-/** 한 덩어리 가구 — 조각마다 자리를 같이 돌려서 그린다. 조각 순서는 그릴 때 깊이로 다시 정렬된다 */
-function piecesOf(def: FurnitureDef, pos: Pt, rotation: number): Shape {
-  const out: Shape = { parts: [], blobs: [] };
-  for (const pc of def.pieces ?? []) {
-    const o = turn({ x: pc.dx, y: pc.dy }, rotation);
-    const piece: FurnitureDef = { ...def, kind: pc.kind, w: pc.w, d: pc.d, h: pc.h, colors: pc.colors, pieces: undefined };
-    const s = shapeOf(piece, { x: pos.x + o.x, y: pos.y + o.y }, (rotation + pc.rotation) % 360);
-    out.parts.push(...s.parts);
-    out.blobs.push(...s.blobs);
-  }
-  return out;
+/** 모델이 없는 가구 → 설치 영역 크기의 상자(카펫은 납작한 판). 3D · 평면 더미가 같이 쓴다 */
+export function shapeOf(def: FurnitureDef, pos: Pt, rotation: number): Part[] {
+  return [{ ...footprint(def, pos, rotation), z0: 0, z1: def.kind === 'rug' ? 0.01 : def.h, colors: def.colors }];
 }

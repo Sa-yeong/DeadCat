@@ -5,16 +5,16 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import '../src/styles/dc.css';
 import { LivingRoomPage } from '../src/page/livingRoom/LivingRoomPage';
 import { GlobalBar } from '../src/page/stockDetail/components/GlobalBar';
-import { FURNITURE_DEFS } from '../src/page/livingRoom/dummy';
+import { FURNITURE_CATALOG } from '../src/page/livingRoom/furnitureCatalog';
 import { FURNITURE_MODELS } from '../src/page/livingRoom/runtime/furnitureAssets';
 import type { FurnitureDef } from '../src/page/livingRoom/types';
 
-/** 슬롯머신 단계 바꿔 보기(2026-10-27) — 미리보기에서만. 단계를 저장할 곳이 서버에 없어 앱은 dummy.ts 의 고정값을 쓴다 */
-const SLOT_ID = 30;
+/** 슬롯머신 단계 바꿔 보기(2026-10-27) — 미리보기에서만. 앱은 카탈로그의 모델 주소(furnitures/models/29.glb)를 쓴다 */
+const SLOT_ID = 29;
 const TIERS = [1, 2, 3] as const;
 type Tier = (typeof TIERS)[number];
 const slotUrl = (t: Tier) => FURNITURE_MODELS[`slot${t}`];
-const slotDef = () => FURNITURE_DEFS.find((d) => d.furnitureId === SLOT_ID);
+const slotDef = () => FURNITURE_CATALOG.find((d) => d.furnitureId === SLOT_ID);
 /** 3D 렌더러 속 — 미리보기만 손댄다(RoomScene 이 캔버스에 걸어 둔 손잡이) */
 type SceneHandle = {
   furniture: { def(id: number): FurnitureDef | undefined };
@@ -32,7 +32,7 @@ function pullSlots() {
 function setSlotTier(t: Tier) {
   const url = slotUrl(t);
   const d = slotDef();
-  if (d) d.model = url; // 더미 서버 값 — 보는 사람을 바꾸거나 평면↔3D 를 오가도 유지
+  if (d) d.model = url; // 카탈로그 값 — 보는 사람을 바꾸거나 평면↔3D 를 오가도 유지
   const s = sceneHandle();
   const live = s?.furniture.def(SLOT_ID);
   if (!s || !live) return;

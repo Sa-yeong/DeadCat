@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { R } from '../../stockDetail/radius';
+import { reactionImgUrl } from '../catalog';
 import { C, accentBtn, ghostBtn } from './style';
 
 /** 거실 HUD 공용 컴포넌트 — 아이콘 · 모달 껍데기 */
@@ -77,7 +78,7 @@ export function Picture({ src, size, fallback }: { src: string; size: number; fa
         missingPictures.add(src);
         setMissing(true);
       }}
-      style={{ objectFit: 'contain', pointerEvents: 'none' }}
+      style={{ display: 'block', objectFit: 'contain', pointerEvents: 'none' }}
     />
   );
 }
@@ -153,10 +154,15 @@ export function ConfirmDialog({
 }
 
 /**
- * 반응 종류 하나의 얼굴 — 서버가 준 그림(img)이 있으면 그림, 없으면 종류 이름을 글자로.
+ * 반응 종류 하나의 얼굴 — 그림 파일(public/reactions/{type}.png)이 있으면 그림, 없으면 종류 이름을 글자로.
  * 반응 종류는 DB 에서 온다(GET /rooms/reaction-types) — 화면이 종류를 정해 두지 않는다
  */
-export function ReactionFace({ kind, size = 16 }: { kind: { reactionType: string; img: string }; size?: number }) {
-  if (kind.img) return <img src={kind.img} alt="" width={size} height={size} style={{ display: 'block', objectFit: 'contain' }} />;
-  return <span style={{ fontSize: Math.max(11, size - 4), fontWeight: 700, whiteSpace: 'nowrap' }}>{kind.reactionType}</span>;
+export function ReactionFace({ kind, size = 16 }: { kind: { reactionType: string }; size?: number }) {
+  return (
+    <Picture
+      src={reactionImgUrl(kind.reactionType)}
+      size={size}
+      fallback={<span style={{ fontSize: Math.max(11, size - 4), fontWeight: 700, whiteSpace: 'nowrap' }}>{kind.reactionType}</span>}
+    />
+  );
 }

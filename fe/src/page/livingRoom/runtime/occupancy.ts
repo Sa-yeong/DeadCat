@@ -11,7 +11,7 @@ import { ROOM, type Pt } from './projection';
 
 export type Defs = (furnitureId: number) => FurnitureDef | undefined;
 
-/** 바닥을 차지하는가 — 러그는 밟고 지나가고, 다른 가구를 위에 올릴 수 있다 */
+/** 바닥을 차지하는가 — 카펫은 밟고 지나가고, 다른 가구를 위에 올릴 수 있다 */
 export function occupiesFloor(def: FurnitureDef): boolean {
   return def.kind !== 'rug';
 }

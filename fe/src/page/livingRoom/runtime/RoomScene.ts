@@ -7,7 +7,7 @@ import type { CharacterDef } from '../types';
 import { lookColor, modelUrlsOf } from '../catalog';
 import { DEFAULT_LOOK, type Look } from './outfitState';
 import type { FurnitureCatalog } from './catalogs';
-import { shapeOf, type Part } from './furnitureShape';
+import { AREA_COLOR, footprint, shapeOf, type Footprint, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
 import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
 import { CHAR } from './characterSize';
@@ -44,6 +44,8 @@ const SELECT_PX = 2;
  * 벽·바닥은 ①에서 끝나고 깊이가 지워지므로 벽에 붙은 가구도 테두리가 벽에 묻히지 않는다.
  */
 const GROUND_LAYER = 1;
+/** 가구 이름 글자 높이(칸) */
+const LABEL_H = 0.5;
 
 /** 서 있을 때 바라보는 쪽 — 카메라 쪽(방을 돌린 각과 같다) */
 const FACE_CAMERA = VIEW.TH;
@@ -122,6 +124,17 @@ function rimMaterial(color: string, width: { value: number }, key: string): THRE
 
 /** 방 좌표 → three 좌표 */
 const v3 = (x: number, y: number, z = 0) => new THREE.Vector3(x, z, y);
+
+/** 직교 카메라의 방향 — 카메라 뒤쪽 축과 회전. 이름 글자도 같은 회전을 받아 화면을 똑바로 본다 */
+function cameraBasis(): { back: THREE.Vector3; facing: THREE.Quaternion } {
+  const { TH, K } = VIEW;
+  const c = Math.cos(TH);
+  const s = Math.sin(TH);
+  const right = new THREE.Vector3(c, 0, -s);
+  const up = new THREE.Vector3(-K * s, Math.sqrt(1 - K * K), -K * c);
+  const back = new THREE.Vector3().crossVectors(right, up);
+  return { back, facing: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, back)) };
+}
 
 /** CSS 색 문자열 → three 색 + 불투명도 ('rgba(…)' 의 알파를 살린다) */
 function paint(style: string): { color: THREE.Color; opacity: number } {
@@ -263,6 +276,8 @@ export class RoomScene implements RoomRenderer {
   /** 같은 색 재질은 하나로 — 그리기 명령과 메모리를 아낀다 */
   private readonly meshMats = new Map<string, THREE.MeshBasicMaterial>();
   private readonly lineMats = new Map<string, THREE.LineBasicMaterial>();
+  /** 가구 이름 글자 그림 — 이름마다 한 장 */
+  private readonly labels = new Map<string, { mat: THREE.MeshBasicMaterial; aspect: number }>();
   private readonly hullMat = new THREE.MeshBasicMaterial({ color: '#FFFFFF', side: THREE.BackSide });
   /** VRM 테두리 두께(모델 좌표) · 재질 */
   private readonly rimWidth = { white: { value: 0 }, accent: { value: 0 } };
@@ -320,14 +335,9 @@ export class RoomScene implements RoomRenderer {
     this.proj = new Projection(scale, ox, oy);
     if (this.size.w !== width || this.size.h !== height) this.renderer.setSize(width, height); // 줌·끌기 때는 캔버스를 다시 만들지 않는다
     this.size = { w: width, h: height };
-    const { TH, K } = VIEW;
-    const c = Math.cos(TH);
-    const s = Math.sin(TH);
-    const right = new THREE.Vector3(c, 0, -s);
-    const up = new THREE.Vector3(-K * s, Math.sqrt(1 - K * K), -K * c);
-    const back = new THREE.Vector3().crossVectors(right, up);
+    const { back, facing } = cameraBasis();
     const cam = this.camera;
-    cam.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, back));
+    cam.quaternion.copy(facing);
     cam.position.copy(back).multiplyScalar(150);
     // 화면 x = ox + (right·P)·scale, 화면 y = oy − (up·P)·scale 이 되도록 시야를 자른다
     cam.left = -ox / scale;
@@ -564,24 +574,15 @@ export class RoomScene implements RoomRenderer {
     f.anim = null; // 다시 지으면 새 복제본이라 돌던 노드가 없어진다
     const build = ++f.build;
     const isRug = def.kind === 'rug';
-    const shape = shapeOf(def, f.pos, f.rotation);
-    for (const pt of shape.parts) {
+    const parts = shapeOf(def, f.pos, f.rotation);
+    for (const pt of parts) {
       const objs = isRug || pt.z1 - pt.z0 < 0.05 ? this.flatPart(pt, def.colors[1]) : this.boxPart(pt, (style) => this.meshMat(style), 'rgba(255,255,255,0.09)');
       for (const o of objs) {
         f.group.add(o);
         if (o instanceof THREE.Mesh) f.meshes.push(o);
       }
     }
-    for (const b of shape.blobs) {
-      const mat = this.meshMat(b.opacity < 1 ? this.withAlpha(b.color, b.opacity) : b.color);
-      const geo = b.flat ? new THREE.CircleGeometry(b.r, 28) : new THREE.SphereGeometry(b.r, 20, 14);
-      const m = new THREE.Mesh(geo, mat);
-      if (b.flat) m.rotation.x = -Math.PI / 2;
-      m.position.copy(v3(b.x, b.y, b.z));
-      m.userData.blob = { r: b.r, flat: !!b.flat };
-      f.group.add(m);
-      f.meshes.push(m);
-    }
+    f.group.add(this.nameLabel(def.name, parts[0]));
     for (const m of f.meshes) m.userData.placementId = placementId;
     for (const m of f.meshes) m.userData.rug = isRug;
     if (isRug) f.group.traverse((o) => o.layers.set(GROUND_LAYER));
@@ -590,8 +591,38 @@ export class RoomScene implements RoomRenderer {
   }
 
   /**
+   * 모델이 없는 가구의 이름 글자 — 윗면 바로 위에 화면을 보고 선다. 클릭 판정(f.meshes)에는 넣지 않는다.
+   * 그림은 이름마다 한 장(this.labels), 도형만 가구마다 — 모델로 바꿔 끼우면 상자와 같이 지워진다
+   */
+  private nameLabel(name: string, pt: Part): THREE.Mesh {
+    let label = this.labels.get(name);
+    if (!label) {
+      const H = 64;
+      const cv = document.createElement('canvas');
+      const ctx = cv.getContext('2d')!;
+      const font = `700 ${H * 0.7}px system-ui, sans-serif`;
+      ctx.font = font;
+      cv.width = Math.ceil(ctx.measureText(name).width) + H / 2;
+      cv.height = H;
+      ctx.font = font; // 캔버스 크기를 바꾸면 글꼴이 풀린다
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#EDEDEA';
+      ctx.fillText(name, cv.width / 2, H / 2);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      label = { mat: new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }), aspect: cv.width / H };
+      this.labels.set(name, label);
+    }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(LABEL_H * label.aspect, LABEL_H), label.mat);
+    m.quaternion.copy(cameraBasis().facing);
+    m.position.copy(v3((pt.x0 + pt.x1) / 2, (pt.y0 + pt.y1) / 2, pt.z1 + LABEL_H * 0.6));
+    return m;
+  }
+
+  /**
    * 가구 모델(glb)을 상자와 바꿔 끼운다 — 못 받으면 상자 그대로.
-   * 키(h 칸)에 맞춰 고르게 늘리고 바닥 자리 가운데에 세운다. 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y) — 등이 뒷벽 쪽(shapeOf 와 같은 규칙)
+   * 키(h 칸)에 맞춰 고르게 늘리고 설치 영역 가운데에 세운다. 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y) — 등이 뒷벽 쪽(shapeOf 와 같은 규칙)
    */
   private async attachFurnitureModel(placementId: number, f: FurnNode, url: string, height: number, build: number): Promise<void> {
     const src = await this.furnitureModel(url);
@@ -603,7 +634,8 @@ export class RoomScene implements RoomRenderer {
     obj.position.set(-((box.min.x + box.max.x) / 2) * scale, -box.min.y * scale, -((box.min.z + box.max.z) / 2) * scale);
     const holder = new THREE.Group();
     holder.add(obj);
-    holder.position.copy(v3(f.pos.x, f.pos.y, 0));
+    const area = footprint(this.furniture.def(f.furnitureId)!, f.pos, f.rotation);
+    holder.position.copy(v3((area.x0 + area.x1) / 2, (area.y0 + area.y1) / 2, 0));
     holder.rotation.y = -(f.rotation * Math.PI) / 180;
     this.clearGroup(f.group);
     f.meshes = [];
@@ -624,7 +656,8 @@ export class RoomScene implements RoomRenderer {
   }
 
   /**
-   * 가구 모델 원본 — 주소마다 한 번 받는다. 모델은 금속·광택 재질이라 반사 환경을 준다
+   * 가구 모델 원본 — 주소마다 한 번 받는다. 파일이 없으면(404 · 개발 서버가 대신 준 HTML) 조용히 null — 지금은 대부분 없어서 상자로 둔다.
+   * 모델은 금속·광택 재질이라 반사 환경을 준다
    * (방에는 캐릭터용 조명만 있고 비칠 주변이 없어서, 안 주면 금속 부분이 거의 검게 나온다)
    */
   private furnitureModel(url: string): Promise<THREE.Object3D | null> {
@@ -633,7 +666,7 @@ export class RoomScene implements RoomRenderer {
       p = (async () => {
         try {
           const r = await fetch(url);
-          if (!r.ok) throw new Error(`${r.status} ${url}`);
+          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) return null;
           const g = await this.furnLoader.parseAsync(await r.arrayBuffer(), '');
           if (this.disposed) return null;
           const env = this.environment();
@@ -746,13 +779,6 @@ export class RoomScene implements RoomRenderer {
     return [plane, this.line([v3(x0, y0, h), v3(x1, y0, h), v3(x1, y1, h), v3(x0, y1, h)], border || colors[0], true)];
   }
 
-  private withAlpha(style: string, a: number): string {
-    const { color } = paint(style);
-    const s = { r: 0, g: 0, b: 0 };
-    color.getRGB(s, THREE.SRGBColorSpace);
-    return `rgba(${Math.round(s.r * 255)},${Math.round(s.g * 255)},${Math.round(s.b * 255)},${a})`;
-  }
-
   pickFurniture(x: number, y: number): number | null {
     const hits = this.rayHits(x, y, [...this.furn.values()].flatMap((f) => f.meshes));
     // 앞에 보이는 것부터 — 러그는 다른 가구가 없을 때만
@@ -778,11 +804,7 @@ export class RoomScene implements RoomRenderer {
       this.invalidate();
       return;
     }
-    const parts = shapeOf(def, f.pos, f.rotation).parts;
-    const x0 = Math.min(...parts.map((q) => q.x0));
-    const x1 = Math.max(...parts.map((q) => q.x1));
-    const y0 = Math.min(...parts.map((q) => q.y0));
-    const y1 = Math.max(...parts.map((q) => q.y1));
+    const { x0, x1, y0, y1 } = shapeOf(def, f.pos, f.rotation)[0];
     const g = new THREE.Group();
     g.userData.role = 'hl';
     const fill = new THREE.Mesh(
@@ -812,9 +834,32 @@ export class RoomScene implements RoomRenderer {
       const g = new THREE.Group();
       g.userData.role = 'ghost';
       const mat = (style: string) => new THREE.MeshBasicMaterial({ color: paint(style).color, transparent: true, opacity: 0.55, depthWrite: false });
-      for (const pt of shapeOf(def, this.ghost.pos, this.ghost.rotation).parts) {
+      for (const pt of shapeOf(def, this.ghost.pos, this.ghost.rotation)) {
         for (const o of this.boxPart(pt, mat, '#EDEDEA')) g.add(o);
       }
+      this.overlay.add(g);
+    }
+    this.invalidate();
+  }
+
+  /** 배치 모드 — 설치 영역 칠하기. 가구에 가려지지 않게 깊이 검사를 끈다(고른 가구 표시와 같게) */
+  showPlacementArea(area: Footprint | null, ok = true): void {
+    for (const o of [...this.overlay.children]) if (o.userData.role === 'area') this.dropObject(o);
+    if (area) {
+      const { x0, x1, y0, y1 } = area;
+      const color = ok ? AREA_COLOR.ok : AREA_COLOR.bad;
+      const fill = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, depthTest: false }));
+      fill.rotation.x = -Math.PI / 2;
+      fill.position.copy(v3((x0 + x1) / 2, (y0 + y1) / 2, 0.01));
+      // 칸 경계 — 칸 전체를 칠했다는 게 보이게
+      const lines: THREE.Vector3[] = [];
+      for (let x = x0; x <= x1; x++) lines.push(v3(x, y0, 0.01), v3(x, y1, 0.01));
+      for (let y = y0; y <= y1; y++) lines.push(v3(x0, y, 0.01), v3(x1, y, 0.01));
+      const grid = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(lines), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7, depthTest: false }));
+      for (const o of [fill, grid]) o.renderOrder = 10;
+      const g = new THREE.Group();
+      g.userData.role = 'area';
+      g.add(fill, grid);
       this.overlay.add(g);
     }
     this.invalidate();
@@ -825,12 +870,10 @@ export class RoomScene implements RoomRenderer {
     const def = f && this.furniture.def(f.furnitureId);
     if (!f || !def) return null;
     // 평면 더미와 같은 자리 — 가구가 화면에서 가장 높이 닿는 점, 가로는 가구 가운데 위
-    const shape = shapeOf(def, f.pos, f.rotation);
     let top = Infinity;
-    for (const q of shape.parts) {
+    for (const q of shapeOf(def, f.pos, f.rotation)) {
       for (const x of [q.x0, q.x1]) for (const y of [q.y0, q.y1]) top = Math.min(top, this.proj.p(x, y, q.z1).y);
     }
-    for (const b of shape.blobs) top = Math.min(top, this.proj.p(b.x, b.y, b.z).y - b.r * this.proj.scale);
     return { x: this.proj.p(f.pos.x, f.pos.y, def.h).x, y: top };
   }
 
@@ -1469,13 +1512,8 @@ export class RoomScene implements RoomRenderer {
         }
         for (const m of f.meshes) {
           const pt = m.userData.part as Part | undefined;
-          const blob = m.userData.blob as { r: number; flat: boolean } | undefined;
           if (pt) {
             const h = new THREE.Mesh(new THREE.BoxGeometry(pt.x1 - pt.x0 + 2 * e, pt.z1 - pt.z0 + 2 * e, pt.y1 - pt.y0 + 2 * e), this.hullMat);
-            h.position.copy(m.position);
-            hull.add(h);
-          } else if (blob && !blob.flat) {
-            const h = new THREE.Mesh(new THREE.SphereGeometry(blob.r + e, 20, 14), this.hullMat);
             h.position.copy(m.position);
             hull.add(h);
           }
@@ -1623,6 +1661,10 @@ export class RoomScene implements RoomRenderer {
       });
     }
     for (const f of this.furn.values()) f.rim?.mat.dispose();
+    for (const { mat } of this.labels.values()) {
+      mat.map?.dispose();
+      mat.dispose();
+    }
     this.envMap?.dispose();
     for (const m of [...this.meshMats.values(), ...this.lineMats.values(), this.hullMat, this.ringMat, this.rimWhite, this.rimAccent]) m.dispose();
     for (const o of this.owned) o.dispose();

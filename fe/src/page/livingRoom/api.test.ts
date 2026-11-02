@@ -2,6 +2,7 @@ import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api as http } from '../../api/axios';
 import * as api from './api';
+import { reactionImgUrl } from './catalog';
 
 // 남의 거실 REST 어댑터(S8) — 서버 칸 이름(snake_case) → 화면 이름(camelCase), 거절 응답 처리. 서버는 http.request 를 흉내 낸다
 
@@ -49,7 +50,9 @@ const visitorRoom = {
       affinity_progress: 30, clothes_id: null, received_reactions: [{ reaction_type: 'LIKE', count: 2 }], my_reaction: null,
     },
   ],
-  placed_furniture: [],
+  placed_furniture: [
+    { placement_id: 11, furniture_id: 2, furniture_name: '소파 (노말)', position: { x: 8, y: 3, z: 0 }, rotation: { x: 0, y: 90, z: 0 } },
+  ],
 };
 
 describe('남의 거실 조회 (GET /rooms/:userId)', () => {
@@ -68,7 +71,7 @@ describe('남의 거실 조회 (GET /rooms/:userId)', () => {
       affinityProgress: 30, ownedClothesId: null, receivedReactionCount: 2, myReaction: null,
     });
     expect(s.characters[0].quantity).toBeUndefined();
-    expect(s.placements.length).toBeGreaterThan(0); // 가구는 더미 배치(가구 묶음 보류)
+    expect(s.placements).toEqual([{ placementId: 11, furnitureId: 2, positionX: 8, positionY: 3, rotation: 90 }]);
   });
 
   it('비로그인은 헤더 없이 보낸다 — 모드는 서버가 정한 GUEST', async () => {
@@ -94,6 +97,68 @@ describe('남의 거실 조회 (GET /rooms/:userId)', () => {
   it('없는 사용자 404 는 HttpError(404)', async () => {
     serve(() => ({ status: 404, message: '존재하지 않는 사용자입니다.' }));
     await expect(api.getRoom('999')).rejects.toMatchObject({ status: 404, message: '존재하지 않는 사용자입니다.' });
+  });
+});
+
+describe('가구 — 놓인 것 · 보관함 · 저장', () => {
+  it('내 거실 응답의 placed_furniture 를 화면 이름으로', async () => {
+    const calls = serve(() => ({
+      data: {
+        viewer_mode: 'OWNER', share_option: true, owner_info: { nickname: '나' }, received_reactions: [], placed_characters: [],
+        placed_furniture: [{ placement_id: 5, furniture_id: 29, furniture_name: '슬롯머신', position: { x: 4, y: 7, z: 0 }, rotation: { x: 0, y: 180, z: 0 } }],
+      },
+    }));
+    const s = await api.getRoom(undefined);
+    expect(calls[0].url).toBe('/rooms/me');
+    expect(s.placements).toEqual([{ placementId: 5, furnitureId: 29, positionX: 4, positionY: 7, rotation: 180 }]);
+  });
+
+  it('보관함 GET /home/furniture/inventory — furniture_id · remaining_count → StorageItem', async () => {
+    const calls = serve(() => ({ data: [{ furniture_id: 2, furniture_name: '소파 (노말)', level: 'NORMAL', remaining_count: 3 }] }));
+    expect(await api.getStorage()).toEqual([{ furnitureId: 2, quantity: 3 }]);
+    expect(calls[0]).toMatchObject({ method: 'get', url: '/home/furniture/inventory' });
+  });
+
+  it('저장 PUT /rooms/layout — 놓였던 건 placement_id, 꺼낸 건(음수 임시 id) 없이. 응답으로 진짜 id 를 받는다', async () => {
+    const calls = serve(() => ({
+      data: {
+        is_success: true,
+        updated_at: '2026-11-03 12:00:00',
+        placed_furniture: [
+          { placement_id: 5, furniture_id: 2, furniture_name: '소파 (노말)', position: { x: 4, y: 7, z: 0 }, rotation: { x: 0, y: 90, z: 0 } },
+          { placement_id: 9, furniture_id: 3, furniture_name: '화분 (노말)', position: { x: 12, y: 2, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+        ],
+      },
+    }));
+    const saved = await api.savePlacements([
+      { placementId: 5, furnitureId: 2, positionX: 4, positionY: 7, rotation: 90 },
+      { placementId: -1, furnitureId: 3, positionX: 12, positionY: 2, rotation: 0 },
+    ]);
+    expect(calls[0]).toMatchObject({ method: 'put', url: '/rooms/layout' });
+    expect(calls[0].data).toEqual({
+      furniture_layout: [
+        { placement_id: 5, furniture_id: 2, position: { x: 4, y: 7 }, rotation: 90 },
+        { furniture_id: 3, position: { x: 12, y: 2 }, rotation: 0 },
+      ],
+    });
+    expect(saved.map((p) => p.placementId)).toEqual([5, 9]);
+  });
+
+  it('저장 거절(보관함에 없음 등)은 HttpError 로', async () => {
+    serve(() => ({ status: 400, message: '보관함에 없는 가구입니다: 3' }));
+    await expect(api.savePlacements([])).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('반응 그림 — 서버 img 대신 프론트가 조립', () => {
+  it('종류 이름 그대로 public/reactions/{type}.png', () => {
+    expect(reactionImgUrl('THUMBS_UP').endsWith('reactions/THUMBS_UP.png')).toBe(true);
+    expect(reactionImgUrl('FIRE').endsWith('reactions/FIRE.png')).toBe(true);
+  });
+
+  it('GET /rooms/reaction-types 는 종류 이름만 쓴다', async () => {
+    serve(() => ({ data: [{ reaction_type: 'HEART', img: 'http://옛주소/x.png' }] }));
+    expect(await api.getReactionKinds()).toEqual([{ reactionType: 'HEART' }]);
   });
 });
 

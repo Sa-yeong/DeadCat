@@ -101,7 +101,6 @@ export class VisitorRoomResponseDto {
 
 export class ReactionTypeDto {
     reaction_type!: string;
-    img!: string;
 }
 
 /** 반응 남기기·교체·취소 응답 — 갱신된 개수 + 내 반응(취소했으면 null) */

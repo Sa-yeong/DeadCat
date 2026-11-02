@@ -1,24 +1,22 @@
 /**
  * 서버 계약 자리 — 컴포넌트 다이어그램(r5)의 소켓 8개에 대응한다.
- *   RoomQuery · Catalog · Placement · Item(증여 응답에 호감도가 실려 온다 — Affinity 소켓) · Guestbook · Follow · Wardrobe
+ *   RoomQuery · Placement · Item(증여 응답에 호감도가 실려 온다 — Affinity 소켓) · Guestbook · Follow · Wardrobe
  * **실 API로 바꿀 곳은 이 파일뿐이다.** 서버 칸 이름(snake_case) → 화면 이름(camelCase) 변환도 여기 한 곳(이름 통일 기준 4).
  *   실 API (S4)   내 거실 조회 GET /rooms/me · 감정 스트림 GET /rooms/me/stream · 보유 종목 GET /holdings
  *   실 API (S6)   프리셋 · 아이템 · 선물 · 출석 · 이별 흔적 · 옷 — 모두 /rooms/me/… (C1 경로표)
  *   실 API (S8)   남의 거실 GET /rooms/:userId · 스트림 GET /rooms/:userId/stream · 반응 종류 · 반응 · 방명록 · 팔로우
- *   더미          가구(가구 묶음 보류 — 카탈로그 · 배치 · 보관함). 거실 응답의 placed_furniture 는 가구 데이터가 들어온 뒤 쓴다
+ *   실 API (S11)  놓인 가구 = 거실 응답 placed_furniture · 보관함 GET /home/furniture/inventory · 저장 PUT /rooms/layout (가구 카탈로그는 프론트 정적 — furnitureCatalog.ts)
  *
  * 한 객체로 묶지 않는다(God class 방지) — 패널이 필요한 묶음만 가져다 쓴다.
  */
 import axios from 'axios';
 import { api as http } from '../../api/axios';
-import * as D from './dummy';
 import type {
   AttendanceClaim,
   AttendanceState,
   CharacterClothes,
   CharacterReactions,
   FarewellCard,
-  FurnitureDef,
   GiftResult,
   GuestbookPage,
   InventoryItem,
@@ -105,6 +103,22 @@ interface ReactionCountRes {
 const sumCounts = (list: ReactionCountRes[] | undefined) => (list ?? []).reduce((n, r) => n + r.count, 0);
 const countsOf = (list: ReactionCountRes[] | undefined): Record<string, number> => Object.fromEntries((list ?? []).map((r) => [r.reaction_type, r.count]));
 
+/** 방에 놓인 가구 한 개 — 내 거실 · 남의 거실 응답과 PUT /rooms/layout 응답이 같은 모양 */
+interface PlacedFurnitureRes {
+  placement_id: number;
+  furniture_id: number;
+  furniture_name: string;
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+}
+const placementOf = (f: PlacedFurnitureRes): PlacementDto => ({
+  placementId: f.placement_id,
+  furnitureId: f.furniture_id,
+  positionX: f.position.x,
+  positionY: f.position.y,
+  rotation: f.rotation.y,
+});
+
 /** GET /rooms/me 응답 (백엔드 MyRoomResponseDto) — 자기 id 로 GET /rooms/:userId 를 불러도 이 모양 */
 interface MyRoomRes {
   viewer_mode: 'OWNER';
@@ -123,6 +137,7 @@ interface MyRoomRes {
     clothes_id: number | null;
     received_reactions: ReactionCountRes[];
   }[];
+  placed_furniture: PlacedFurnitureRes[];
 }
 
 /** GET /rooms/:userId 응답 (백엔드 VisitorRoomResponseDto) — 수량 · 평단가는 없다(남에게 투자금 비공개) */
@@ -151,6 +166,7 @@ interface VisitorRoomRes {
     received_reactions: ReactionCountRes[];
     my_reaction: string | null;
   }[];
+  placed_furniture: PlacedFurnitureRes[];
 }
 
 /** GET /holdings 한 줄 (백엔드 HoldingItemDto) — 금액은 글자로 온다 */
@@ -166,18 +182,6 @@ interface HoldingRes {
   stock_img: string;
   market: string;
 }
-
-const wait = <T,>(v: T, ms = 120): Promise<T> => new Promise((r) => setTimeout(() => r(structuredClone(v)), ms));
-
-/* 더미 서버의 상태(가구) — 화면에서 바꾼 것이 새로고침 전까지 유지되게 */
-const db = {
-  placements: D.PLACEMENTS.map((p) => ({ ...p })),
-  storage: D.STORAGE.map((s) => ({ ...s })),
-  nextId: 1000,
-};
-
-/** 남의 거실 가구 — 가구 묶음 보류라 더미 배치. 내 거실과 달라 보이게 카페 쪽(카페 세트·카운터·진열장·스툴·분수대·파란 러그)을 뺀다 */
-const visitPlacements = (): PlacementDto[] => D.PLACEMENTS.filter((p) => ![16, 17, 18, 19, 20, 26].includes(p.furnitureId)).map((p) => ({ ...p }));
 
 /* ── RoomQuery API ────────────────────────────────────────────── */
 
@@ -197,8 +201,7 @@ function myRoomSnapshot(d: MyRoomRes): RoomSnapshot {
       ownedClothesId: c.clothes_id,
       receivedReactionCount: sumCounts(c.received_reactions),
     })),
-    // 가구는 가구 묶음 결정 전까지 더미 배치 그대로 보여 준다(S4 도휘 결정) — 응답의 placed_furniture 는 가구 데이터가 들어온 뒤 쓴다
-    placements: db.placements,
+    placements: d.placed_furniture.map(placementOf),
     roomReactions: { counts: countsOf(d.received_reactions), mine: null },
   };
 }
@@ -227,7 +230,7 @@ function visitorRoomSnapshot(d: VisitorRoomRes): RoomSnapshot {
       receivedReactionCount: sumCounts(c.received_reactions),
       myReaction: c.my_reaction,
     })),
-    placements: visitPlacements(),
+    placements: d.placed_furniture.map(placementOf),
     roomReactions: { counts: countsOf(d.received_reactions), mine: d.my_reaction },
     roomReturnRate: d.room_return_rate,
   };
@@ -252,30 +255,35 @@ export async function getRoom(ownerId: OwnerId): Promise<RoomSnapshot> {
   }
 }
 
-/* ── Catalog API — 앱에서 한 번 받아 캐시 ─────────────────────────── */
-
 /** GET /rooms/reaction-types — 반응 종류(DB reactions, 로그인 불필요). 비어 있을 수 있다(지금 DB 는 0개) */
 export async function getReactionKinds(): Promise<ReactionKind[]> {
-  const list = await request<{ reaction_type: string; img: string | null }[]>('get', '/rooms/reaction-types', { auth: 'optional' });
-  return list.map((k) => ({ reactionType: k.reaction_type, img: k.img ?? '' }));
+  const list = await request<{ reaction_type: string }[]>('get', '/rooms/reaction-types', { auth: 'optional' });
+  return list.map((k) => ({ reactionType: k.reaction_type }));
 }
-
-/** GET /catalog/furnitures */
-export const getFurnitureDefs = (): Promise<FurnitureDef[]> => wait(D.FURNITURE_DEFS);
 
 /* ── Placement API ────────────────────────────────────────────── */
 
-/** GET /placements/storage */
-export const getStorage = (): Promise<StorageItem[]> => wait(db.storage);
+/** GET /home/furniture/inventory — 보관함(내 가구 중 위치가 빈 것)을 종류별로 */
+export async function getStorage(): Promise<StorageItem[]> {
+  const list = await getAuthed<{ furniture_id: number; remaining_count: number }[]>('/home/furniture/inventory');
+  return list.map((s) => ({ furnitureId: s.furniture_id, quantity: s.remaining_count }));
+}
 
 /**
- * PUT /placements — 배치 모드를 '저장'으로 닫을 때 한 번에 보낸다.
+ * PUT /rooms/layout — 배치 모드를 '저장'으로 닫을 때 방 전체를 한 번에 보낸다. 보내는 목록 = 저장 뒤 방에 있어야 할 가구 전부.
  * 편집 도중의 이동·회전은 서버로 가지 않는다(되돌리기가 화면 안에서 끝나야 해서).
+ * 보관함에서 꺼낸 가구(음수 임시 id)는 placement_id 없이 보내고, 진짜 id 는 응답에서 받는다
  */
-export function savePlacements(placements: PlacementDto[], storage: StorageItem[]): Promise<PlacementDto[]> {
-  db.placements = placements.map((p) => (p.placementId < 0 ? { ...p, placementId: db.nextId++ } : { ...p }));
-  db.storage = storage.filter((s) => s.quantity > 0).map((s) => ({ ...s }));
-  return wait(db.placements);
+export async function savePlacements(placements: readonly PlacementDto[]): Promise<PlacementDto[]> {
+  const res = await authed<{ placed_furniture: PlacedFurnitureRes[] }>('put', '/rooms/layout', {
+    furniture_layout: placements.map((p) => ({
+      ...(p.placementId > 0 ? { placement_id: p.placementId } : {}),
+      furniture_id: p.furnitureId,
+      position: { x: p.positionX, y: p.positionY },
+      rotation: p.rotation,
+    })),
+  });
+  return res.placed_furniture.map(placementOf);
 }
 
 /* ── Preset API — 캐릭터 탭 (OWNER, 3-⑥) ─────────────────────────────── */

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import * as api from './api';
 import { characterDef } from './catalog';
+import { FURNITURE_CATALOG } from './furnitureCatalog';
 import { DebugLabels } from './hud/DebugLabels';
 import { ITEM_MIME } from './hud/dnd';
 import { LoginPrompt } from './hud/LoginPrompt';
@@ -126,11 +127,8 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       const isPrivateRoom = !snap.shareOption && snap.mode !== 'OWNER';
       // 남의 거실 썸네일은 응답에 없다 — 빈 칸(평면 더미는 색, 3D 는 모델이라 쓰지 않음)
       const imgOf = (stockId: number) => owned?.find((h) => h.stockId === stockId)?.imgUrl ?? '';
-      const [furnDefs, reactionKinds] = await Promise.all([
-        api.getFurnitureDefs(),
-        // 반응 종류를 못 받아도 거실은 연다 — 반응 칸만 빈다(지금 DB 는 0개라 원래 빈 목록)
-        api.getReactionKinds().catch((): ReactionKind[] => []),
-      ]);
+      // 반응 종류를 못 받아도 거실은 연다 — 반응 칸만 빈다
+      const reactionKinds = await api.getReactionKinds().catch((): ReactionKind[] => []);
       const charDefs = snap.characters.map((c) => characterDef(c, imgOf(c.stockId)));
       const Scene3D = use3d ? (await import('./runtime/RoomScene')).RoomScene : null;
       if (!alive || !(Scene3D ? canvasRef.current : svgRef.current)) return;
@@ -138,7 +136,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       const characters = new CharacterCatalog();
       characters.load(charDefs);
       const furniture = new FurnitureCatalog();
-      furniture.load(furnDefs);
+      furniture.load(FURNITURE_CATALOG);
       // 축척은 아래 layout effect 가 rt 가 생기자마자(첫 화면을 그리기 전에) 맞춘다
       renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
       renderer.holdMissingClips(debug ? DEBUG_HOLD_MS : null);

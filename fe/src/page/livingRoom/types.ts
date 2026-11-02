@@ -63,7 +63,7 @@ export interface PlacementDto {
   placementId: number;
   /** furnitures.id — 종류. 카탈로그 · 그림의 키 */
   furnitureId: number;
-  /** 가구 바닥 중심 — 칸 단위 {공간 규격 미정: 지금은 12×12칸, 원점은 뒷벽·왼벽 모서리} */
+  /** 가구 자리 — 정수 칸 좌표(30×30칸, 원점은 뒷벽·왼벽 모서리). 설치 영역과의 관계는 runtime/furnitureShape footprint */
   positionX: number;
   positionY: number;
   /** 0 · 90 · 180 · 270 */
@@ -100,41 +100,27 @@ export interface CharacterDef {
   color: string;
 }
 
-export type FurnitureKind = 'box' | 'sofa' | 'chair' | 'armchair' | 'plant' | 'lamp' | 'rug' | 'shelf' | 'beanbag' | 'fountain' | 'set';
+/** box = 상자, rug = 바닥에 까는 판(밟고 지나가고 다른 가구를 위에 올릴 수 있다) */
+export type FurnitureKind = 'box' | 'rug';
 
-/** 여러 조각으로 된 가구의 한 조각 — 자리는 가구 가운데 기준, 회전 0도 기준(칸) */
-export interface FurniturePiece {
-  kind: FurnitureKind;
-  dx: number;
-  dy: number;
-  w: number;
-  d: number;
-  h: number;
-  /** 가구 회전에 더해지는 조각 자체의 회전 */
-  rotation: number;
-  colors: [string, string, string];
-}
-
+/** 가구 한 종류 — 프론트 정적 카탈로그(furnitureCatalog.ts) 한 줄 */
 export interface FurnitureDef {
+  /** furnitures.id */
   furnitureId: number;
+  /** 화면 이름 */
   name: string;
   kind: FurnitureKind;
-  /** 회전 0도 기준 가로(x)·세로(y) 칸 수, 높이(칸) */
+  /** 설치 영역 — 회전 0도 기준 가로(x)·세로(y) 칸 수(정수). 높이는 상자 높이(칸) */
   w: number;
   d: number;
   h: number;
   /** 평면 더미 색 — [윗면, 앞면, 옆면] */
   colors: [string, string, string];
+  /** 엔진 가구 이름(engine/data/furniture.json) — 상호작용 가구만. 있으면 캐릭터를 들어 올려놓을 수 있고 테두리가 빛난다 */
+  engineName?: string;
   /**
-   * 처음부터 한 덩어리인 여러 조각(책상+의자, 식탁+의자 등) — 따로 옮기거나 보관할 수 없다.
-   * 있으면 kind 대신 조각들로 그린다. w·d 는 조각 전체를 두른 크기
-   */
-  pieces?: FurniturePiece[];
-  /** 캐릭터를 들어 올려놓을 수 있는 가구 — 올려놓으면 테두리가 빛난다 {상호작용 종류·동작은 엔진·모션 확정 후} */
-  interactive?: boolean;
-  /**
-   * 3D 모델(glb) 주소 — 있으면 3D 는 상자 대신 이 모델을 세운다(받기 전·못 받으면 상자). 키(h)에 맞춰 배율을 정하고 바닥 자리 가운데에 둔다.
-   * 평면 더미는 계속 kind 의 상자로 그린다 (2026-10-27 추가) {제안 — 서버 가구 테이블·카탈로그 응답에 칸 없음}
+   * 3D 모델(glb) 주소 — 파일이 있으면 3D 는 상자 대신 이 모델을 세운다(받기 전·없으면 상자 + 이름 글자). 키(h)에 맞춰 배율을 정하고 바닥 자리 가운데에 둔다.
+   * 평면 더미는 계속 상자로 그린다
    */
   model?: string;
 }
@@ -163,7 +149,7 @@ export interface GiftResult {
   unlockedClothes: { clothesId: number; name: string } | null;
 }
 
-/** 보관함의 가구 한 종류 — GET /home/furniture/inventory 한 줄(화면 연결은 가구 데이터가 들어온 뒤) */
+/** 보관함의 가구 한 종류 — GET /home/furniture/inventory 한 줄. 이름 · 크기는 카탈로그에서 */
 export interface StorageItem {
   /** furnitures.id — 응답의 furniture_id */
   furnitureId: number;
@@ -226,8 +212,6 @@ export interface PresetList {
 export interface ReactionKind {
   /** 종류 이름 = 식별 값(서버 reaction_type) */
   reactionType: string;
-  /** 그림 주소 — 비었으면 이름을 글자로 보인다 */
-  img: string;
 }
 
 export interface RoomReactions {

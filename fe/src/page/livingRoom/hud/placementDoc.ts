@@ -12,17 +12,24 @@ export interface PlacementDoc {
   storage: StorageItem[];
 }
 
-/** 이동 단위 — 1/4 칸 */
-const SNAP = 4;
+/** 포인터 자리 → 가구 자리 — 1칸 단위 정수. 끄는 가구가 방에서 아주 벗어나지 않게 자리만 방 안으로 묶는다(설치 영역은 벽을 넘어갈 수 있고, 그러면 빨강) */
+export function snapPos(pos: Pt): Pt {
+  const snap = (v: number) => Math.min(ROOM, Math.max(0, Math.round(v)));
+  return { x: snap(pos.x), y: snap(pos.y) };
+}
 
-/** 방 밖으로 나가지 않게 회전을 반영해 자르고, 1/4 칸에 맞춘다 */
+/** 설치 영역이 방 안으로 들어오도록 회전을 반영해 자르고, 1칸에 맞춘다 */
 export function clampPos(def: FurnitureDef | undefined, pos: Pt, rotation: number): Pt {
   if (!def) return pos;
-  const snap = (v: number) => Math.round(v * SNAP) / SNAP;
   const f = footprint(def, { x: 0, y: 0 }, rotation);
-  const hw = (f.x1 - f.x0) / 2;
-  const hd = (f.y1 - f.y0) / 2;
-  return { x: Math.min(ROOM - hw, Math.max(hw, snap(pos.x))), y: Math.min(ROOM - hd, Math.max(hd, snap(pos.y))) };
+  const fit = (v: number, lo: number, hi: number) => Math.min(ROOM - hi, Math.max(-lo, Math.round(v)));
+  return { x: fit(pos.x, f.x0, f.x1), y: fit(pos.y, f.y0, f.y1) };
+}
+
+/** 설치 영역이 방 안에 있는가 */
+export function insideRoom(def: FurnitureDef, pos: Pt, rotation: number): boolean {
+  const f = footprint(def, pos, rotation);
+  return f.x0 >= 0 && f.y0 >= 0 && f.x1 <= ROOM && f.y1 <= ROOM;
 }
 
 /** 보관함 수량 더하기·빼기. 0 이 된 칸은 지운다 */
@@ -32,16 +39,22 @@ export function addStorage(list: StorageItem[], furnitureId: number, n: number):
   return out.filter((s) => s.quantity > 0);
 }
 
-/* ── 겹침 ── 규칙은 runtime/occupancy 한 곳에 있다 (러그는 겹쳐도 된다) */
+/* ── 겹침 ── 규칙은 runtime/occupancy 한 곳에 있다 (카펫은 겹쳐도 된다) */
 
 /** 겹치지 않고 놓을 수 있는가 */
 export function fits(doc: PlacementDoc, defs: Defs, c: Candidate): boolean {
   return !collides(doc.placements, defs, c);
 }
 
+/** 이 자리에 내려놓을 수 있는가 — 방 안이고 겹치지 않는다. 배치 모드 초록 / 빨강이 이걸 따른다 */
+export function placeable(doc: PlacementDoc, defs: Defs, c: Candidate): boolean {
+  const def = defs(c.furnitureId);
+  return !!def && insideRoom(def, c.pos, c.rotation) && fits(doc, defs, c);
+}
+
 /**
- * 원하는 자리에서 가장 가까운 빈 자리 — 1/4 칸씩 넓혀 가며 찾는다. radius 칸 안에 없으면 null.
- * 보관함에서 꺼낼 때, 돌렸더니 옆 가구와 겹칠 때 쓴다.
+ * 원하는 자리에서 가장 가까운 빈 자리 — 1칸씩 넓혀 가며 찾는다. radius 칸 안에 없으면 null.
+ * 돌렸더니 옆 가구와 겹칠 때 쓴다.
  */
 export function nearestFit(doc: PlacementDoc, defs: Defs, c: Candidate, radius = 2): Pt | null {
   const def = defs(c.furnitureId);
@@ -53,30 +66,17 @@ export function nearestFit(doc: PlacementDoc, defs: Defs, c: Candidate, radius =
   return null;
 }
 
-/** 가까운 순으로 늘어선 1/4 칸 간격 오프셋 — 반지름마다 한 번만 만든다(고스트가 포인터마다 찾으므로) */
+/** 가까운 순으로 늘어선 1칸 간격 오프셋 — 반지름마다 한 번만 만든다 */
 const OFFSETS = new Map<number, [number, number][]>();
 function offsetsWithin(radius: number): [number, number][] {
   let list = OFFSETS.get(radius);
   if (!list) {
-    const n = radius * SNAP;
     list = [];
-    for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) list.push([i / SNAP, j / SNAP]);
+    for (let i = -radius; i <= radius; i++) for (let j = -radius; j <= radius; j++) list.push([i, j]);
     list.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
     OFFSETS.set(radius, list);
   }
   return list;
-}
-
-/**
- * 끄는 중 다음 자리 — 원하는 자리가 막혔으면 한 축으로만 미끄러지고, 그것도 막히면 제자리.
- * 도착 자리만 검사한다 — 포인터가 한 번에 크게 움직이면 작은 가구가 다른 가구를 건너뛸 수는 있다(겹친 채 놓이지는 않음).
- */
-export function slideTo(doc: PlacementDoc, defs: Defs, c: Candidate, from: Pt): Pt {
-  const def = defs(c.furnitureId);
-  const want = clampPos(def, c.pos, c.rotation);
-  const tries = [want, clampPos(def, { x: want.x, y: from.y }, c.rotation), clampPos(def, { x: from.x, y: want.y }, c.rotation)];
-  for (const pos of tries) if (fits(doc, defs, { ...c, pos })) return pos;
-  return from;
 }
 
 export function movePlacement(doc: PlacementDoc, id: number, pos: Pt): PlacementDoc {
@@ -103,7 +103,7 @@ export function storePlacement(doc: PlacementDoc, id: number): PlacementDoc {
   return { placements: doc.placements.filter((p) => p.placementId !== id), storage: addStorage(doc.storage, pl.furnitureId, 1) };
 }
 
-/** 보관함 → 방. 새 배치는 음수 임시 id — 저장할 때 서버가 진짜 id 를 준다. 자리는 부르는 쪽이 nearestFit 으로 고른다 */
+/** 보관함 → 방. 새 배치는 음수 임시 id — 저장할 때 서버가 진짜 id 를 준다. 자리는 부르는 쪽이 placeable 로 확인한다 */
 export function placeFromStorage(doc: PlacementDoc, furnitureId: number, pos: Pt, tempId: number): PlacementDoc {
   if (!doc.storage.some((s) => s.furnitureId === furnitureId && s.quantity > 0)) return doc;
   const p: PlacementDto = { placementId: tempId, furnitureId, positionX: pos.x, positionY: pos.y, rotation: 0 };

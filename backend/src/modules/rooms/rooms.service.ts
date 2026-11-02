@@ -19,6 +19,7 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
 import { applyRoomLayout } from './room-layout';
+import { grantStarterFurniture } from './room-starter-furniture';
 import { HoldingService } from '../holding/holding.service';
 import { HoldingItemDto } from '../holding/dto/holding-list.response.dto';
 import { toAffinityInfo } from 'src/common/affinity/affinity-level';
@@ -45,6 +46,8 @@ export class RoomsService {
         if (!owner) {
             throw new NotFoundException('존재하지 않는 사용자입니다.');
         }
+
+        await this.ensureStarterFurniture(userId);
 
         const placedHoldings = await this.prisma.holdings.findMany({
             where: { user_id: userId, is_placed: true },
@@ -90,6 +93,17 @@ export class RoomsService {
                 this.formatFurniture(f),
             ),
         };
+    }
+
+    // 거실을 처음 열 때 기본 가구 지급 — 이미 받았으면 잠금 없이 바로 돌아간다
+    private async ensureStarterFurniture(userId: bigint): Promise<void> {
+        const owned = await this.prisma.user_furniture.count({
+            where: { user_id: userId },
+        });
+        if (owned > 0) return;
+        await this.prisma.$transaction((tx) =>
+            grantStarterFurniture(tx, userId),
+        );
     }
 
     // 거실이 받은 반응 — 종류별 개수
@@ -378,12 +392,12 @@ export class RoomsService {
         );
     }
 
-    // GET /rooms/reaction-types — 반응 종류 목록
+    // GET /rooms/reaction-types — 반응 종류 목록. 그림은 프론트가 종류 이름으로 조립한다(public/reactions/{type}.png)
     async getReactionTypes(): Promise<ReactionTypeDto[]> {
         const rows = await this.prisma.reactions.findMany({
             orderBy: { id: 'asc' },
         });
-        return rows.map((r) => ({ reaction_type: r.type, img: r.img }));
+        return rows.map((r) => ({ reaction_type: r.type }));
     }
 
     // 반응을 남길 수 있는지 확인하고 반응 종류를 찾는다 — 내 거실 거절, 없는/비공개 거실 거절
