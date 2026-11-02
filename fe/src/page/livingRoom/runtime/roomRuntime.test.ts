@@ -39,7 +39,7 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
 
   it('Bearer 헤더로 열고, 조각난 data 줄을 메시지로 모은다 — 이름표 · 주석은 무시', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(sseBody([': hi\n\nevent: message\nda', 'ta: {"type":"snapshot","data":{"characters":[{"characterId":"1","emotion":"happy"}],"furniture":[]}}\r\n\r\n', 'data: {"type":"emotion","characterId":"1","emotion":"sad"}\n\n']), { status: 200 }),
+      new Response(sseBody([': hi\n\nevent: message\nda', 'ta: {"type":"snapshot","data":{"characters":[{"characterId":"1","emotion":"happy"}]}}\r\n\r\n', 'data: {"type":"emotion","characterId":"1","emotion":"sad"}\n\n']), { status: 200 }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const got: unknown[] = [];
@@ -50,7 +50,7 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/rooms\/me\/stream$/);
     expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer tok');
     expect(got).toEqual([
-      { type: 'snapshot', data: { characters: [{ characterId: '1', emotion: 'happy' }], furniture: [] } },
+      { type: 'snapshot', data: { characters: [{ characterId: '1', emotion: 'happy' }] } },
       { type: 'emotion', characterId: '1', emotion: 'sad' },
     ]);
   });
@@ -133,14 +133,14 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('RoomFeed 는 모르는 감정 · 모양이 틀린 메시지를 버린다', async () => {
+  it('RoomFeed 는 모르는 감정 · 모양이 틀린 메시지를 버리고, snapshot 은 캐릭터만 넘긴다', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
         new Response(
           sseBody([
             'data: {"type":"emotion","characterId":"1","emotion":"depression"}\n\n',
-            'data: {"type":"snapshot","data":{"characters":[{"characterId":"1","emotion":"happy"},{"characterId":2,"emotion":"sad"}]}}\n\n',
+            'data: {"type":"snapshot","data":{"characters":[{"characterId":"1","emotion":"happy"},{"characterId":2,"emotion":"sad"}],"furniture":[{"furnitureId":1,"model":"소파"}]}}\n\n',
             'data: {"type":"what"}\n\n',
           ]),
           { status: 200 },
@@ -152,7 +152,7 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
     await flush();
     await flush();
     off();
-    expect(got).toEqual([{ type: 'snapshot', data: { characters: [{ characterId: '1', emotion: 'happy' }], furniture: [] } }]);
+    expect(got).toEqual([{ type: 'snapshot', data: { characters: [{ characterId: '1', emotion: 'happy' }] } }]);
   });
 });
 

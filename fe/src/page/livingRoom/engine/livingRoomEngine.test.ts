@@ -57,7 +57,7 @@ function setup(over: Partial<EngineOptions> = {}) {
 
     const emit = (e: FeedEvent) => handler?.(e)
     const snapshot = (chars: [string, Emotion][]) =>
-        emit({ type: 'snapshot', data: { characters: chars.map(([characterId, emotion]) => ({ characterId, emotion })), furniture: [] } })
+        emit({ type: 'snapshot', data: { characters: chars.map(([characterId, emotion]) => ({ characterId, emotion })) } })
     const of = (type: EngineCommand['type']) => commands.filter(c => c.type === type)
     // 그 캐릭터의 모션이 끝났다고 알린다
     const finish = (id: string) => engine.motionFinished(id)

@@ -52,12 +52,10 @@ function toFeedEvent(v: unknown): FeedEvent | null {
     case 'snapshot': {
       const d = isObj(v.data) ? v.data : {};
       const chars = Array.isArray(d.characters) ? d.characters : [];
-      const furn = Array.isArray(d.furniture) ? d.furniture : [];
       return {
         type: 'snapshot',
         data: {
           characters: chars.flatMap((c) => (isObj(c) && typeof c.characterId === 'string' && typeof c.emotion === 'string' && isEmotion(c.emotion) ? [{ characterId: c.characterId, emotion: c.emotion }] : [])),
-          furniture: furn.flatMap((f) => (isObj(f) && typeof f.furnitureId === 'number' && typeof f.model === 'string' ? [{ furnitureId: f.furnitureId, model: f.model }] : [])),
         },
       };
     }

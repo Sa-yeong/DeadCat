@@ -9,17 +9,11 @@ export type CharacterData = {
   emotion: Emotion;
 };
 
-export type FurnitureData = {
-    furnitureId: number;
-    model: string;
-}
-
 export type FeedEvent =
   | {
       type: 'snapshot';
       data: {
         characters: CharacterData[];
-        furniture: FurnitureData[];
       }
     }
   | {
@@ -237,9 +231,8 @@ export class LivingRoomEngine implements CharacterEngine{
     this.unsubscribe = this.feed.subscribe((event) => {
       switch(event.type){
         case 'snapshot':
-          // 감정만 기억·갱신 (재연결마다 다시 와도 중복 등록 없음). 가구 처리는 가구 묶음 결정 전까지 그대로
+          // 감정만 기억·갱신 (재연결마다 다시 와도 중복 등록 없음). 가구는 런타임이 addFurniture로만 알린다
           for (const char of event.data.characters) this.receiveEmotion(char.characterId, char.emotion)
-          for (const furniture of event.data.furniture) this.addFurniture(furniture.furnitureId, furniture.model)
           break;
         case 'emotion':
           this.receiveEmotion(event.characterId, event.emotion)

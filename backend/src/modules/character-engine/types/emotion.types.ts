@@ -92,18 +92,12 @@ export interface CharacterData {
     emotion: Emotion;
 }
 
-export interface FurnitureData {
-    furnitureId: string;
-    model: string;
-}
-
 // FE 전달용 SSE 이벤트 타입
 export type FeedEvent =
     | {
           type: 'snapshot';
           data: {
               characters: CharacterData[];
-              furniture: FurnitureData[];
           };
       }
     | {

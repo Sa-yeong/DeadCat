@@ -163,10 +163,11 @@ export interface GiftResult {
   unlockedClothes: { clothesId: number; name: string } | null;
 }
 
+/** 보관함의 가구 한 종류 — GET /home/furniture/inventory 한 줄(화면 연결은 가구 데이터가 들어온 뒤) */
 export interface StorageItem {
-  /** furnitures.id */
+  /** furnitures.id — 응답의 furniture_id */
   furnitureId: number;
-  /** 보관함 개수 — user_furniture 에서 위치가 빈 줄 수 */
+  /** 보관함 개수 — 응답의 remaining_count(user_furniture 에서 위치가 빈 줄 수) */
   quantity: number;
 }
 

@@ -36,10 +36,11 @@ export class ItemsService {
         const storages =
             await this.itemsRepository.findFurnitureInventory(userId);
 
-        // 그림 주소는 싣지 않는다 — 프론트가 가구 id 로 public/furnitures/{id}.png 를 조립
+        // 한 줄 = 보관함의 가구 한 종류. furniture_id 는 프론트 카탈로그 · 그림(public/furnitures/{id}.png)의 키
         return storages.map((s) => ({
-            item_code: `FURNITURE_${s.furniture_id}`,
+            furniture_id: Number(s.furniture_id),
             furniture_name: s.furnitures.name,
+            level: s.furnitures.level,
             remaining_count: s.quantity,
         }));
     }

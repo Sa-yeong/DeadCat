@@ -10,7 +10,6 @@ import {
     Emotion,
     EmotionOutput,
     FeedEvent,
-    FurnitureData,
     MarketEventType,
     CharacterData,
 } from '../types/emotion.types';
@@ -242,7 +241,7 @@ export class EmotionService {
         return res.emotions[0]?.emotion ?? 'happy';
     }
 
-    // 초기 Snapshot 생성 (거실에 배치된 캐릭터들의 초기 감정 + 가구 정보)
+    // 초기 Snapshot 생성 (거실에 배치된 캐릭터들의 초기 감정)
     private async getInitialSnapshot(userId: string): Promise<FeedEvent> {
         const uId = BigInt(userId);
 
@@ -276,24 +275,11 @@ export class EmotionService {
             }
         }
 
-        // 3) 거실에 배치된 가구 조회 (위치가 비어 있으면 보관함에 있는 것)
-        const placedFurniture = await this.prisma.user_furniture.findMany({
-            where: { user_id: uId, position_x: { not: null } },
-            include: { furnitures: true },
-        });
-
-        const furnitureDataList: FurnitureData[] = placedFurniture.map(
-            (pf) => ({
-                furnitureId: String(pf.id),
-                model: pf.furnitures.name,
-            }),
-        );
-
+        // snapshot 은 캐릭터 · 감정만. 놓인 가구는 거실 응답(placed_furniture)에 있고, 엔진에 알리는 건 런타임 한 곳
         return {
             type: 'snapshot',
             data: {
                 characters: characterDataList,
-                furniture: furnitureDataList,
             },
         };
     }
