@@ -13,5 +13,40 @@
       { "id": "seat_l", "offset": [-0.5, 0], "facing": 0 },
       { "id": "seat_r", "offset": [0.5, 0], "facing": 0 }
     ]
+  },
+  "desk_reading": {
+    "category": "reading",
+    "interactionRadius": 0.8,
+    "anchors": [
+      { "id": "chair", "offset": [0, 0.6], "facing": 180 }
+    ]
+  },
+  "speaker": {
+    "category": "speaker",
+    "interactionRadius": 0.8,
+    "anchors": [
+      { "id": "front", "offset": [0, 0.6], "facing": 180 }
+    ]
+  },
+  "desk_computer": {
+    "category": "computer",
+    "interactionRadius": 0.8,
+    "anchors": [
+      { "id": "chair", "offset": [0, 0.6], "facing": 180 }
+    ]
+  },
+  "piano": {
+    "category": "piano",
+    "interactionRadius": 0.8,
+    "anchors": [
+      { "id": "bench", "offset": [0, 0.6], "facing": 180 }
+    ]
+  },
+  "slot_machine": {
+    "category": "slot",
+    "interactionRadius": 0.8,
+    "anchors": [
+      { "id": "front", "offset": [0, 0.6], "facing": 180 }
+    ]
   }
 }

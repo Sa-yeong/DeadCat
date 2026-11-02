@@ -6,7 +6,7 @@ import motions from './data/motions.json'
 import furniture from './data/furniture.json'
 import events from './data/events.json'
 import poses from './data/poses.json'
-import type { RawData } from './type/type'
+import { EMOTIONS, type RawData } from './type/type'
 
 const realData = () => structuredClone({characterRules, furnitureRules, motions, furniture, events, poses}) as unknown as RawData
 
@@ -21,6 +21,27 @@ describe('실제 데이터', () => {
         const rules = loadRules(realData());
         expect(rules.characterIndex.get('happy|depress')?.[0].id).toBe('basic_meet_depress')
         expect(rules.furnitureIndex.get('panic|sofa')?.[0].id).toBe('panic_sofa')
+    })
+    // 특수 모션 가구 5종 임시 항목 (지시서 4-b). sleepy는 self가 될 수 없어 빠진다(아래 「잘못된 데이터」 규칙)
+    it.each([
+        ['desk_reading', 'reading', 'read_book'],
+        ['speaker', 'speaker', 'listen_music'],
+        ['desk_computer', 'computer', 'use_computer'],
+        ['piano', 'piano', 'play_piano'],
+        ['slot_machine', 'slot', 'play_slot'],
+    ])('%s: 감정마다 %s 규칙 → %s, 반복 clip', (model, category, motion) => {
+        const rules = loadRules(realData())
+        expect(rules.furniture.get(model)?.category).toBe(category)
+        expect(rules.motions.get(motion)).toEqual({ kind: 'clip', clip: null, loop: true })
+        for (const emotion of EMOTIONS) {
+            const found = rules.furnitureIndex.get(`${emotion}|${category}`)
+            if (emotion === 'sleepy') {
+                expect(found).toBeUndefined()
+                continue
+            }
+            expect(found).toHaveLength(1)
+            expect(found?.[0]).toMatchObject({ priority: 80, occupy: true, cooldownMs: 20000, interruptible: true, effect: [{ self: [motion] }] })
+        }
     })
 })
 

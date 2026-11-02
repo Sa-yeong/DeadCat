@@ -4,6 +4,7 @@ import { LivingRoomEngine, type EngineCommand, type FeedEvent, type EmotionFeed,
 import type { RawData, Emotion } from './type/type'
 import motions from './data/motions.json'
 import furniture from './data/furniture.json'
+import furnitureRules from './data/furnitureRules.json'
 import events from './data/events.json'
 import poses from './data/poses.json'
 
@@ -293,5 +294,57 @@ describe('로그 (1-11)', () => {
         const s = setup()
         s.engine.dispose()
         expect(s.unsubscribed()).toBe(true)
+    })
+})
+
+// ---------- 특수 모션 가구 (지시서 4-b) — 실제 규칙 데이터로 ----------
+describe('특수 모션 가구 5종', () => {
+    const real: RuleSet = loadRules(
+        structuredClone({ characterRules: CHAR_RULES, furnitureRules, motions, furniture, events, poses }) as unknown as RawData,
+    )
+    const PIANO = 7
+
+    it.each([
+        ['desk_reading', 'read_book'],
+        ['speaker', 'listen_music'],
+        ['desk_computer', 'use_computer'],
+        ['piano', 'play_piano'],
+        ['slot_machine', 'play_slot'],
+    ])('%s에 내려놓으면 %s 반복 play', (model, motion) => {
+        const s = setup({ rules: real })
+        s.engine.addFurniture(PIANO, model)
+        s.engine.addCharacter('1')
+        s.snapshot([['1', 'panic']])
+        s.engine.visitFurniture('1', PIANO)
+        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: true }] }])
+    })
+
+    it('반복 모션이라 30초에 끝나고, 쓰는 동안은 자리가 없고, 끝나면 20초 쿨다운', () => {
+        const s = setup({ rules: real })
+        s.engine.addFurniture(PIANO, 'piano')
+        s.engine.addCharacter('1'); s.engine.addCharacter('2')
+        s.snapshot([['1', 'happy'], ['2', 'sad']])
+        s.engine.visitFurniture('1', PIANO)
+
+        s.engine.visitFurniture('2', PIANO)
+        expect(s.logs.at(-1)).toBe('2 × 가구 7(piano): 자리 없음')
+
+        t = 29999; s.engine.tick()
+        expect(s.of('cancel')).toEqual([])
+        t = 30000; s.engine.tick()
+        expect(s.of('cancel')).toEqual([{ type: 'cancel', characterId: '1' }])
+
+        s.engine.visitFurniture('1', PIANO)
+        expect(s.logs.at(-1)).toBe('1 × 가구 7(piano): 쿨다운 중(20초 남음)')
+    })
+
+    it('sleepy는 규칙이 없다 — play 없이 로그만', () => {
+        const s = setup({ rules: real })
+        s.engine.addFurniture(PIANO, 'piano')
+        s.engine.addCharacter('1')
+        s.snapshot([['1', 'sleepy']])
+        s.engine.visitFurniture('1', PIANO)
+        expect(s.of('play')).toEqual([])
+        expect(s.logs.at(-1)).toBe('1 × 가구 7(piano): 규칙 없음(sleepy × piano)')
     })
 })

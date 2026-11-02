@@ -10,7 +10,13 @@ import type { FeedEvent } from '../engine/Engine';
 import { characterDef } from '../catalog';
 import { stackLabels } from '../hud/labelStack';
 import { motionText } from './devLabels';
-import type { RoomCharacterDto } from '../types';
+import { FURNITURE_CATALOG } from '../furnitureCatalog';
+import { footprint } from './furnitureShape';
+import { ROOM_RULES } from './roomEngine';
+import { LivingRoomEngine, type EmotionFeed } from '../engine/Engine';
+import type { Emotion } from '../engine/type/type';
+import type { Pt } from './projection';
+import type { PlacementDto, RoomCharacterDto } from '../types';
 
 // 거실 런타임 S4 — 감정 스트림 읽기(2-1 · 2-2)와 엔진 명령 단계 처리(1-1 · 1-2). 브라우저 없이 확인할 수 있는 것만
 
@@ -162,10 +168,14 @@ describe('감정 스트림 (api.streamRoom · RoomFeed)', () => {
 function fakeRenderer() {
   const plays: { id: string; steps: MotionStep[]; finish: () => void }[] = [];
   const calls: string[] = [];
+  /** 캐릭터가 마지막으로 선 자리 — 세울 때 · 걸을 때 */
+  const at = new Map<string, Pt>();
   /** motionTimeLeft 가 돌려줄 값 — 테스트가 바꾼다 */
   const timeLeft: { v: number | 'loop' | null } = { v: null };
   const base: Partial<RoomRenderer> = {
     motionTimeLeft: () => timeLeft.v,
+    spawn: (id, _def, pos) => void at.set(id, pos),
+    move: (id, pos) => void at.set(id, pos),
     play: (id, steps, finish) => {
       plays.push({ id, steps, finish });
       calls.push(`play ${steps.map((s) => s.clip).join(',')}`);
@@ -178,7 +188,7 @@ function fakeRenderer() {
     pick: () => null,
   };
   const renderer = new Proxy(base, { get: (t, k) => (k in t ? t[k as keyof RoomRenderer] : () => undefined) }) as RoomRenderer;
-  return { renderer, plays, calls, timeLeft };
+  return { renderer, plays, calls, timeLeft, at };
 }
 
 function fakeEngine() {
@@ -386,5 +396,248 @@ describe('옷 모습 — 고른 옷 × 수익률 상태 (3-⑩)', () => {
     const t = setup([{ ...ch(1), returnRate: -20 }, { ...ch(2), returnRate: 20 }, { ...ch(3), returnRate: 19.9 }], 'VISITOR');
     expect(looks(t.calls)).toEqual(['look 1 base_ragged', 'look 2 base_fancy', 'look 3 base_normal']);
     expect(t.loop.outfitStateOf('3')).toBe('normal');
+  });
+});
+
+describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 · 4 · 4-b, S11+)', () => {
+  const SOFA = 2;
+  const PLANT = 3;
+  const BOOKSHELF = 5;
+  const CARPET = 6;
+  const PIANO = 28;
+  const SLOT = 29;
+  const pl = (placementId: number, furnitureId: number, x = 15, y = 15, rotation = 0): PlacementDto => ({ placementId, furnitureId, positionX: x, positionY: y, rotation });
+
+  /** 진짜 엔진(실제 규칙 데이터) + 가짜 렌더러. 시계 · 무작위는 테스트가 쥔다 */
+  function room(placements: PlacementDto[], emotions: Emotion[] = ['happy']) {
+    const r = fakeRenderer();
+    const chars = emotions.map((_, i) => ch(i + 1));
+    const characters = new CharacterCatalog();
+    characters.load(chars.map((c) => characterDef(c)));
+    const furniture = new FurnitureCatalog();
+    furniture.load(FURNITURE_CATALOG);
+    const clock = { t: 0 };
+    const commands: EngineCommand[] = [];
+    const logs: string[] = [];
+    let emit: (e: FeedEvent) => void = () => {};
+    const feed: EmotionFeed = {
+      subscribe: (h) => {
+        emit = h;
+        return () => {};
+      },
+    };
+    const add = vi.fn();
+    const del = vi.fn();
+    const visit = vi.fn();
+    let engine: LivingRoomEngine | undefined;
+    const loop = new RoomLoop({
+      renderer: r.renderer,
+      createEngine: (onCommand) => {
+        const e = new LivingRoomEngine({
+          rules: ROOM_RULES,
+          feed,
+          now: () => clock.t,
+          random: () => 0,
+          log: (line) => logs.push(line),
+          onCommand: (cmd) => {
+            commands.push(cmd);
+            onCommand(cmd);
+          },
+        });
+        add.mockImplementation((id: number, model: string) => LivingRoomEngine.prototype.addFurniture.call(e, id, model));
+        del.mockImplementation((id: number) => LivingRoomEngine.prototype.deleteFurniture.call(e, id));
+        visit.mockImplementation((c: string, id: number) => LivingRoomEngine.prototype.visitFurniture.call(e, c, id));
+        e.addFurniture = add;
+        e.deleteFurniture = del;
+        e.visitFurniture = visit;
+        e.start();
+        engine = e;
+        return e;
+      },
+      characters,
+      furniture,
+      motions: ROOM_MOTIONS,
+      events: { onPicked: () => {}, onEmptyPick: () => {}, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {} },
+    });
+    loop.load({ mode: 'OWNER', shareOption: true, characters: chars, placements, roomReactions: { counts: {}, mine: null } });
+    emit({ type: 'snapshot', data: { characters: emotions.map((emotion, i) => ({ characterId: String(i + 1), emotion })) } });
+    const drop = (id: string, pos: Pt) => {
+      loop.onDragStart(id);
+      loop.onDragMove(id, pos);
+      loop.onDragEnd(id);
+    };
+    const playsOf = (id: string) => commands.flatMap((c) => (c.type === 'play' && c.characterId === id ? [c.steps.map((s) => s.name)] : []));
+    const inside = (id: string, p: PlacementDto) => {
+      const def = FURNITURE_CATALOG.find((d) => d.furnitureId === p.furnitureId);
+      const q = r.at.get(id);
+      if (!def || !q) throw new Error('테스트 준비 오류');
+      const a = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+      return q.x > a.x0 && q.x < a.x1 && q.y > a.y0 && q.y < a.y1;
+    };
+    return { loop, engine, add, del, visit, drop, clock, commands, logs, playsOf, inside, ...r };
+  }
+
+  /** 다 걸어 나올 때까지(또는 시간 끝까지) 돌린다 */
+  const walkOut = (t: ReturnType<typeof room>, id: string, p: PlacementDto) => {
+    for (let i = 0; i < 300 && t.inside(id, p); i++) t.loop.tick(0.1);
+  };
+
+  describe('엔진에 알리기', () => {
+    it('처음 띄울 때 — 엔진 이름이 있는 가구만, id = placement_id', () => {
+      const t = room([pl(11, SOFA, 5, 5), pl(12, PLANT, 10, 5), pl(13, CARPET, 20, 20), pl(14, PIANO), pl(15, SOFA, 5, 10)]);
+      expect(t.add.mock.calls).toEqual([
+        [11, 'sofa_2seat'],
+        [14, 'piano'],
+        [15, 'sofa_2seat'],
+      ]);
+      expect(t.del).not.toHaveBeenCalled();
+    });
+
+    it('저장 뒤 — 새로 놓으면 add, 치우면 delete, 옮기기 · 돌리기는 그대로, 장식은 어느 쪽도 아님', () => {
+      const t = room([pl(11, SOFA, 5, 5), pl(12, PLANT, 10, 5), pl(14, PIANO)]);
+      t.add.mockClear();
+      t.loop.setPlacements([pl(11, SOFA, 8, 8, 90), pl(16, SLOT, 20, 20), pl(17, BOOKSHELF, 25, 25)]);
+      expect(t.add.mock.calls).toEqual([[16, 'slot_machine']]);
+      expect(t.del.mock.calls).toEqual([[14]]);
+    });
+
+    it('쓰는 중인 가구를 치우면 엔진이 멈추게 하고, 그 뒤로는 모르는 가구', () => {
+      const t = room([pl(14, PIANO)]);
+      t.drop('1', { x: 15, y: 15 });
+      t.loop.setPlacements([]);
+      expect(t.commands.at(-1)).toEqual({ type: 'cancel', characterId: '1' });
+      t.engine?.visitFurniture('1', 14);
+      expect(t.logs.at(-1)).toMatch(/모르는 가구/);
+    });
+
+    it('카탈로그의 엔진 이름은 전부 엔진 데이터에 있다', () => {
+      const names = FURNITURE_CATALOG.flatMap((d) => (d.engineName ? [d.engineName] : []));
+      expect(names.filter((n) => !ROOM_RULES.furniture.has(n))).toEqual([]);
+    });
+  });
+
+  describe('내려놓기', () => {
+    it.each([
+      [25, 'read_book', '책 읽기'],
+      [26, 'listen_music', '음악 듣기'],
+      [27, 'use_computer', '컴퓨터 하기'],
+      [28, 'play_piano', '피아노 치기'],
+      [29, 'play_slot', '슬롯머신 하기'],
+    ])('특수 가구 %i 에 내려놓으면 그 가구 모션 %s 를 play — 개발 모드 글자 「%s」', (furnitureId, motion, label) => {
+      const t = room([pl(14, furnitureId)]);
+      t.timeLeft.v = 'loop';
+      t.drop('1', { x: 15, y: 15 });
+      expect(t.visit.mock.calls).toEqual([['1', 14]]);
+      expect(t.playsOf('1')).toEqual([[motion]]);
+      expect(t.plays).toHaveLength(1);
+      const shown = t.loop.debugLabels()[0].motion;
+      expect(shown && motionText(shown)).toBe(`${label} · 반복`);
+    });
+
+    it('소파 · 책상은 기존 규칙이 돈다 — 스킨이 달라도 같은 엔진 이름', () => {
+      const t = room([pl(11, 20), pl(12, 13, 5, 5)], ['tired', 'tired']);
+      t.drop('1', { x: 15, y: 15 });
+      t.drop('2', { x: 5, y: 5 });
+      expect(t.playsOf('1')).toEqual([['lie_down']]);
+      expect(t.playsOf('2')).toEqual([['space_out']]);
+    });
+
+    it('내려놓은 자리에 그대로 서 있고, 모션이 끝나면(30초) 걸어 나온다', () => {
+      const piano = pl(14, PIANO);
+      const t = room([piano]);
+      t.drop('1', { x: 15.2, y: 15.3 });
+      for (let i = 0; i < 100; i++) t.loop.tick(0.1);
+      expect(t.at.get('1')).toEqual({ x: 15.2, y: 15.3 });
+
+      t.clock.t = 30000;
+      walkOut(t, '1', piano);
+      expect(t.commands.at(-1)).toEqual({ type: 'cancel', characterId: '1' });
+      expect(t.inside('1', piano)).toBe(false);
+    });
+
+    it('규칙이 없으면(sleepy) play 없이 — 잠깐 있다 걸어 나온다', () => {
+      const piano = pl(14, PIANO);
+      const t = room([piano], ['sleepy']);
+      t.drop('1', { x: 15.2, y: 15.3 });
+      expect(t.visit).toHaveBeenCalledTimes(1);
+      expect(t.playsOf('1')).toEqual([]);
+      expect(t.at.get('1')).toEqual({ x: 15.2, y: 15.3 });
+      walkOut(t, '1', piano);
+      expect(t.inside('1', piano)).toBe(false);
+    });
+
+    it('장식 가구 위는 상대가 아니다 — 알리지 않고 내려온다', () => {
+      const plant = pl(12, PLANT);
+      const t = room([plant]);
+      t.drop('1', { x: 15, y: 15 });
+      expect(t.visit).not.toHaveBeenCalled();
+      walkOut(t, '1', plant);
+      expect(t.inside('1', plant)).toBe(false);
+    });
+
+    it('가구 밖에 내려놓으면 알리지 않는다', () => {
+      const t = room([pl(14, PIANO)]);
+      t.drop('1', { x: 3, y: 3 });
+      expect(t.visit).not.toHaveBeenCalled();
+    });
+
+    it('다시 들면 모션을 버리고, 쿨다운이 지나야 다시 반응한다', () => {
+      const t = room([pl(14, PIANO)]);
+      t.drop('1', { x: 15, y: 15 });
+      t.loop.onDragStart('1');
+      expect(t.commands.at(-1)).toEqual({ type: 'cancel', characterId: '1' });
+      t.loop.onDragMove('1', { x: 15, y: 15 });
+      t.loop.onDragEnd('1');
+      expect(t.playsOf('1')).toHaveLength(1);
+      expect(t.logs.at(-1)).toMatch(/쿨다운 중/);
+
+      t.clock.t = 20000;
+      t.drop('1', { x: 15, y: 15 });
+      expect(t.playsOf('1')).toHaveLength(2);
+    });
+
+    it('배치 모드로 넘어가며 놓친 캐릭터는 알리지 않는다', () => {
+      const t = room([pl(14, PIANO)]);
+      t.loop.onDragStart('1');
+      t.loop.onDragMove('1', { x: 15, y: 15 });
+      t.loop.setInteractionMode('PLACEMENT');
+      t.loop.onDragEnd('1');
+      expect(t.visit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('사용 중이면 비켜 가기 — 지금은 설치 영역 전체를 피해 걷는다(결정목록 D16)', () => {
+    it('누가 쓰는 가구에 다른 캐릭터를 내려놓으면 자리 없음 — 그 캐릭터는 모션 없이 걸어 나온다', () => {
+      const piano = pl(14, PIANO);
+      const t = room([piano], ['happy', 'sad']);
+      t.drop('1', { x: 15.5, y: 15.5 });
+      t.drop('2', { x: 14.5, y: 14.5 });
+      expect(t.playsOf('2')).toEqual([]);
+      expect(t.logs.some((l) => l.endsWith('가구 14(piano): 자리 없음'))).toBe(true);
+      walkOut(t, '2', piano);
+      expect(t.inside('2', piano)).toBe(false);
+      expect(t.inside('1', piano)).toBe(true);
+    });
+
+    it('소파는 앵커가 둘이라 두 명까지 — 셋째는 자리 없음', () => {
+      const t = room([pl(11, SOFA)], ['tired', 'tired', 'tired']);
+      t.drop('1', { x: 15, y: 15 });
+      t.drop('2', { x: 15.2, y: 15 });
+      t.drop('3', { x: 15.4, y: 15 });
+      expect(t.playsOf('1')).toEqual([['lie_down']]);
+      expect(t.playsOf('2')).toEqual([['lie_down']]);
+      expect(t.playsOf('3')).toEqual([]);
+    });
+
+    it('쓰는 동안 돌아다니는 캐릭터는 그 가구의 설치 영역을 밟지 않는다 — 목적지로도, 지나가는 길로도', () => {
+      const piano = pl(14, PIANO);
+      const t = room([piano], ['happy', 'sad']);
+      t.drop('1', { x: 15.5, y: 15.5 });
+      for (let i = 0; i < 1500; i++) {
+        t.loop.tick(0.1);
+        expect(t.inside('2', piano)).toBe(false);
+      }
+      expect(t.inside('1', piano)).toBe(true);
+    });
   });
 });

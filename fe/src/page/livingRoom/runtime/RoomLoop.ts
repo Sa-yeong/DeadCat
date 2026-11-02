@@ -96,6 +96,8 @@ export class RoomLoop {
   /** 고른 옷(서버 equipped_clothes_id) — null = 기본 */
   private readonly clothes = new Map<string, number | null>();
   private placements: PlacementDto[] = [];
+  /** 엔진에 알린 가구 — 배치 id → 엔진 이름 */
+  private readonly engineFurniture = new Map<number, string>();
   private grid = WalkGrid.empty();
   /** 들고 있는 캐릭터를 지금 놓으면 만나는 상대 — 하이라이트 중 */
   private dropTarget: DropTarget | null = null;
@@ -195,13 +197,35 @@ export class RoomLoop {
   }
 
   /**
-   * 가구를 다시 놓는다 — 배치 저장 뒤에 페이지가 부른다. 없어진 가구는 씬에서 지운다 (추가).
-   * 엔진에는 알리지 않는다 — 가구 종류(엔진 model)를 어떻게 넘길지는 가구 묶음 결정 전이라(S4 도휘 결정) 가구 반응은 아직 없다
+   * 가구를 다시 놓는다 — 처음 띄울 때와 배치 저장 뒤에 부른다. 없어진 가구는 씬에서 지우고, 엔진에도 알린다 (추가).
    */
   setPlacements(placements: PlacementDto[]): void {
     syncPlacements(this.renderer, this.placements, placements);
     this.placements = placements.map((p) => ({ ...p }));
+    this.tellEngine(placements);
     this.walkOn(placements);
+  }
+
+  /**
+   * 엔진이 아는 가구를 맞춘다 — 엔진의 가구 id = placement_id, 종류 = 카탈로그 엔진 이름. 엔진 이름이 없는 가구(장식)는 알리지 않는다.
+   * 엔진은 위치를 모르니 옮긴 가구는 알릴 게 없다(배치 저장 뒤엔 respawn 이 하던 상호작용을 그만두게 한다)
+   */
+  private tellEngine(placements: readonly PlacementDto[]): void {
+    const next = new Map<number, string>();
+    for (const p of placements) {
+      const name = this.furniture.def(p.furnitureId)?.engineName;
+      if (name) next.set(p.placementId, name);
+    }
+    for (const id of [...this.engineFurniture.keys()]) {
+      if (next.has(id)) continue;
+      this.engineFurniture.delete(id);
+      this.engine.deleteFurniture(id); // 쓰던 캐릭터는 엔진이 cancel 로 멈춘다
+    }
+    for (const [id, name] of next) {
+      if (this.engineFurniture.has(id)) continue;
+      this.engineFurniture.set(id, name);
+      this.engine.addFurniture(id, name);
+    }
   }
 
   /**
@@ -298,8 +322,8 @@ export class RoomLoop {
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
-      // 엔진 모션 중엔 제자리 — 단, 가구 위에 내려놓아 비켜 나오는 중이면 마저 나온다
-      if (h.acting && this.grid.freeAt(h.position)) continue;
+      // 엔진 모션 중엔 제자리 — 가구 위에 내려놓았으면 그 자리 그대로. 끝나면 평소처럼 걸어 나온다(findPath 가 가장 가까운 빈 칸으로 먼저 비킨다)
+      if (h.acting) continue;
       if (h.away) {
         this.walkAway(h, dt);
         continue;
@@ -640,13 +664,18 @@ export class RoomLoop {
   onDragEnd(charId: string): void {
     const h = this.handles.get(charId);
     if (!h) return;
+    const target = this.dropTarget;
     h.lifted = false;
     h.rest = 1 + Math.random() * 2;
     this.setDropTarget(null);
-    this.stepAside(h); // 가구 위에 내려놓았으면 내려온다
-    this.renderer.setCharacterState(charId, { lifted: false });
+    this.renderer.setCharacterState(charId, { lifted: false }); // 먼저 풀어야 렌더러가 아래 play 를 받는다
     // 놓은 상대 — 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
-    // 가구는 엔진에 알리지 않는다 — 엔진이 가구 종류(model)를 아직 모른다(setPlacements, 가구 묶음 결정 후 visitFurniture 로 잇는다)
+    // 가구는 엔진에 알린다. 내려놓은 자리에 그대로 서 있는다 — 설치 영역 안 어디에 설지 · 방향은 앵커(#7)에서
+    if (target?.kind === 'furniture' && this.mode === 'NORMAL') {
+      this.engine.visitFurniture(charId, target.placementId);
+      return;
+    }
+    this.stepAside(h); // 장식 가구 위에 내려놓았으면 내려온다
   }
 
   /* ── 포인터 → 위 진입점들. 좌표는 방 기준 px ─────────────────────── */

@@ -13,6 +13,11 @@
   "hiding":               { "kind": "clip", "clip": null, "loop": true },
   "crouch":               { "kind": "clip", "clip": null, "loop": true },
   "anxious":              { "kind": "clip", "clip": null, "loop": true },
+  "read_book":            { "kind": "clip", "clip": null, "loop": true },
+  "listen_music":         { "kind": "clip", "clip": null, "loop": true },
+  "use_computer":         { "kind": "clip", "clip": null, "loop": true },
+  "play_piano":           { "kind": "clip", "clip": null, "loop": true },
+  "play_slot":            { "kind": "clip", "clip": null, "loop": true },
 
   "wake_up":              { "kind": "clip", "clip": null },
   "surprise":             { "kind": "clip", "clip": null },

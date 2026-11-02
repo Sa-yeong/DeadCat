@@ -122,5 +122,60 @@
         "occupy": true,
         "cooldownMs":20000,
         "interruptible": true
+    },
+    {
+        "id": "reading_furniture",
+        "when": {"self": ["happy", "sad", "tired", "depress", "euphoria", "panic", "anxious"], "furniture": ["reading"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "read_book"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "speaker_furniture",
+        "when": {"self": ["happy", "sad", "tired", "depress", "euphoria", "panic", "anxious"], "furniture": ["speaker"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "listen_music"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "computer_furniture",
+        "when": {"self": ["happy", "sad", "tired", "depress", "euphoria", "panic", "anxious"], "furniture": ["computer"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "use_computer"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "piano_furniture",
+        "when": {"self": ["happy", "sad", "tired", "depress", "euphoria", "panic", "anxious"], "furniture": ["piano"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "play_piano"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "slot_furniture",
+        "when": {"self": ["happy", "sad", "tired", "depress", "euphoria", "panic", "anxious"], "furniture": ["slot"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "play_slot"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
     }
 ]
