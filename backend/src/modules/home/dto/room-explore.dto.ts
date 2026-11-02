@@ -99,20 +99,36 @@ export class OppositeRoomsQueryDto {
 }
 
 // 10.4 & 10.5 응답 DTO
+/**
+ * 유사 거실 조회 응답
+ */
 export class GetSimilarRoomsResponseDto {
-    is_success!: boolean;
-    code!: string;
-    message!: string;
-    data!: {
-        rooms: SimilarRoomCardDto[];
+    is_success: boolean;
+    code: string;
+    message: string;
+
+    data: {
+        // 유사 거실 탐색 기준 태그
+        reference_tags: string[];
+
+        // 유사 거실 목록
+        rooms: any[];
     };
 }
 
+/**
+ * 반대 거실 조회 응답
+ */
 export class GetOppositeRoomsResponseDto {
-    is_success!: boolean;
-    code!: string;
-    message!: string;
-    data!: {
-        rooms: OppositeRoomCardDto[];
+    is_success: boolean;
+    code: string;
+    message: string;
+
+    data: {
+        // 반대 거실 탐색 기준 태그
+        reference_tags: string[];
+
+        // 반대 거실 목록
+        rooms: any[];
     };
 }

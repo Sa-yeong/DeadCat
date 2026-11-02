@@ -1,7 +1,8 @@
 generator client {
-  provider     = "prisma-client"
-  output       = "../generated/prisma"
-  moduleFormat = "cjs"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["partialIndexes"]
+  moduleFormat    = "cjs"
 }
 
 datasource db {
@@ -100,39 +101,38 @@ model follow {
 }
 
 model furnitures {
-  id               BigInt    @id @default(autoincrement())
-  name             String    @unique @db.VarChar(100)
-  stock_id         BigInt?
-  unlock_affinity  Int?      @db.SmallInt
-  unlock_rise_rate Decimal?  @db.Decimal(6, 2)
-  placed           placed[]
-  storage          storage[]
+  id             BigInt           @id @default(autoincrement())
+  name           String           @unique @db.VarChar(100)
+  level          String           @db.VarChar(10)
+  package_name   String           @db.VarChar(100)
+  placed         placed[]
+  storage        storage[]
+  user_furniture user_furniture[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model have_tags {
   user_id BigInt
   tag_id  BigInt
-  self    Boolean
-  tags    tags    @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users   users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tags    tags   @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@id([user_id, tag_id, self])
+  @@id([user_id, tag_id])
 }
 
 model holdings {
-  user_id            BigInt
-  stock_id           BigInt
-  quantity           Int
-  mean_price_krw     BigInt
-  mean_price_foreign Decimal?  @db.Decimal(15, 2)
-  created_at         DateTime? @db.Timestamp(6)
-  is_placed          Boolean?
-  x_position         Float?    
-  y_position         Float?   
+  user_id             BigInt
+  stock_id            BigInt
+  quantity            Int
+  mean_price_krw      BigInt
+  mean_price_foreign  Decimal? @db.Decimal(15, 2)
+  created_at          DateTime @default(now()) @db.Timestamp(6)
+  is_placed           Boolean?
+  x_position          Float?
+  y_position          Float?
   equipped_clothes_id BigInt?
-  stocks             stocks    @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
-  users              users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stocks              stocks   @relation(fields: [stock_id], references: [id], onUpdate: NoAction)
+  users               users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([user_id, stock_id])
 }
@@ -179,10 +179,10 @@ model inventory {
 }
 
 model items {
-  id           BigInt      @id @default(autoincrement())
-  name         String      @unique @db.VarChar(100)
-  effect_value Int         @db.SmallInt
-  inventory    inventory[]
+  id        BigInt      @id @default(autoincrement())
+  name      String      @unique @db.VarChar(100)
+  level     String      @db.VarChar(10)
+  inventory inventory[]
 }
 
 model like_posts {
@@ -230,9 +230,9 @@ model posts {
   stock_id                          BigInt?
   type                              String       @default("COMMUNITY") @db.VarChar(20)
   target_user_id                    BigInt?
+  is_secret                         Boolean      @default(false)
   comments                          comments[]
   like_posts                        like_posts[]
-  is_secret                         Boolean      @default(false)
   stocks                            stocks?      @relation(fields: [stock_id], references: [id], onDelete: Cascade)
   users_posts_target_user_idTousers users?       @relation("posts_target_user_idTousers", fields: [target_user_id], references: [id], onDelete: Cascade)
   users_posts_writer_idTousers      users?       @relation("posts_writer_idTousers", fields: [writer_id], references: [id], onUpdate: NoAction, map: "posts_user_id_fkey")
@@ -276,30 +276,30 @@ model stock_history {
 }
 
 model stocks {
-  id                  BigInt                @id @default(autoincrement())
-  code                String                @db.VarChar(20)
-  exchange_code       String?               @db.VarChar(10)
-  category_id         BigInt?
-  stock_type          String                @db.VarChar(10)
-  name                String                @db.VarChar(100)
-  is_event            Boolean               @default(false)
-  corp_code           String?               @db.VarChar(20)
-  affinity            affinity[]
-  alarms              alarms[]
-  char_reactions      char_reactions[]
-  characters          characters?
-  event_activity      event_activity[]
-  holdings            holdings[]
-  interest            interest[]
-  orders              orders[]
-  posts               posts[]
-  stock_financials    stock_financials[]
-  stock_history       stock_history[]
-  stock_overview      stock_overview?
-  stock_scores        stock_scores?
+  id                     BigInt                   @id @default(autoincrement())
+  code                   String                   @db.VarChar(20)
+  exchange_code          String?                  @db.VarChar(10)
+  category_id            BigInt?
+  stock_type             String                   @db.VarChar(10)
+  name                   String                   @db.VarChar(100)
+  is_event               Boolean                  @default(false)
+  corp_code              String?                  @db.VarChar(20)
+  affinity               affinity[]
+  alarms                 alarms[]
+  char_reactions         char_reactions[]
   character_preset_items character_preset_items[]
-  categories          categories?           @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  transaction_history transaction_history[]
+  characters             characters?
+  event_activity         event_activity[]
+  holdings               holdings[]
+  interest               interest[]
+  orders                 orders[]
+  posts                  posts[]
+  stock_financials       stock_financials[]
+  stock_history          stock_history[]
+  stock_overview         stock_overview?
+  stock_scores           stock_scores?
+  categories             categories?              @relation(fields: [category_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  transaction_history    transaction_history[]
 
   @@unique([code, exchange_code])
 }
@@ -317,7 +317,7 @@ model storage {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model tags {
   id        BigInt      @id @default(autoincrement())
-  content   String      @db.VarChar(100)
+  content   String      @unique(map: "tags_content_unique") @db.VarChar(100)
   have_tags have_tags[]
 }
 
@@ -343,10 +343,13 @@ model users {
   balance                                          BigInt                @default(100000000)
   profile_img_url                                  String?
   share_option                                     Boolean               @default(true)
+  attendance_count                                 Int                   @default(0)
+  last_attendance_date                             DateTime?             @db.Date
   affinity                                         affinity[]
   alarms                                           alarms[]
   char_reactions_char_reactions_reactor_idTousers  char_reactions[]      @relation("char_reactions_reactor_idTousers")
   char_reactions_char_reactions_receiver_idTousers char_reactions[]      @relation("char_reactions_receiver_idTousers")
+  character_presets                                character_presets?
   comments                                         comments[]
   follow_follow_followee_idTousers                 follow[]              @relation("follow_followee_idTousers")
   follow_follow_follower_idTousers                 follow[]              @relation("follow_follower_idTousers")
@@ -357,15 +360,13 @@ model users {
   like_posts                                       like_posts[]
   orders                                           orders[]
   placed                                           placed[]
-  character_presets                                character_presets[]
-  attendance_count                                 Int       @default(0)          // 누적 출석 일수
-  last_attendance_date DateTime?                   @db.Date             // 마지막 출석 일자
   posts_posts_target_user_idTousers                posts[]               @relation("posts_target_user_idTousers")
   posts_posts_writer_idTousers                     posts[]               @relation("posts_writer_idTousers")
   room_reactions_room_reactions_reactor_idTousers  room_reactions[]      @relation("room_reactions_reactor_idTousers")
   room_reactions_room_reactions_receiver_idTousers room_reactions[]      @relation("room_reactions_receiver_idTousers")
   storage                                          storage[]
   transaction_history                              transaction_history[]
+  user_furniture                                   user_furniture[]
   voting                                           voting[]
   wardrobe                                         wardrobe[]
 }
@@ -448,12 +449,13 @@ model stock_overview {
 }
 
 model character_presets {
-  id             BigInt                   @id @default(autoincrement())
-  user_id        BigInt
-  preset_name    String                   @db.VarChar(50)
-  created_at     DateTime                 @default(now()) @db.Timestamp(6)
-  users          users                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  preset_items   character_preset_items[]
+  id           BigInt                   @id @default(autoincrement())
+  user_id      BigInt                   @unique(map: "character_presets_one_active", where: raw("is_active"))
+  preset_name  String                   @db.VarChar(50)
+  created_at   DateTime                 @default(now()) @db.Timestamp(6)
+  is_active    Boolean                  @default(false)
+  preset_items character_preset_items[]
+  users        users                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model character_preset_items {
@@ -463,4 +465,17 @@ model character_preset_items {
   stocks            stocks            @relation(fields: [stock_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([preset_id, stock_id])
+}
+
+model user_furniture {
+  id           BigInt     @id @default(autoincrement())
+  user_id      BigInt
+  furniture_id BigInt
+  position_x   Decimal?   @db.Decimal(10, 5)
+  position_y   Decimal?   @db.Decimal(10, 5)
+  rotation     Float?
+  furnitures   furnitures @relation(fields: [furniture_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "user_furniture_user_idx")
 }

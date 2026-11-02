@@ -1,6 +1,7 @@
 import {
     BadRequestException,
     Injectable,
+    Logger,
     NotFoundException,
     ServiceUnavailableException,
 } from '@nestjs/common';
@@ -21,6 +22,7 @@ import {
     toKrw,
     toMinor,
 } from './order-rules';
+import { TagAssignmentService } from '../tags/services/tag-assignment.service';
 
 /**
  * 주문 접수.
@@ -30,11 +32,16 @@ import {
  */
 @Injectable()
 export class OrdersService {
+    // 주문 서비스 로그 기록
+    private readonly logger = new Logger(OrdersService.name);
+
     constructor(
         private readonly ordersRepository: OrdersRepository,
         private readonly priceService: PriceService,
         private readonly kis: KisProvider,
         private readonly matcher: OrderMatcher,
+        // 투자 성향 태그 갱신 서비스
+        private readonly tagAssignmentService: TagAssignmentService,
     ) {}
 
     async createOrder(
@@ -77,6 +84,10 @@ export class OrdersService {
                 tradePrice: toKrw(now, foreign, rate),
                 orderPrice: toMinor(now, foreign),
             });
+
+            // 시장가 주문 체결이 완료된 후 태그 갱신
+            await this.refreshInvestmentTags(userId);
+
             return this.response(orderId, 'COMPLETED');
         }
 
@@ -119,6 +130,11 @@ export class OrdersService {
                 now,
                 foreign,
             );
+            // 실제 체결에 성공한 경우에만 태그 갱신
+            if (result === 'COMPLETED') {
+                await this.refreshInvestmentTags(userId);
+            }
+
             return this.response(id, result);
         }
         return this.response(id, 'PENDING');
@@ -188,6 +204,22 @@ export class OrdersService {
             order_id: orderId,
             status: 'CANCELLED',
         });
+    }
+
+    /**
+     * 체결 완료 후 투자 성향 태그 갱신
+     */
+    private async refreshInvestmentTags(userId: bigint): Promise<void> {
+        try {
+            // 최신 holdings 기준으로 투자 성향 재분석 및 태그 갱신
+            await this.tagAssignmentService.assignInvestmentTags(userId);
+        } catch (error) {
+            // 태그 갱신 실패가 이미 완료된 거래를 실패로 만들지 않도록 로그 기록
+            this.logger.error(
+                `투자 성향 태그 갱신 실패 (userId: ${userId})`,
+                error instanceof Error ? error.stack : String(error),
+            );
+        }
     }
 
     /* ── 내부 ─────────────────────────────────────── */

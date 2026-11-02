@@ -13,6 +13,9 @@ import {
     OppositeRoomsQueryDto,
 } from './dto/room-explore.dto';
 import { HomeRoomsRepository } from './home-room.repository';
+import { InvestmentTag } from '../tags/enums/investment-tag.enum';
+import { OPPOSITE_TAG_MAP } from '../tags/constants/opposite-tag.constant';
+import { TAG_CATEGORY } from '../tags/constants/tag-category.constant';
 
 @Injectable()
 export class HomeRoomsService {
@@ -20,6 +23,21 @@ export class HomeRoomsService {
         private readonly repository: HomeRoomsRepository,
         private readonly priceService: PriceService,
     ) {}
+
+    /**
+     * 투자 성향 시스템 태그만 추출
+     */
+    private filterSystemTags(tags: string[]): InvestmentTag[] {
+        // 시스템에서 관리하는 4개 태그만 사용
+        const systemTags = [
+            ...TAG_CATEGORY.INVESTMENT_PERIOD,
+            ...TAG_CATEGORY.INVESTMENT_STYLE,
+        ];
+
+        return tags.filter((tag): tag is InvestmentTag =>
+            systemTags.includes(tag as InvestmentTag),
+        );
+    }
 
     // 프리셋 거실 이미지 URL 생성 헬퍼
     private getPresetRoomImgUrl(
@@ -197,7 +215,9 @@ export class HomeRoomsService {
         };
     }
 
-    // 10.4 나와 유사한 거실 목록 조회
+    /**
+     * 10.4 나와 유사한 거실 목록 조회
+     */
     async getSimilarRooms(
         currentUserIdStr: string,
         query: SimilarRoomsQueryDto,
@@ -206,32 +226,41 @@ export class HomeRoomsService {
 
         const currentUserId = BigInt(currentUserIdStr);
 
+        // 1. 현재 사용자의 시스템 투자 성향 태그 조회
         const myTags = await this.repository.getUserTags(currentUserId);
-        const myTagContents = myTags.map((t) => t.content);
+        const referenceTags = this.filterSystemTags(
+            myTags.map((tag) => tag.content),
+        );
 
+        // 2. 나를 제외한 공개 거실 조회
         const otherUsers = await this.repository.findPublicUsersWithDetails({
             id: { not: currentUserId },
         });
 
+        // 3. 다른 사용자의 투자 성향과 비교
         const rankedRooms = await Promise.all(
-            otherUsers.map(async (u) => {
-                const userTags = u.have_tags.map((ht) => ht.tags.content);
-
-                // 나와 일치하는 태그 추출
-                const matchedTags = userTags.filter((t) =>
-                    myTagContents.includes(t),
+            otherUsers.map(async (user) => {
+                // 상대방의 시스템 태그만 추출
+                const userTags = this.filterSystemTags(
+                    user.have_tags.map((ht) => ht.tags.content),
                 );
 
+                // 나와 일치하는 태그 추출
+                const matchedTags = userTags.filter((tag) =>
+                    referenceTags.includes(tag),
+                );
+
+                // 수익률 계산
                 const profitRate = await this.calculateUserProfitRate(
-                    u.holdings,
+                    user.holdings,
                 );
 
                 return {
-                    user_id: u.id.toString(),
-                    nickname: u.nickname,
+                    user_id: user.id.toString(),
+                    nickname: user.nickname,
                     room_img_url: this.getPresetRoomImgUrl(
-                        u.id,
-                        u.profile_img_url,
+                        user.id,
+                        user.profile_img_url,
                     ),
                     profit_rate: profitRate,
                     tags: userTags,
@@ -241,27 +270,32 @@ export class HomeRoomsService {
             }),
         );
 
-        // 선택한 정렬 기준에 따라 정렬
+        // 4. 정렬 처리
         if (sort === 'PROFIT_HIGH') {
             rankedRooms.sort((a, b) => b.profit_rate - a.profit_rate);
         } else if (sort === 'PROFIT_LOW') {
             rankedRooms.sort((a, b) => a.profit_rate - b.profit_rate);
         } else {
-            // 기본값: 나와 일치하는 태그가 많은 순
+            // 기본값: 일치하는 투자 성향 태그가 많은 순
             rankedRooms.sort((a, b) => b.matchCount - a.matchCount);
         }
 
+        // 5. 응답 반환
         return {
             is_success: true,
             code: 'COMMON200',
             message: '성공입니다.',
             data: {
+                // 유사 거실 탐색에 사용한 기준 태그
+                reference_tags: referenceTags,
                 rooms: rankedRooms.map(({ matchCount, ...rest }) => rest),
             },
         };
     }
 
-    // 10.5 나와 정반대 거실 목록 조회
+    /**
+     * 10.5 나와 정반대 거실 목록 조회
+     */
     async getOppositeRooms(
         currentUserIdStr: string,
         query: OppositeRoomsQueryDto,
@@ -270,32 +304,44 @@ export class HomeRoomsService {
 
         const currentUserId = BigInt(currentUserIdStr);
 
+        // 1. 현재 사용자의 시스템 투자 성향 태그 조회
         const myTags = await this.repository.getUserTags(currentUserId);
-        const myTagContents = myTags.map((t) => t.content);
+        const myTagContents = this.filterSystemTags(
+            myTags.map((tag) => tag.content),
+        );
 
+        // 2. 내 태그를 반대 태그로 변환
+        const referenceTags = myTagContents.map((tag) => OPPOSITE_TAG_MAP[tag]);
+
+        // 3. 나를 제외한 공개 거실 조회
         const otherUsers = await this.repository.findPublicUsersWithDetails({
             id: { not: currentUserId },
         });
 
+        // 4. 상대방의 투자 성향과 반대 태그 비교
         const rankedRooms = await Promise.all(
-            otherUsers.map(async (u) => {
-                const userTags = u.have_tags.map((ht) => ht.tags.content);
-
-                // 내 태그에 포함되지 않는 상대방의 태그 추출
-                const oppositeTags = userTags.filter(
-                    (t) => !myTagContents.includes(t),
+            otherUsers.map(async (user) => {
+                // 상대방의 시스템 태그만 추출
+                const userTags = this.filterSystemTags(
+                    user.have_tags.map((ht) => ht.tags.content),
                 );
 
+                // 내 투자 성향의 반대 태그와 일치하는 태그 추출
+                const oppositeTags = userTags.filter((tag) =>
+                    referenceTags.includes(tag),
+                );
+
+                // 수익률 계산
                 const profitRate = await this.calculateUserProfitRate(
-                    u.holdings,
+                    user.holdings,
                 );
 
                 return {
-                    user_id: u.id.toString(),
-                    nickname: u.nickname,
+                    user_id: user.id.toString(),
+                    nickname: user.nickname,
                     room_img_url: this.getPresetRoomImgUrl(
-                        u.id,
-                        u.profile_img_url,
+                        user.id,
+                        user.profile_img_url,
                     ),
                     profit_rate: profitRate,
                     tags: userTags,
@@ -305,21 +351,24 @@ export class HomeRoomsService {
             }),
         );
 
-        // 선택한 정렬 기준에 따라 정렬
+        // 5. 정렬 처리
         if (sort === 'PROFIT_HIGH') {
             rankedRooms.sort((a, b) => b.profit_rate - a.profit_rate);
         } else if (sort === 'PROFIT_LOW') {
             rankedRooms.sort((a, b) => a.profit_rate - b.profit_rate);
         } else {
-            // 기본값: 나와 겹치지 않는 태그가 많은 순
+            // 기본값: 반대 투자 성향 태그가 많은 순
             rankedRooms.sort((a, b) => b.oppositeCount - a.oppositeCount);
         }
 
+        // 6. 응답 반환
         return {
             is_success: true,
             code: 'COMMON200',
             message: '성공입니다.',
             data: {
+                // 반대 거실 탐색에 사용한 기준 태그
+                reference_tags: referenceTags,
                 rooms: rankedRooms.map(({ oppositeCount, ...rest }) => rest),
             },
         };
