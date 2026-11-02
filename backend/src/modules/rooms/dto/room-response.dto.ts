@@ -10,8 +10,10 @@ export class ReactionCountDto {
 }
 
 export class PlacedFurnitureDto {
+    /** user_furniture.id — 방에 놓인 그 한 개(같은 소파 2개를 구분) */
+    placement_id!: number;
+    /** furnitures.id — 종류 */
     furniture_id!: number;
-    item_code!: string;
     furniture_name!: string;
     position!: Vector3Dto;
     rotation!: Vector3Dto;

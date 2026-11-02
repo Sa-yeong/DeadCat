@@ -59,7 +59,9 @@ export interface RoomCharacterDto {
 }
 
 export interface PlacementDto {
+  /** user_furniture.id — 방에 놓인 그 한 개(같은 소파 2개를 구분) */
   placementId: number;
+  /** furnitures.id — 종류. 카탈로그 · 그림의 키 */
   furnitureId: number;
   /** 가구 바닥 중심 — 칸 단위 {공간 규격 미정: 지금은 12×12칸, 원점은 뒷벽·왼벽 모서리} */
   positionX: number;
@@ -162,7 +164,9 @@ export interface GiftResult {
 }
 
 export interface StorageItem {
+  /** furnitures.id */
   furnitureId: number;
+  /** 보관함 개수 — user_furniture 에서 위치가 빈 줄 수 */
   quantity: number;
 }
 

@@ -276,9 +276,9 @@ export class EmotionService {
             }
         }
 
-        // 3) 거실에 배치된 가구 조회
-        const placedFurniture = await this.prisma.placed.findMany({
-            where: { user_id: uId },
+        // 3) 거실에 배치된 가구 조회 (위치가 비어 있으면 보관함에 있는 것)
+        const placedFurniture = await this.prisma.user_furniture.findMany({
+            where: { user_id: uId, position_x: { not: null } },
             include: { furnitures: true },
         });
 

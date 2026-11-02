@@ -5,7 +5,7 @@
  *   실 API (S4)   내 거실 조회 GET /rooms/me · 감정 스트림 GET /rooms/me/stream · 보유 종목 GET /holdings
  *   실 API (S6)   프리셋 · 아이템 · 선물 · 출석 · 이별 흔적 · 옷 — 모두 /rooms/me/… (C1 경로표)
  *   실 API (S8)   남의 거실 GET /rooms/:userId · 스트림 GET /rooms/:userId/stream · 반응 종류 · 반응 · 방명록 · 팔로우
- *   더미          가구(가구 묶음 보류 — 카탈로그 · 배치 · 보관함). 거실 응답의 placed_furniture 는 옛 모양이라 쓰지 않는다
+ *   더미          가구(가구 묶음 보류 — 카탈로그 · 배치 · 보관함). 거실 응답의 placed_furniture 는 가구 데이터가 들어온 뒤 쓴다
  *
  * 한 객체로 묶지 않는다(God class 방지) — 패널이 필요한 묶음만 가져다 쓴다.
  */
@@ -197,7 +197,7 @@ function myRoomSnapshot(d: MyRoomRes): RoomSnapshot {
       ownedClothesId: c.clothes_id,
       receivedReactionCount: sumCounts(c.received_reactions),
     })),
-    // 가구는 가구 묶음 결정 전까지 더미 배치 그대로 보여 준다(S4 도휘 결정) — 응답의 placed_furniture 는 옛 모양이라 쓰지 않는다
+    // 가구는 가구 묶음 결정 전까지 더미 배치 그대로 보여 준다(S4 도휘 결정) — 응답의 placed_furniture 는 가구 데이터가 들어온 뒤 쓴다
     placements: db.placements,
     roomReactions: { counts: countsOf(d.received_reactions), mine: null },
   };

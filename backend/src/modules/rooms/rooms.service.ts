@@ -1,9 +1,11 @@
 import {
     BadRequestException,
+    HttpException,
     Injectable,
     NotFoundException,
     InternalServerErrorException,
 } from '@nestjs/common';
+import type { Prisma } from 'generated/prisma/client';
 
 import {
     MyRoomResponseDto,
@@ -16,6 +18,7 @@ import {
 import { PrismaService } from 'src/providers/database/prisma.service';
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
+import { applyRoomLayout } from './room-layout';
 import { HoldingService } from '../holding/holding.service';
 import { HoldingItemDto } from '../holding/dto/holding-list.response.dto';
 import { toAffinityInfo } from 'src/common/affinity/affinity-level';
@@ -59,10 +62,7 @@ export class RoomsService {
             await Promise.all([
                 this.countRoomReactions(userId),
                 this.countCharacterReactions(userId, stockIds),
-                this.prisma.placed.findMany({
-                    where: { user_id: userId },
-                    include: { furnitures: true },
-                }),
+                this.findPlacedFurniture(this.prisma, userId),
             ]);
 
         return {
@@ -151,7 +151,19 @@ export class RoomsService {
         return new Map(rows.map((r) => [r.id.toString(), r.type]));
     }
 
-    // 놓인 가구 — 가구 묶음 결정 전까지 기존 응답 모양 그대로
+    // 방에 놓인 가구만 — 위치가 비어 있으면 보관함에 있는 것
+    private findPlacedFurniture(
+        db: Pick<Prisma.TransactionClient, 'user_furniture'>,
+        userId: bigint,
+    ) {
+        return db.user_furniture.findMany({
+            where: { user_id: userId, position_x: { not: null } },
+            include: { furnitures: true },
+            orderBy: { id: 'asc' },
+        });
+    }
+
+    // placement_id = 방에 놓인 그 한 개, furniture_id = 종류
     private formatFurniture(f: {
         id: bigint;
         furniture_id: bigint;
@@ -161,9 +173,8 @@ export class RoomsService {
         furnitures: { name: string };
     }): PlacedFurnitureDto {
         return {
-            furniture_id: Number(f.id),
-            // DB에 item_code가 없으므로 임시 코드 생성
-            item_code: `FURNITURE_${f.furniture_id}`,
+            placement_id: Number(f.id),
+            furniture_id: Number(f.furniture_id),
             furniture_name: f.furnitures.name,
             position: {
                 x: Number(f.position_x),
@@ -174,37 +185,17 @@ export class RoomsService {
         };
     }
 
-    // 10. 거실 편집 모드 - 배치 정보 업데이트 (PUT /home/room/layout 또는 /rooms/layout)
+    // 10. 거실 편집 모드 - 방 전체 배치 저장 (PUT /rooms/layout)
     async updateRoomLayout(userIdStr: string, dto: UpdateRoomLayoutDto) {
         const userId = BigInt(userIdStr);
 
         try {
-            await this.prisma.$transaction(async (tx) => {
-                for (const f of dto.furniture_layout) {
-                    const furnitureId = BigInt(f.furniture_id);
-
-                    await tx.placed.upsert({
-                        where: {
-                            user_id_furniture_id: {
-                                user_id: userId,
-                                furniture_id: furnitureId,
-                            },
-                        },
-                        update: {
-                            position_x: f.position.x,
-                            position_y: f.position.y,
-                            rotation: f.rotation,
-                        },
-                        create: {
-                            user_id: userId,
-                            furniture_id: furnitureId,
-                            position_x: f.position.x,
-                            position_y: f.position.y,
-                            rotation: f.rotation,
-                        },
-                    });
-                }
-            });
+            const placedFurnitures = await this.prisma.$transaction(
+                async (tx) => {
+                    await applyRoomLayout(tx, userId, dto.furniture_layout);
+                    return this.findPlacedFurniture(tx, userId);
+                },
+            );
 
             // 한국 시간(KST) 포맷 반환 (YYYY-MM-DD HH:mm:ss)
             const now = new Date();
@@ -217,8 +208,13 @@ export class RoomsService {
             return {
                 is_success: true,
                 updated_at: updatedAt,
+                // 새로 꺼낸 가구의 placement_id를 프론트가 알 수 있게
+                placed_furniture: placedFurnitures.map((f) =>
+                    this.formatFurniture(f),
+                ),
             };
         } catch (error) {
+            if (error instanceof HttpException) throw error;
             throw new InternalServerErrorException(
                 `거실 배치 정보 업데이트 실패: ${error instanceof Error ? error.message : String(error)}`,
             );
@@ -286,10 +282,7 @@ export class RoomsService {
                           },
                       },
                   }),
-            this.prisma.placed.findMany({
-                where: { user_id: ownerId },
-                include: { furnitures: true },
-            }),
+            this.findPlacedFurniture(this.prisma, ownerId),
         ]);
 
         const holdingByStock = new Map(
