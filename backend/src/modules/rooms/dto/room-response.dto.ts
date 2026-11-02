@@ -56,7 +56,7 @@ export class MyRoomResponseDto {
 export class OwnerTagDto {
     tag_id!: number;
     content!: string;
-    /** true = 본인이 고른 태그, false = 시스템 태그 */
+    /** 지금은 항상 false(시스템 태그) — have_tags.self 칸이 DB에서 빠짐 */
     self!: boolean;
 }
 

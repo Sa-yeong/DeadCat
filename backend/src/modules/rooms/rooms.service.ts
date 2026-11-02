@@ -313,7 +313,8 @@ export class RoomsService {
                 tags: tags.map((t) => ({
                     tag_id: Number(t.tag_id),
                     content: t.tags.content,
-                    self: t.self,
+                    // have_tags.self 칸이 실제 DB에서 빠짐(팀원, 11-02) — 태그는 전부 시스템이 붙인다
+                    self: false,
                 })),
                 is_following: !!follow,
             },
