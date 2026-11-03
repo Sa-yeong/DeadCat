@@ -49,13 +49,11 @@ export class UserController {
         return await this.userService.getUserRelations(userId, type);
     }
     //19. 거실 공유여부 설정
-    //@Patch('me/share-option')
-    @Patch('users/me/share-option')
+    @Patch('me/share-option')
     async updateShareOption(
-        //  @User() userId: string,
+        @User() userId: string,
         @Body() dto: UpdateShareOptionDto,
     ): Promise<ShareOptionResponseDto> {
-        const userId = '2';
         return await this.userService.updateShareOption(userId, dto);
     }
 }
