@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useLayout } from '../layout';
 import { DAYS_PER_BAR, convertBars, maxVisibleBars, zoomStep, type ChartFocus } from '../chartZoom';
 import type { Candle, Timeframe } from '../types';
@@ -8,6 +8,8 @@ import { InfoPane } from './InfoPane';
 import { CommunityPane } from './CommunityPane';
 import { PanelHeader, TabChip } from './Block';
 import { R } from '../radius';
+import { NO_INDICATORS, type IndicatorSet } from '../chart/indicatorLayer';
+import { drawingsOf, type Tool } from '../chart/drawings';
 
 export type WindowTab = 'CHART' | 'INFO' | 'COMMUNITY';
 
@@ -76,6 +78,15 @@ export function WindowHud({
     focus.current = { center, bars: convertBars(bars, timeframe, next), atLatest };
     onTimeframe(next);
   };
+  // 보조지표·그리기 — 종목을 바꿔도 지표 선택은 유지한다. 그림은 종목별로 따로 남는다
+  const [indicators, setIndicators] = useState<IndicatorSet>(NO_INDICATORS);
+  const [tool, setTool] = useState<Tool>('none');
+  const [clearKey, setClearKey] = useState(0);
+  const clearDrawings = () => {
+    drawingsOf(stockCode).length = 0;
+    setClearKey((k) => k + 1);
+  };
+
   const tabRowH = L.tabHeight;
   const bodyTop = tabRowH + (tab === 'CHART' ? TOOLBAR_H : 0);
   const bodyH = winHeight - bodyTop;
@@ -113,7 +124,15 @@ export function WindowHud({
 
       {tab === 'CHART' && (
         <div className="flex items-center" style={{ height: TOOLBAR_H, padding: '0 20px' }}>
-          <ChartToolbar timeframe={timeframe} onSelect={onTimeframe} />
+          <ChartToolbar
+            timeframe={timeframe}
+            onSelect={onTimeframe}
+            indicators={indicators}
+            onIndicators={setIndicators}
+            tool={tool}
+            onTool={setTool}
+            onClearDrawings={clearDrawings}
+          />
         </div>
       )}
 
@@ -133,6 +152,10 @@ export function WindowHud({
           onWheelIn={onWheelIn}
           maxBars={(n) => maxVisibleBars(timeframe, n)}
           onPan={onPan}
+          indicators={indicators}
+          tool={tab === 'CHART' ? tool : 'none'}
+          onToolDone={() => setTool('none')}
+          clearKey={clearKey}
         />
       </div>
 

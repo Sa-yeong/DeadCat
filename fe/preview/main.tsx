@@ -1,4 +1,6 @@
 /** 단일 HTML 미리보기 전용 엔트리 — 라우터 없이 개별종목 화면만 렌더 */
+// 가짜 백엔드 · 3D 파일 — 화면 코드보다 먼저 깔아야 첫 조회부터 가로챈다
+import './mockApi';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';

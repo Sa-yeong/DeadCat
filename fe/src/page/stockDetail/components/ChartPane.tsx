@@ -1,16 +1,21 @@
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import {
   CandlestickSeries,
   ColorType,
   LineSeries,
   createChart,
+  type AutoscaleInfo,
   type IChartApi,
   type ISeriesApi,
-  type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Candle } from '../types';
 import { down, up } from '../format';
 import type { ChartFocus } from '../chartZoom';
+import { stamp } from '../chart/time';
+import { IndicatorLayer, NO_INDICATORS, type IndicatorSet } from '../chart/indicatorLayer';
+import { DrawingPrimitive, drawingsOf, type Tool } from '../chart/drawings';
+import { DrawingController } from '../chart/drawingController';
+import { DrawingToolbar } from './DrawingToolbar';
 
 type Main = ISeriesApi<'Line'> | ISeriesApi<'Candlestick'>;
 
@@ -35,6 +40,11 @@ const fmt = (p: number) => Math.round(p).toLocaleString('ko-KR');
  * 좌우로 끌어 지난 구간을 볼 수 있다(2026-10-05). 사용자가 끈 만큼을 onPan 으로 알린다 —
  * 캐릭터 무대의 카메라(창틀)가 같이 움직인다. 데이터 교체·크기 변경으로 생긴 이동은 알리지 않는다.
  * 양 끝은 빈 곳이 차트 폭의 절반이 될 때까지만 끌린다 — 최신 봉·첫 봉이 가운데에서 멈춘다.
+ *
+ * 보조지표(2026-10-27) — 이동평균·볼린저는 가격 칸 위에, RSI·MACD 는 아래 칸에. 그리는 일은 IndicatorLayer.
+ * 그리기(2026-10-27) — 추세선·수평선·사각형. 그린 것은 날짜·가격으로 기억해 주기가 바뀌어도 같은 날짜에 남는다.
+ *   새로고침하면 사라진다. 올리면 핸들, 고르면 미니 툴바(색·굵기·도트·잠금·지우기) — 조작은 DrawingController.
+ *   그림 위에 마우스가 있거나 도구를 고른 동안엔 끌기(카메라 이동)를 끈다.
  */
 export function ChartPane({
   stockCode,
@@ -51,6 +61,10 @@ export function ChartPane({
   onWheelIn,
   maxBars,
   onPan,
+  indicators = NO_INDICATORS,
+  tool = 'none',
+  onToolDone,
+  clearKey = 0,
 }: {
   stockCode: string;
   candles: Candle[] | null;
@@ -74,6 +88,14 @@ export function ChartPane({
   onWheelIn?: () => void;
   /** 사용자가 차트를 끌어 내용이 dx px 움직였다(+ = 오른쪽) */
   onPan?: (dx: number) => void;
+  /** 켜진 보조지표 */
+  indicators?: IndicatorSet;
+  /** 지금 고른 그리기 도구 */
+  tool?: Tool;
+  /** 그림 하나를 다 그렸거나 Esc — 도구를 내려놓는다 */
+  onToolDone?: () => void;
+  /** 바뀌면 그림을 다시 그린다 — 바깥에서 전체 지우기를 했을 때 */
+  clearKey?: number;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
@@ -95,6 +117,19 @@ export function ChartPane({
   maxBarsRef.current = maxBars;
   /** 지금 그려진 캔들 — 화면 가운데가 몇 시인지 알아낼 때 */
   const listRef = useRef<Candle[]>([]);
+  const layer = useRef<IndicatorLayer | null>(null);
+  const drawing = useRef<DrawingPrimitive | null>(null);
+  /** 봉 시각(차트 기준 초) — 그린 선의 날짜 ↔ 위치 환산용 */
+  const timesRef = useRef<number[]>([]);
+  const toolDoneCb = useRef(onToolDone);
+  toolDoneCb.current = onToolDone;
+  const controller = useRef<DrawingController | null>(null);
+  /** 고른 그림 · 툴바 자리 · 툴바에서 모양을 바꿨을 때 다시 그리기용 */
+  const [selected, setSelected] = useState<number | null>(null);
+  const [toolbarPos, setToolbarPos] = useState<{ left: number; top: number } | null>(null);
+  const [, setStyleRev] = useState(0);
+  /** 툴바 기본 자리 — 가격 칸 오른쪽 위, 오른쪽 가격축 너비만큼 비켜서. 고를 때 잰다 */
+  const [rightAxis, setRightAxis] = useState(70);
 
   // 생성 · 파기 — 종목이나 표현이 바뀔 때만. 창 크기가 바뀌어도 다시 만들지 않는다
   useEffect(() => {
@@ -109,6 +144,8 @@ export function ChartPane({
         fontSize: 12,
         // {라이선스 확인 필요} TradingView 로고 — 끄려면 다른 곳에 출처 표기가 있어야 한다
         attributionLogo: true,
+        // 보조지표 아래 칸과의 경계 — 높이는 끌어서 바꾸지 않는다
+        panes: { separatorColor: 'rgba(255,255,255,0.12)', separatorHoverColor: 'rgba(255,255,255,0.12)', enableResize: false },
       },
       localization: { priceFormatter: fmt, locale: 'ko-KR' },
       grid: {
@@ -153,7 +190,23 @@ export function ChartPane({
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
+      // 볼린저 밴드처럼 가격보다 넓게 퍼지는 지표가 켜지면 오른쪽 축이 넓어진다 — 왼쪽도 같은 범위로
+      autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
+        const b = base();
+        const o = layer.current?.overlayRange();
+        if (!o) return b;
+        const r = b?.priceRange;
+        return {
+          ...b,
+          priceRange: { minValue: Math.min(r?.minValue ?? o.min, o.min), maxValue: Math.max(r?.maxValue ?? o.max, o.max) },
+        };
+      },
     });
+
+    layer.current = new IndicatorLayer(c);
+    const prim = new DrawingPrimitive(drawingsOf(stockCode));
+    main.current.attachPrimitive(prim);
+    drawing.current = prim;
 
     // 사용자가 끈 이동만 알린다 — 누르고 있는 동안 + 놓은 뒤 관성(터치)으로 미끄러지는 잠깐
     const el = host.current;
@@ -183,6 +236,14 @@ export function ChartPane({
       }, 150);
     };
     el.addEventListener('wheel', onWheel, { passive: true });
+    const ctl = new DrawingController(c, el, prim, {
+      onSelect: (id) => {
+        setSelected(id);
+        if (id !== null) setRightAxis(c.priceScale('right').width());
+      },
+      onToolDone: () => toolDoneCb.current?.(),
+    });
+    controller.current = ctl;
     window.addEventListener('pointerup', onRelease);
     window.addEventListener('pointercancel', onRelease);
     const onRange = (r: { from: number; to: number } | null) => {
@@ -216,12 +277,33 @@ export function ChartPane({
       window.removeEventListener('pointerup', onRelease);
       window.removeEventListener('pointercancel', onRelease);
       c.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
+      ctl.dispose();
+      controller.current = null;
+      setSelected(null);
       c.remove();
       chart.current = null;
       main.current = null;
       mirror.current = null;
+      layer.current = null;
+      drawing.current = null;
     };
   }, [stockCode, kind]);
+
+  // 보조지표 켜고 끄기 — 차트를 새로 만들면(종목·표현 변경) 빈 상태에서 다시 건다
+  useEffect(() => {
+    layer.current?.set(indicators);
+  }, [indicators, stockCode, kind]);
+
+  // 그리기 도구 — 고른 동안엔 클릭이 점을 찍는다(조작은 DrawingController)
+  useEffect(() => {
+    controller.current?.setTool(tool);
+  }, [tool, stockCode, kind]);
+
+  // 바깥에서 전체 지우기 — 같은 목록을 비웠으니 고른 것을 풀고 다시 그리기만
+  useEffect(() => {
+    controller.current?.select(null);
+    drawing.current?.refresh();
+  }, [clearKey]);
 
   // 분봉이면 시간 눈금, 아니면 날짜 눈금
   useEffect(() => {
@@ -250,6 +332,9 @@ export function ChartPane({
     main.current.setData(list.map((c) => toOne(c, kind)) as never);
     mirror.current.setData(list.map((c) => ({ time: stamp(c.write_time), value: c.close_price })));
     listRef.current = list;
+    layer.current?.setCandles(list);
+    timesRef.current = list.map((c) => stamp(c.write_time));
+    drawing.current?.setTimes(timesRef.current);
     if (!list.length) return;
     applyZoomOutLimit();
     // 확대·축소로 주기를 바꿨다 — 같은 기간이 보이게 맞춘다
@@ -288,17 +373,37 @@ export function ChartPane({
     if (!lastCandle || !candles?.length || !main.current || !mirror.current) return;
     main.current.update(toOne(lastCandle, kind) as never);
     mirror.current.update({ time: stamp(lastCandle.write_time), value: lastCandle.close_price });
+    layer.current?.updateLast(lastCandle);
+    // 새 봉이 생겼으면 그림 환산용 시각에도 붙인다
+    const t = stamp(lastCandle.write_time);
+    const times = timesRef.current;
+    if (times.length && t > times[times.length - 1]) {
+      timesRef.current = [...times, t];
+      drawing.current?.setTimes(timesRef.current);
+    }
   }, [lastCandle, candles, kind]);
 
-  return <div ref={host} style={{ width, height }} />;
-}
+  const sel = selected === null ? undefined : drawingsOf(stockCode).find((d) => d.id === selected);
 
-/**
- * 차트 라이브러리는 시각을 UTC 로 그린다 — 한국 시각(KST)으로 보이게 9시간 밀어 둔다.
- * 일봉은 'UTC 자정 = 그날'로 오므로 밀어도 날짜는 그대로다.
- */
-const KST_S = 9 * 60 * 60;
-const stamp = (iso: string) => (Date.parse(iso) / 1000 + KST_S) as UTCTimestamp;
+  return (
+    <div style={{ position: 'relative', width, height }}>
+      <div ref={host} style={{ width, height }} />
+      {sel && (
+        <DrawingToolbar
+          drawing={sel}
+          pos={toolbarPos}
+          bounds={{ width, height, defaultRight: rightAxis + 12 }}
+          onMove={setToolbarPos}
+          onChange={() => {
+            drawing.current?.refresh();
+            setStyleRev((r) => r + 1);
+          }}
+          onDelete={() => controller.current?.remove(sel.id)}
+        />
+      )}
+    </div>
+  );
+}
 
 function toOne(c: Candle, kind: 'line' | 'candle') {
   return kind === 'candle'
