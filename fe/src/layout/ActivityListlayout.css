@@ -6,7 +6,7 @@
     align-items: center;
     color: white;
 }
-:where(.activity-post-list, .activity-comment-list) .group-left{
+:where(.activity-post-list, .activity-comment-list, .written-post-list) .group-left{
     flex: 1;
     padding-left: 20px;
     min-width: 0;
@@ -24,7 +24,7 @@
     font-size: smaller;
     padding-right: 20px;
 }
-:where(.activity-post-list, .activity-comment-list) .group-left .type{
+:where(.activity-post-list, .activity-comment-list, .written-post-list) .group-left .type{
     border: 1px solid gray;
     border-radius: 5px;
     font-size: 12px;
@@ -32,7 +32,7 @@
     padding: 0 5px;
     flex-shrink: 0;
 }
-:where(.activity-post-list, .activity-comment-list) .group-left .content{
+:where(.activity-post-list, .activity-comment-list, .written-post-list) .group-left .content{
     display: block;
     white-space: nowrap;
     overflow: hidden;
@@ -40,9 +40,12 @@
 }
 
 .activity-post-list .group-right{
+    padding-right: 20px;
+    font-size: smaller;
+    color: #8b95a1;
     display: flex;
-    justify-content: space-around;
-    align-items: center;
+    gap: 10px;
+    justify-content: end;
 }
 .activity-post-list .group-right > span {
     display: inline-flex;
@@ -67,4 +70,21 @@
     padding-right: 20px;
     font-size: smaller;
     color: #8b95a1;
+}
+
+.written-post-list{
+    border-bottom: 1px solid black;
+    display: grid;
+    grid-template-columns: 4fr 1.2fr;
+    height: 50px;
+    align-items: center;
+    color: white;
+}
+.written-post-list .group-right{
+    padding-right: 20px;
+    font-size: smaller;
+    color: #8b95a1;
+    display: flex;
+    gap: 10px;
+    justify-content: end;
 }

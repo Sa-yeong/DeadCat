@@ -124,7 +124,7 @@ export function SearchingView(){
 
                 const response = await api.get('/home/rooms/similar', {
                     headers: {Authorization: `Bearer ${token}`},
-                    params: {sort: {order}}
+                    params: {sort: order}
                 });
 
                 setRooms(response.data.data.data.rooms);
@@ -143,7 +143,7 @@ export function SearchingView(){
 
                 const response = await api.get('/home/rooms/opposite', {
                     headers: {Authorization: `Bearer ${token}`},
-                    params: {sort: {order}}
+                    params: {sort: order}
                 });
 
                 setRooms(response.data.data.data.rooms);
@@ -163,7 +163,7 @@ export function SearchingView(){
             navigate('./search');
             return;
         }
-    }, [clickSim, clickOpp])
+    }, [clickSim, clickOpp, order])
 
     // 검색 관련
     useEffect(() => {
@@ -176,11 +176,11 @@ export function SearchingView(){
                 if(token){
                     response = await api.get('/home/rooms/search', {
                         headers: {Authorization: `Bearer ${token}`},
-                        params: {keywords: keywords, tags: selectedTags, sort: order }
+                        params: {keywords: keywords.join(','), tags: selectedTags.join(','), sort: order }
                     })
                 }else{
                     response = await api.get('home/rooms/search', {
-                        params: {tags: selectedTags, keywords: keywords, sort: order}
+                        params: {tags: selectedTags.join(','), keywords: keywords.join(','), sort: order}
                     })
                 }
 
@@ -235,7 +235,9 @@ export function SearchingView(){
             <Header tags={tags} order={order} setOrder={setOrder} setSelectedTags={setSeletedTags}
             setKeywords={setKeywords} setClickSim={setClickSim} setClickOpp={setClickOpp}
             findTag={findTag} findKeyword={findKeyword} />
-            <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, riseRooms, fallRooms, rooms}} />
+            <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, 
+                setClickOpp, setClickSim,
+                riseRooms, fallRooms, rooms}} />
         </div>
     </div>
     ;
@@ -245,12 +247,12 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
     setClickSim, setClickOpp, findTag, findKeyword}:any){  
     // 태그 종류
     const content = (
-        // api 연결 후 사용할 코드
         <div style={{display: 'flex', gap: '8px'}}>
             {
                 tags.map((tag) => {
                     return <p onClick={() => {if(!findTag(tag.name))
                         setSelectedTags(prev => [...prev, tag.name])
+                        setClickOpp(false); setClickSim(false);
                     }}
                     key={tag.tag_id}>{tag.name}</p>
                 })
@@ -263,8 +265,7 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             key: '1',
             label: (
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
-                onClick={()=>{setOrder('DEFAULT')
-                    setClickOpp(false); setClickSim(false);}}>
+                onClick={()=>{setOrder('DEFAULT')}}>
                     기본순
                     {order === 'DEFAULT' ? <FaCheck style={{color: '#528bff'}} /> : null}
                 </span>
@@ -275,8 +276,7 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             key: '2',
             label: (
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                onClick={()=>{setOrder('PROFIT_HIGH');
-                    setClickOpp(false); setClickSim(false);}}>
+                onClick={()=>{setOrder('PROFIT_HIGH');}}>
                     급등순
                     {order === 'PROFIT_HIGH' ? <FaCheck style={{color: '#528bff'}} /> : null}
                 </span>
@@ -286,8 +286,7 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             key: '3',
             label: (
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                onClick={()=>{setOrder('PROFIT_LOW')
-                    setClickOpp(false); setClickSim(false);}}>
+                onClick={()=>{setOrder('PROFIT_LOW')}}>
                     급락순
                     {order === 'PROFIT_LOW' ? <FaCheck style={{color: '#528bff'}} /> : null}
                 </span>

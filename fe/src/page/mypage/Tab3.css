@@ -23,6 +23,15 @@
     width: fit-content;
     flex: 0 0 auto;
 }
+.tab3 .header .tab>a>div{
+    display: flex;
+    gap: 5px;
+}
+.tab3 .header .tab>a>div span{
+    font-weight: 500;
+    font-size: 10;
+    color: #566072;
+}
 .tab3 .header .tab>a{
     border: none;
     background: transparent;
@@ -42,6 +51,7 @@
     color: white;
     font-weight: 550;
 }
+    /* 탐색창 */
 .tab3 .header .search-bar{
     position: relative;
     display: flex;

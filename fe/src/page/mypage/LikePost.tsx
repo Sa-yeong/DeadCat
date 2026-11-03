@@ -1,5 +1,5 @@
 // import { MyRecordsLayout_P } from "../../layout/MyRecordsLayout";
-import { ActivityPostLayout } from "../../layout/ActivityListLayout";
+import { LikedPostLayout } from "../../layout/ActivityListLayout";
 import { useOutletContext } from "react-router-dom";
 
 interface Post{
@@ -19,7 +19,7 @@ export function LikePosts(){
         <div className='rows'>
             {
                 likedPosts.map((post: Post) => 
-                    <ActivityPostLayout key={`liked-${post.post_id}`}
+                    <LikedPostLayout key={`liked-${post.post_id}`}
                     type={post.source_type}
                     content={post.content} comments={post.comment_count}
                     likes={post.like_count} writer={post.author_nickname}

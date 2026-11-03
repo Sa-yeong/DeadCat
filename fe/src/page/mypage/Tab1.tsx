@@ -53,7 +53,7 @@ export function Tab1(){
     
     return <div  className='tab1'>
         <span className='assetInfo'> <AssetInfo /> </span>
-        <span className='charac'> <Represent mydata={mydata} /> </span>
+        <span className='charac'> <Represent mydata={mydata} setMydata={setMydata} /> </span>
         <div className='holdings'>
             <MyStockList />
         </div>
@@ -61,7 +61,7 @@ export function Tab1(){
 }
 
 // 대표 캐릭터 이미지
-function Represent({mydata}:any){
+function Represent({mydata, setMydata}:any){
     const navigate = useNavigate();
 
     const fetchSharedOption = async (newState: boolean) => {
@@ -78,6 +78,8 @@ function Represent({mydata}:any){
                 {share_option: newState},
                 {headers: {Authorization: `Bearer ${token}`}}
             )
+
+            setMydata(prev => prev ? {...prev, share_option:newState} : prev);
         }catch(e){console.error('공유 여부 변경 실패: ', e);}
     }
 
@@ -107,7 +109,6 @@ function Represent({mydata}:any){
                 <input type='checkbox' checked={mydata?.share_option}
                 onChange={(e) => {
                     const newState = e.target.checked;
-                    setIsShared(newState);
                     fetchSharedOption(newState);
                 }} />
                 내 거실 공유 허용
