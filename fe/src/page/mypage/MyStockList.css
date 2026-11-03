@@ -1,13 +1,20 @@
 .my-stock-list{
-    height: 450px;
-    overflow: hidden;
+    min-height: 450px;
+    /* overflow: hidden; */
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    background: #12161e;
+    border: 1px solid rgb(82, 82, 82);
+    border-radius: 10px;
+}
+.my-stock-list .stock-list-header{
+    background: rgb(13, 15, 21);
+    color: #566072 !important;
+    font-size: medium;
 }
 .my-stock-list .stock-list-body{
     flex: 1;
-    overflow-y: auto;
 }
 .my-stock-list .stock-row{
     border-bottom: 1px solid black;
@@ -15,10 +22,16 @@
     width: 100%;
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr .5fr 1fr 1fr 1fr 1fr;
-    justify-items: center;
+    grid-template-columns: 1.5fr 1fr 1fr .5fr 1fr 1fr;
+    justify-items: start;
     align-items: center;
     text-align: center;
+    cursor: pointer;
+}
+.my-stock-list .stock-row span{
+    padding-left: 10px;
+    font-size: medium;
+    font-weight: lighter;
 }
 
 /* 보유주식 종목칸 캐릭터 썸네일 */
@@ -32,6 +45,6 @@
     width: 34px;
     height: 34px;
     object-fit: contain;
-    border-radius: 6px;
+    border-radius: 50%;
     flex-shrink: 0;
 }

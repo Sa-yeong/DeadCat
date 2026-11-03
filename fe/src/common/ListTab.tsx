@@ -1,11 +1,13 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import './ListTab.css'
 
 export function ListTab({list=[]}:{list:[string, string][]}){
+    const location = useLocation();
+    const path = location.pathname;
+
     return <div className="tab">
         {list.map(([content, link], index) => (
-            <Link key={index} to={link}>{content}</Link>
-            // <button key={index}>{item}</button>
+            <Link key={index} to={link} className={path===link?'active':'inactive'}>{content}</Link>
         ))}
     </div>;
 }

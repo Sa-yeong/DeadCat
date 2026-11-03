@@ -1,0 +1,45 @@
+/* 태그 리스트 */
+.searched-container .searched-tag-list{
+    margin: 10px auto;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+.searched-container .searched-tag-list span{
+    border: 1px solid #919191;
+    border-radius: 5px;
+    font-size: small;
+    padding: 0 5px;
+    display: flexbox;
+    align-items: center;
+    gap: 5px;
+}
+.searched-container .searched-tag-list span svg{
+    cursor: pointer;
+}
+.searched-container .searched-tag-list button{
+    border: none;
+    background: transparent;
+    color: #919191;
+    cursor: pointer;
+}
+
+/* 라벨 */
+.searched-container div .searched-label{
+    font-weight: bold;
+    display: flex;
+    gap: 10px;
+}
+.searched-container div .searched-label span{
+    font-size: small;
+    font-weight: lighter;
+    color: #919191;
+    margin-bottom: 10px;
+}
+
+/* 거실 리스트 */
+.searched-container div .searchedRooms{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    row-gap: 20px;
+}

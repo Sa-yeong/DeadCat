@@ -13,6 +13,13 @@
     align-items: center;
     justify-items: center;
 }
+.cate-list .list-header .cate-rows span{
+    color: white !important;
+}
 .cate-rows .row{
     cursor: pointer;
+}
+
+.cate-list .list-body .cate-rows:hover{
+    background: #171c27;
 }

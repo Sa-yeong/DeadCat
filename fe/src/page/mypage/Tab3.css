@@ -1,20 +1,82 @@
 .tab3{
-    border: 1px solid black;
     flex: 1;
     margin: 0px 5vw;
     padding: 0.5vw 1.5vw;
-    height: calc(100vh - 107px);
-    display: grid;
-    grid-template-rows: repeat(3, 1fr);
-    gap: 1.5vw;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
     overflow: hidden;
     box-sizing: border-box;
 }
+
+/* header */
+.tab3 .header{
+    display: flex;
+    justify-content: space-between;
+    height: fit-content;
+    margin-top: 55px;
+}
+.tab3 .header .tab{
+    border: 1px solid gray;
+    border-radius: 5px;
+    height: fit-content;
+    width: fit-content;
+    flex: 0 0 auto;
+}
+.tab3 .header .tab>a{
+    border: none;
+    background: transparent;
+    color: #8b95a1;
+    font-size: small;
+    padding: 3px 15px;
+    margin: 3px;
+}
+.tab3 .header .tab>a:hover{
+    border-radius: 5px;
+    background: #161c24;
+    color: white;
+}
+.tab3 .header .tab .active{
+    border-radius: 5px;
+    background: #232b3a;
+    color: white;
+    font-weight: 550;
+}
+.tab3 .header .search-bar{
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.tab3 .header .search-bar svg{
+    position: absolute;
+    left: 13px;
+    width: 15px;
+    height: 15px;
+    color: #9a9a93;
+    pointer-events: none;
+}
+.tab3 .header .search-bar input{
+    box-sizing: border-box;
+    width: 250px;
+    height: 40px;
+    padding: 0 14px 0 34px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 5px;
+    background: #2a2a2e;
+    color: #ededea;
+    font: inherit;
+    font-size: medium;
+}
+
 .tab3 .list-box{
     display: flex;
     flex-direction: column;
     min-height: 0;
     height: 100%;
+    width: 100%;
+    background: #232b3a;
+    border: 1px solid gray;
+    border-radius: 10px;
 }
 .tab3 .list-box .label{
     display: flex;
@@ -28,8 +90,8 @@
     height: 80%;
 }
 .tab3 .list-box .rows{
-    border: 1px solid black;
+    /* border-bottom: 1px solid gray; */
     flex: 1;
     overflow: hidden;
-    min-height: 0;
+    /* min-height: 0; */
 }

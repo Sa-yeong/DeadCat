@@ -1,76 +1,110 @@
 .tab1{
     flex: 1;
-    border: 1px solid black;
     margin: 0px auto;
     min-width: 700px;
-    max-width: 750px;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: auto 1fr;
-    grid-template-areas: 
-    "img info"
-    "list list";
-    gap: 1.5vh;
-    padding: 1.2vh;
+    max-width: 1000px;
     border: 1px solid black;
-}
-.tab1 .charac{
-    grid-area: img;
-    border:1px solid black;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
-    background: white;
-    height: 330px;
+    padding: 30px;
+    gap: 20px;
 }
+
+/* 자산 정보 */
 .tab1 .assetInfo{
-    grid-area: info;
-    border: 1px solid black;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     justify-content: space-evenly;
-    background: white;
-    padding-left: 50px;
+    gap: 10px;
 }
-.tab1 .holdings{
-    grid-area: list;
-    border: 1px solid black;
-    /* overflow-y: auto; */
+.tab1 .assetInfo .asset-label{
+    font-size: medium;
+    font-weight: 600;
+    color: #8b95a1;
+}
+.tab1 .assetInfo .asset-body{
     width: 100%;
-    /* display: flex;
-    align-items: start; */
-    height: 50vh;
-    background: white;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px;
+}
+.tab1 .assetInfo .asset-body>div{
+    border: 1px solid rgb(33, 40, 56);
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+    padding: 5px 20px;
+    background: #12161e;
+}
+.tab1 .assetInfo .asset-body div span.data-label{
+    font-size: small;
+    color: #566072;
 }
 
-/* 대표 캐릭터 패널 */
-.charac .represent-charac{
+/* 사용자 정보 패널 */
+.tab1 .charac{
     flex: 1;
-    width: 100%;
+    /* overflow: hidden; */
+    border: 1px solid rgb(82, 82, 82);
+    border-radius: 10px;
+    padding: 20px;
+    background: #12161e;
+}
+.tab1 .charac>div{
+    display: flex;
+    justify-content: space-between;
+}
+.tab1 .charac .left-side{
+    display: flex;
+    gap: 20px;
+}
+.tab1 .charac .left-side img{
+    border: 1px solid rgb(82, 82, 82);
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+}
+.tab1 .charac .left-side .detail{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.tab1 .charac .left-side .detail .nickname{
+    display: flex;
+    justify-content: flex-start;
+    gap: 10px;
+}
+.tab1 .charac .left-side .detail .nickname span{
+    font-weight: bold;
+}
+.tab1 .charac .left-side .detail .nickname button{
+    color: #8b95a1;
+    background: transparent;
+    border: 1px solid rgb(35 41 54);
+    border-radius: 5px;
+    padding: 0 7px;
+}
+.tab1 .charac .left-side .detail .follow{
+    display: flex;
+    gap: 10px;
+    font-size: small;
+    font-weight: lighter;
+    color: #566072;
+}
+.tab1 .charac .left-side .detail .follow>span{
+    display: flex;
+    gap: 5px;
+}
+.tab1 .charac .left-side .detail .follow>span .amount{
+    color: white;
+    font-weight: bold;
+}
+.tab1 .charac .checkbox{
+    border-radius: 5px;
+    padding: 10px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    margin-top: 20px;
-}
-.charac .nickname-change{
-    display: flex;
-    margin-bottom: 10px;
     gap: 10px;
-    align-items: center;
-    cursor: pointer;
-}
-
-/* 총 자산 패널 */
-.tab1 .assetInfo .asset-row{
-    display: flex;
-    gap: 10px;
-}
-/* 대표 캐릭터 이미지를 패널에 맞춤 */
-.charac .represent-charac img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
+    font-size: medium;
 }
