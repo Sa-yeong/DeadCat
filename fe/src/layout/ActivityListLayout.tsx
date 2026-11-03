@@ -1,17 +1,29 @@
 import './ActivityListlayout.css'
 import { BiLike, BiComment } from 'react-icons/bi';
 
-export function ActivityListLayout({title, comments, likes, writer, date}:any){
-    // 제목 날짜 댓글 수 좋아요 수 작성자 +(내용 조금?)
+export function ActivityPostLayout({type, content, comments, likes, writer, date}:any){
 
-    return <div className="activity-list-row">
+    return <div className="activity-post-list">
         <span className='group-left'>
-            <span>{title}</span>
+            <span className='type'>{type === 'COMMUNITY'?'커뮤':'방명록'}</span>
+            <span className='content'>{content}</span>
         </span>
         <span className='group-right'>
             <span><BiComment />  {comments}</span>
             <span><BiLike />  {likes}</span>
             <span>{writer}</span>
+            <span>{date}</span>
+        </span>
+    </div>;
+}
+
+export function ActivityCommentLayout({type, content, date}: any){
+    return <div className="activity-comment-list">
+        <span className='group-left'>
+            <span className='type'>{type === 'COMMUNITY'?'커뮤':'방명록'}</span>
+            <span className='content'>{content}</span>
+        </span>
+        <span className='group-right'>
             <span>{date}</span>
         </span>
     </div>;

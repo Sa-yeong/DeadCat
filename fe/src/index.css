@@ -52,4 +52,18 @@
 
 body {
   margin: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a #141417;
+  scrollbar-gutter: stable;
+}
+::-webkit-scrollbar{
+  width: 12px;
+}
+::-webkit-scrollbar-track{
+  background: #141417;
+}
+::-webkit-scrollbar-thumb{
+  background-color: #4a4a4a;
+  border-radius: 10px;
+  border: 3px solid #141417;
 }

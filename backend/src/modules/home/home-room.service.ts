@@ -85,6 +85,41 @@ export class HomeRoomsService {
         );
     }
 
+    // 거실의 보유 종목을 기준으로 당일 등락률 계산
+    // 보유 종목의 당일 등락률을 매입금액 기준으로 가중평균
+    private async calculateDailyProfitRate(holdings: any[]): Promise<number> {
+        if (!holdings || holdings.length === 0) return 0;
+
+        const stockCodes = holdings.map((h) => h.stocks.code);
+        const priceMap = await this.priceService.readPrices(stockCodes);
+
+        let totalPurchase = 0;
+        let weightedDailyRate = 0;
+
+        for (const h of holdings) {
+            const quantity = Number(h.quantity);
+            const meanPrice = Number(h.mean_price_krw);
+            const purchaseAmount = meanPrice * quantity;
+
+            const cached = priceMap.get(h.stocks.code);
+
+            // 기존 시세 데이터의 당일 등락률 사용
+            if (!cached || !Number.isFinite(Number(cached.change_rate))) {
+                continue;
+            }
+
+            const dailyRate = Number(cached.change_rate);
+
+            // 매입금액을 가중치로 적용
+            weightedDailyRate += dailyRate * purchaseAmount;
+            totalPurchase += purchaseAmount;
+        }
+
+        if (totalPurchase === 0) return 0;
+
+        return Number((weightedDailyRate / totalPurchase).toFixed(2));
+    }
+
     // 10.1 필터용 시스템 태그 목록 조회
     async getTags(): Promise<GetTagsResponseDto> {
         const tags = await this.repository.findAllTags();
@@ -147,7 +182,7 @@ export class HomeRoomsService {
                 user_id: u.id.toString(),
                 nickname: u.nickname,
                 room_img_url: this.getPresetRoomImgUrl(u.id, u.profile_img_url),
-                profit_rate: await this.calculateUserProfitRate(u.holdings),
+                profit_rate: await this.calculateDailyProfitRate(u.holdings),
                 tags: u.have_tags.map((ht) => ht.tags.content),
                 holdings: u.holdings,
             })),
@@ -157,7 +192,8 @@ export class HomeRoomsService {
         if (tags) {
             const selectedTags = tags.split(',').map((t) => t.trim());
             roomCards = roomCards.filter((r) =>
-                selectedTags.some((st) => r.tags.includes(st)),
+                //selectedTags.some((st) => r.tags.includes(st)),
+                selectedTags.every((st) => r.tags.includes(st)),
             );
         }
 

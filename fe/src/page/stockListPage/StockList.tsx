@@ -1,6 +1,6 @@
 import './StockList.css'
 import { useState, useEffect } from "react";
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { StockRow } from "./StockRow";
 import { api } from '../../api/axios';
 import dayjs, { Dayjs } from 'dayjs';
@@ -19,6 +19,8 @@ interface StockItem{
 }
 
 export function StockList(){
+    const navigate = useNavigate();
+
     const [stockRows, setStockRows] = useState<StockItem[]>([]);
     const [standardDate, setStandardDate] = useState<Dayjs>(dayjs());
 
@@ -84,7 +86,7 @@ export function StockList(){
         <div className='table-body'>
             {
                 stockRows.map((stock) => 
-                <StockRow key={stock.stock_code} 
+                <StockRow key={stock.stock_code}
                 order={stock.rank} 
                 s_name={stock.stock_name} 
                 c_price={stock.current_price} 
@@ -93,7 +95,8 @@ export function StockList(){
                 isLike={stock.is_favorite}
                 s_code= {stock.stock_code} 
                 market={stock.market}
-                mouseOver={() => setActiveImg(stock.character_img_url)} />)
+                mouseOver={() => setActiveImg(stock.character_img_url)} 
+                onClick={() => navigate(`/stocks/${stock.stock_code}`)}/>)
             }
         </div>
     </div>;

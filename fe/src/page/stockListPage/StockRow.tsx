@@ -6,7 +6,7 @@ import Login from '../../common/Login';
 import { api } from '../../api/axios';
 
 
-export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_code, market, mouseOver}:any){
+export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_code, market, mouseOver, onClick}:any){
     const [isLiked, setIsLiked] = useState(isLike);
     const [open, setOpen] = useState(false);
 
@@ -73,7 +73,7 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         }
     }
 
-     return <div className='list-row' onMouseOver={mouseOver}>
+     return <div className='list-row' onMouseOver={mouseOver} onClick={onClick}>
         <span className='stock-order'>{order}</span>
         {(typeof isLiked==='string')?(
             <span className='standard-date'>
@@ -84,14 +84,11 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
             { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
             </span>
         )}
-        {/* <span onClick={toggleHeart}>
-            { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
-        </span> */}
         <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
         <span className='stock-name'>{s_name}</span>
         <span className='current-price'>{formatComma(market, c_price)}</span>
         <span className='rise-rate' 
-            style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'black':((rise_rate>0) ?'red':'blue')}}>
+            style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'white':((rise_rate>0) ?'#f04452':'#5c96f5')}}>
             {(typeof rise_rate =='string')?rise_rate:rise_rate + '%'}
         </span>
         <span className='trading-value'>{formatToEok(t_value)}</span>

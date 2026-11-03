@@ -1,9 +1,12 @@
 import './CategoryModal.css'
 import { StockRow } from '../page/stockListPage/StockRow';
+import { useNavigate } from 'react-router-dom';
 import { IoClose } from "react-icons/io5";
 
 export function CategoryModal({isOpen, onClose, category, stocks}:any){
     if(!isOpen) return null;
+
+    const navigate = useNavigate();
 
     return <div className="modal-overlay" onClick={onClose}>
         <div className="cate-modal" onClick={(e) => e.stopPropagation()}>
@@ -31,9 +34,10 @@ export function CategoryModal({isOpen, onClose, category, stocks}:any){
                         t_value={stock.trading_value}
                         isLike={stock.is_favorite}
                         market={stock.market}
-                        key={stock.stock_code} />
+                        key={stock.stock_code}
+                        onClick={() => navigate(`/stocks/${stock.stock_code}`)} />
                 )}
             </div>
-        </div>;
+        </div>
     </div>;
 }

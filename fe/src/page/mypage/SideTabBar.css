@@ -1,11 +1,19 @@
 .sideBar a{
     text-decoration: none;
-    color: black;
     font-family: inherit;
+    border-radius: 10px;
     cursor: pointer;
-    border: 1px solid black;
     margin: 0px auto;
     padding: 10px;
     width: 220px;
-    /* background: #decbf446; */
+    color: #566072;
+    font-size: medium;
+}
+.sideBar a:hover{
+    background: #161c24;
+    color: white;
+}
+.sideBar a.active{
+    background: #232b3a;
+    color: white;
 }

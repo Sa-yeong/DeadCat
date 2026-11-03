@@ -50,7 +50,7 @@ export class UserController {
     }
     //19. 거실 공유여부 설정
     @UseGuards(JwtAuthGuard)
-    @Patch('me/share-option')
+    @Patch('users/me/share-option')
     async updateShareOption(
         @User() userId: bigint,
         @Body() dto: UpdateShareOptionDto,
