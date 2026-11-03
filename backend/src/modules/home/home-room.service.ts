@@ -192,7 +192,8 @@ export class HomeRoomsService {
         if (tags) {
             const selectedTags = tags.split(',').map((t) => t.trim());
             roomCards = roomCards.filter((r) =>
-                selectedTags.some((st) => r.tags.includes(st)),
+                //selectedTags.some((st) => r.tags.includes(st)),
+                selectedTags.every((st) => r.tags.includes(st)),
             );
         }
 
