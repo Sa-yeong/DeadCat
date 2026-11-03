@@ -3,15 +3,20 @@ import { useLayout } from '../layout';
 import { Block } from './Block';
 import { up, won } from '../format';
 import { R } from '../radius';
+import { createOrder, errorMessage } from '../api';
 
 /**
  * 매수/매도 주문. 전송 전 입력 상태를 자기가 들고 있어 «Control».
  * {주문가능금액 확인 없음 — 검증 규칙 미정}
  *
+ * POST /orders 로 지정가 주문을 보낸다(2026-11-03 연결 — 그 전엔 가짜로 0.3초 기다리기만 했다).
+ * 결과(체결 · 대기 접수 · 실패 이유)는 '주문 총액' 자리에 4초 동안 보인다.
+ *
  * 성공·실패와 무관하게 끝나면 onDone을 부른다 → 페이지가 현재가·호가를
  * 즉시 한 번 다시 받는다. 옛 값을 들고 있으면 사용자가 또 누른다.
  */
 export function OrderBlock({
+  stockCode,
   currentPrice,
   picked,
   solid,
@@ -19,6 +24,7 @@ export function OrderBlock({
   onDone,
   onFilled,
 }: {
+  stockCode: string;
   currentPrice: number;
   /** 호가창에서 누른 가격 — n이 바뀔 때마다 가격 칸을 덮어쓴다 */
   picked: { price: number; n: number } | null;
@@ -50,15 +56,39 @@ export function OrderBlock({
   }, [pickedN]);
   const [qty, setQty] = useState('10');
   const [sending, setSending] = useState(false);
+  /** 마지막 주문 결과 — '주문 총액' 자리에 4초 */
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    if (!result) return;
+    const t = window.setTimeout(() => setResult(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [result]);
 
   const total = (Number(price) || 0) * (Number(qty) || 0);
 
   const submit = async () => {
+    const p = Number(price);
+    const q = Number(qty);
+    if (!p || !q) {
+      setResult({ ok: false, text: !p ? '가격을 입력해 주세요.' : '수량을 입력해 주세요.' });
+      return;
+    }
     setSending(true);
+    setResult(null);
     try {
-      // 실 API 교체 지점 — POST /orders. 실패하면 던지므로 아래 반응은 성공했을 때만 간다
-      await new Promise((r) => setTimeout(r, 300));
-      onFilled?.(side);
+      const r = await createOrder({ stock_code: stockCode, order_side: side, quantity: q, price: p });
+      const label = side === 'BUY' ? '매수' : '매도';
+      if (r.status === 'COMPLETED') {
+        setResult({ ok: true, text: `${label} 체결됐어요.` });
+        // 캐릭터 반응은 실제로 체결됐을 때만
+        onFilled?.(side);
+      } else if (r.status === 'PENDING') {
+        setResult({ ok: true, text: `${won(p)}원 ${label} 대기 주문으로 접수됐어요.` });
+      } else {
+        setResult({ ok: false, text: r.message || '주문이 거절됐어요.' });
+      }
+    } catch (e) {
+      setResult({ ok: false, text: errorMessage(e) });
     } finally {
       setSending(false);
       onDone();
@@ -86,8 +116,15 @@ export function OrderBlock({
           <Field id="dc-order-qty" label="수량" value={qty} onChange={(v) => setQty(v.replace(/[^\d]/g, ''))} />
         </div>
 
-        <div className="flex items-center justify-between" style={{ height: 18, fontSize: 12.5 }}>
-          <span style={{ color: '#A5A59C' }}>주문 총액</span>
+        <div className="flex items-center justify-between" style={{ height: 18, gap: 8, fontSize: 12.5 }}>
+          {/* 주문 결과는 블럭 높이를 늘리지 않으려고 '주문 총액' 자리에 잠깐 띄운다 — 호가창 몫을 줄이지 않게 */}
+          {result ? (
+            <span role="status" className="truncate" style={{ minWidth: 0, color: result.ok ? '#8FD18F' : '#FF8A80' }} title={result.text}>
+              {result.text}
+            </span>
+          ) : (
+            <span style={{ color: '#A5A59C' }}>주문 총액</span>
+          )}
           <span style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 14, fontWeight: 700 }}>{won(total)}</span>
         </div>
 

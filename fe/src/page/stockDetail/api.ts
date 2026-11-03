@@ -116,6 +116,34 @@ export interface EmotionSimulateInput {
 export const simulateEmotion = (input: EmotionSimulateInput) =>
   post<EmotionResult>('/characters/emotion/simulate', input);
 
+/* ── 주문 — 로그인 필요(JwtAuthGuard) ─────────────────── */
+
+export interface OrderResult {
+  code: string;
+  message: string;
+  order_id: string;
+  /** COMPLETED = 체결 · PENDING = 대기 주문으로 접수 · REJECTED = 거절 */
+  status: 'COMPLETED' | 'PENDING' | 'REJECTED';
+}
+
+/**
+ * POST /orders — 화면의 주문 블럭은 가격 칸이 있는 지정가 주문이다(LIMIT).
+ * 백엔드는 접수 순간 체결 조건이면(매수: 현재가 ≤ 가격, 매도: 현재가 ≥ 가격) 바로 체결하고,
+ * 아니면 대기 주문으로 둔다 — 가격 칸이 현재가로 채워져 있으므로 보통은 바로 체결된다.
+ */
+export const createOrder = (body: { stock_code: string; order_side: 'BUY' | 'SELL'; quantity: number; price: number }) =>
+  post<OrderResult>('/orders', { ...body, order_type: 'LIMIT' });
+
+/** 실패한 요청에서 사용자에게 보일 문장 — 서버가 보낸 message 를 우선 */
+export function errorMessage(e: unknown): string {
+  const r = (e as { response?: { status?: number; data?: { message?: string | string[] } } })?.response;
+  if (r?.status === 401) return '로그인이 필요해요.';
+  const m = r?.data?.message;
+  if (Array.isArray(m)) return m[0] ?? '주문하지 못했어요.';
+  if (m) return m;
+  return r ? '주문하지 못했어요.' : '서버에 연결하지 못했어요.';
+}
+
 /** 응답이 404(없는 종목)인지 */
 export function isNotFound(e: unknown): boolean {
   return (e as { response?: { status?: number } })?.response?.status === 404;

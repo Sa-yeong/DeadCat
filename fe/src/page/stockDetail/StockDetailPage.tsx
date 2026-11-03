@@ -344,6 +344,7 @@ export function StockDetailPage() {
 
         <OrderBlock
           key={stockCode}
+          stockCode={stockCode}
           currentPrice={basic?.current_price ?? 0}
           picked={picked?.code === stockCode ? picked : null}
           solid={solid.order}
