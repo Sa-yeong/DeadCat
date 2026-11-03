@@ -1,0 +1,126 @@
+/* 글로벌 사이드바 — 폭 · 시간은 sidebarState.ts 의 SIDEBAR 와 맞춘다(패널 320 · 아이콘 줄 56 · 220ms) */
+.dc-sb {
+    position: relative;
+    /* 왼쪽 영역에서 넘쳐 나온 것(개별종목 3D 무대 등)이 있어도 사이드바가 위에 온다 */
+    z-index: 2;
+    display: flex;
+    flex-shrink: 0;
+    height: 100%;
+    font-family: 'Gothic A1', system-ui, sans-serif;
+    color: #ededea;
+}
+
+.dc-sb-panel {
+    width: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #19191c;
+    /* 왼쪽 경계선 — border 로 그리면 닫혀도 1px 이 남아서 그림자로 */
+    box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.09);
+    transition: width 220ms ease;
+}
+.dc-sb[data-open] .dc-sb-panel {
+    width: 320px;
+}
+
+.dc-sb-inner {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 320px;
+    height: 100%;
+}
+
+/* 머리 — 네비와 같은 높이 · 같은 밑줄이라 가로로 한 줄처럼 이어진다 */
+.dc-sb-head {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    flex-shrink: 0;
+    padding: 0 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+.dc-sb-head h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 22px;
+}
+
+.dc-sb-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.dc-sb-empty {
+    margin: 0;
+    padding: 28px 20px;
+    font-size: 13px;
+    line-height: 19px;
+    color: #6e6e68;
+    text-align: center;
+}
+
+/* 아이콘 줄 — 접혀도 남는다 */
+.dc-sb-rail {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 56px;
+    height: 100%;
+    padding: 8px 0;
+    background: #212126;
+    border-left: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.dc-sb-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 46px;
+    height: 52px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #9a9a93;
+    font: inherit;
+    cursor: pointer;
+}
+.dc-sb-icon span {
+    font-size: 11px;
+    line-height: 13px;
+    font-weight: 500;
+}
+.dc-sb-icon:hover {
+    color: #ededea;
+    background: rgba(255, 255, 255, 0.05);
+}
+.dc-sb-icon[data-on] {
+    color: #ededea;
+    background: rgba(255, 255, 255, 0.09);
+}
+.dc-sb-icon[data-on] span {
+    font-weight: 700;
+}
+.dc-sb-icon:focus-visible {
+    outline: 2px solid #5b49d8;
+    outline-offset: -2px;
+}
+
+/* 펼치기 · 접기 — 아이콘 줄 맨 아래 */
+.dc-sb-toggle {
+    margin-top: auto;
+}
+
+/* 움직임 줄이기 — 바로 열고 닫는다. 0 이 아닌 값이라 transitionend 는 그대로 온다 */
+@media (prefers-reduced-motion: reduce) {
+    .dc-sb-panel {
+        transition-duration: 1ms;
+    }
+}

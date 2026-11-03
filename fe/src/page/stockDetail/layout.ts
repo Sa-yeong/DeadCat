@@ -1,4 +1,5 @@
 import { createContext, useContext, useLayoutEffect, useState, type RefObject } from 'react';
+import { hostWidth, observeHost } from '../../layout/hostArea';
 
 /**
  * 시안(Claude Design 아트보드) 기준값 — 1440 × 1036 캔버스.
@@ -196,11 +197,12 @@ export function computeLayout(availW: number, availH: number): Layout {
  * 이 화면은 **자기 위에 무엇이 있는지 모른다.** 앱에서는 팀의 GlobalNavBar가,
  * 미리보기에서는 대용 네비가 위에 있다. 그래서 화면 맨 위가 문서의 어디에서
  * 시작하는지 재서, 창 높이에서 그만큼 뺀 높이를 쓴다 — 네비 높이가 바뀌어도 맞는다.
+ * 폭은 창이 아니라 화면을 담은 칸 — 오른쪽 글로벌 사이드바 밑이 잘리지 않게(hostArea).
  */
 export function useViewportLayout(root: RefObject<HTMLElement | null>): Layout {
   const read = () => {
     const top = root.current ? root.current.getBoundingClientRect().top + window.scrollY : 0;
-    return computeLayout(document.documentElement.clientWidth, window.innerHeight - top);
+    return computeLayout(hostWidth(root.current), window.innerHeight - top);
   };
   const [layout, setLayout] = useState<Layout>(() => computeLayout(window.innerWidth, window.innerHeight));
   useLayoutEffect(() => {
@@ -211,9 +213,12 @@ export function useViewportLayout(root: RefObject<HTMLElement | null>): Layout {
       raf = requestAnimationFrame(() => setLayout(read()));
     };
     window.addEventListener('resize', onResize);
+    // 창은 그대로인데 화면 칸만 바뀌는 경우(글로벌 사이드바 여닫기)
+    const unobserve = observeHost(root.current, onResize);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
+      unobserve();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

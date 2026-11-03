@@ -1,15 +1,19 @@
-/* 감정 테스트 패널(9999) 같은 개발용 패널보다 위 */
+/* 감정 테스트 패널(9999) 같은 개발용 패널보다 위.
+   우하단은 창이 아니라 왼쪽 영역의 우하단 — 사이드바 폭(--dc-sidebar-w, Root 가 정함)만큼 비켜 선다.
+   사이드바가 없는 곳(미리보기)에서는 0 이라 창 우하단 그대로 */
 .dc-notices {
     position: fixed;
-    right: 16px;
+    right: calc(var(--dc-sidebar-w, 0px) + 16px);
     bottom: 16px;
     z-index: 10000;
     display: flex;
     flex-direction: column;
     gap: 8px;
     width: 300px;
-    max-width: calc(100vw - 32px);
+    max-width: calc(100vw - var(--dc-sidebar-w, 0px) - 32px);
     pointer-events: none;
+    /* 사이드바 패널이 여닫히는 시간(Sidebar.css)과 맞춰 같이 움직인다 */
+    transition: right 220ms ease;
 }
 
 .dc-notice {
