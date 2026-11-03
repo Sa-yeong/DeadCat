@@ -24,6 +24,9 @@ const TURN_BACK_S = 0.6;
 const SLOW_DOWN_S = 0.35;
 const SLOW_MIN = 0.35;
 
+/** 창문 가운데가 옮겨 갔을 때(글로벌 사이드바 여닫기) 바닥이 따라가는 빠르기(1/초) — 0.5초쯤에 거의 다 간다 */
+const HOME_RATE = 6;
+
 export type ReturnMode = 'walk' | 'run';
 
 const follow = (cur: number, target: number, rate: number, dt: number) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
@@ -35,6 +38,10 @@ const follow = (cur: number, target: number, rate: number, dt: number) => cur + 
  *  · 화면(무대 전체, 반투명 영역 포함) 밖으로 완전히 밀려났으면 → 달려온다(허둥지둥)
  *  · 화면 안에 남아 있으면 → 걸어온다(느긋하게)
  *  · STAY_PX 보다 덜 밀렸으면 → 그 자리
+ *
+ * 창문 가운데가 옮겨 가도(moveHome — 글로벌 사이드바를 여닫아 창문이 좁아지고 넓어짐) 같은 규칙이다.
+ * 바닥(소실점)은 새 가운데로 미끄러지고, 캐릭터는 그 자리에 선 채 남았다가 걸어(뛰어) 온다.
+ * 사이드바에 가려진 것도 화면 밖으로 본다(setVisibleWidth).
  *
  * 모션은 StockStageLoop 가 튼다 — 여기서는 시작(onMove)과 도착(onArrive)만 알린다.
  * walk/run 파일이 없으면 지금 모션 그대로 미끄러져 온다.
@@ -52,6 +59,10 @@ export class StageReturn {
   private time = 0;
   /** 제자리(자는 중) — 카메라가 움직여도 걸어오지 않는다 */
   private still = false;
+  /** 창문 가운데가 옮겨 가는 중 — 도착할 가로 위치(px). 없으면 null */
+  private homeTo: number | null = null;
+  /** 무대 중 실제로 보이는 폭(px) — 이보다 오른쪽은 사이드바 밑이라 안 보인다 */
+  private visibleWidth = Infinity;
 
   onMove: ((mode: ReturnMode) => void) | null = null;
   /** 도착(또는 다시 끌려서 멈춤) — 어떻게 오던 중이었는지 */
@@ -75,6 +86,24 @@ export class StageReturn {
     this.scene.setPan(this.pan);
   }
 
+  /**
+   * 창문 가운데가 x(px)로 옮겨 갔다. 바닥은 따라 미끄러지고 캐릭터는 화면에서 그 자리에 남는다
+   * — 그다음은 끌기와 같다(걸어/뛰어 오기, 자는 중이면 제자리).
+   */
+  moveHome(x: number) {
+    this.homeTo = x;
+  }
+
+  /** 창문을 새로 다 맞췄다(창 크기 바뀜) — 옮겨 가던 것은 버린다 */
+  cancelHome() {
+    this.homeTo = null;
+  }
+
+  /** 무대 중 보이는 폭(px) — 무대 왼쪽 끝부터. 이보다 오른쪽으로 나갔으면 화면 밖이다 */
+  setVisibleWidth(w: number) {
+    this.visibleWidth = w;
+  }
+
   /** 제자리에 둔다(자는 중). 풀리면 밀려나 있던 만큼 그때 돌아온다 */
   setStill(on: boolean) {
     this.still = on;
@@ -88,6 +117,7 @@ export class StageReturn {
 
   update(dt: number) {
     this.time += dt;
+    this.glideHome(dt);
     const ppm = this.scene.pixelsPerMeter;
     const off = (this.pan - this.x) * ppm; // 가운데까지 남은 거리(px). + = 오른쪽으로 가야 함
 
@@ -123,14 +153,33 @@ export class StageReturn {
     this.scene.setRoot(this.x, this.yaw);
   }
 
-  /** 캐릭터가 무대 전체(창틀 + 반투명 영역) 밖으로 완전히 나갔나 */
+  /**
+   * 창문 가운데 쪽으로 화면을 조금씩 민다. 미는 만큼 캐릭터를 3D 공간에서 거꾸로 옮겨
+   * 화면에서는 제자리에 서 있게 한다 — 남은 거리는 update 가 걷기/뛰기로 메운다.
+   */
+  private glideHome(dt: number) {
+    const to = this.homeTo;
+    const cur = this.scene.centerX;
+    if (to === null || cur === null) return;
+    let next = follow(cur, to, HOME_RATE, dt);
+    if (Math.abs(to - next) < 0.5) {
+      next = to;
+      this.homeTo = null;
+    }
+    const dx = next - cur;
+    this.scene.shiftCenter(dx);
+    const ppm = this.scene.pixelsPerMeter;
+    if (ppm) this.x -= dx / ppm;
+  }
+
+  /** 캐릭터가 보이는 화면(창틀 + 반투명 영역, 사이드바에 가린 곳 제외) 밖으로 완전히 나갔나 */
   private offScreen(): boolean {
     const home = this.scene.home;
     if (!home) return false;
     const ppm = this.scene.pixelsPerMeter;
     const cx = home.centerX + (this.x - this.pan) * ppm;
     const half = BODY_HALF_W_M * ppm;
-    return cx + half < 0 || cx - half > home.width;
+    return cx + half < 0 || cx - half > Math.min(home.width, this.visibleWidth);
   }
 
   private start(mode: ReturnMode) {

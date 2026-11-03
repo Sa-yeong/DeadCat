@@ -9,6 +9,19 @@ export function hostWidth(el: HTMLElement | null): number {
 }
 
 /**
+ * 사이드바를 접었을 때 담은 칸이 받을 폭 — 사이드바를 여닫는 동안에도 변하지 않는다.
+ * 지금 칸 폭에 사이드바 폭을 더하면 여닫는 도중 반올림으로 1px 씩 흔들리므로, 창 폭에서 거꾸로 뺀다:
+ * 창 폭 − 칸의 왼쪽 위치 − 칸의 세로 스크롤바 − 접혀도 남는 폭(keep, 사이드바 아이콘 줄).
+ */
+export function collapsedHostWidth(el: HTMLElement | null, keep: number): number {
+  const host = el?.parentElement;
+  const doc = document.documentElement.clientWidth;
+  if (!host) return doc - keep;
+  const scrollbar = host.offsetWidth - host.clientWidth;
+  return Math.round(doc - host.getBoundingClientRect().left - scrollbar - keep);
+}
+
+/**
  * 담은 칸의 크기가 바뀌면 알린다 — 창 크기뿐 아니라 사이드바를 여닫을 때도 바뀐다.
  * 돌려준 함수로 그만 본다.
  */

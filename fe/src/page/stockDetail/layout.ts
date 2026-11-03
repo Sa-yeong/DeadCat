@@ -1,5 +1,6 @@
 import { createContext, useContext, useLayoutEffect, useState, type RefObject } from 'react';
-import { hostWidth, observeHost } from '../../layout/hostArea';
+import { collapsedHostWidth, hostWidth, observeHost } from '../../layout/hostArea';
+import { SIDEBAR, useSidebar } from '../../common/sidebar/sidebarState';
 
 /**
  * 시안(Claude Design 아트보드) 기준값 — 1440 × 1036 캔버스.
@@ -19,7 +20,6 @@ export const L = {
     order: { top: 413, height: 241 },
     volume: { top: 665, height: 226 },
   },
-  rail: { left: 1172, top: 118, width: 236, height: 773 },
   character: { left: 512, top: 134, width: 500, height: 910 },
   floor: { horizon: 260, vanishX: 762 },
 } as const;
@@ -29,7 +29,7 @@ export const L = {
  *  참고: 토스증권 차트 화면의 패널 간격. 시안(아트보드)보다 촘촘하다.            */
 const GAP = 12; //         블럭 사이 · 끝 여백 공통 간격
 const EDGE = GAP; //       화면 좌우 끝 여백 (시안 32)
-const GAP_COL_WIN = GAP; // 좌측 열 ↔ 창문, 창문 ↔ 레일 (시안 68)
+const GAP_COL_WIN = GAP; // 좌측 열 ↔ 창문 (시안 68)
 const BLOCK_GAP = GAP; //  좌측 블럭 사이 (시안 11)
 /** 종목 헤더 높이 — 코드 한 줄 + 이름·현재가 한 줄 */
 export const HEADER_TOP = 10;
@@ -57,8 +57,13 @@ const OB_BASE = L.blocks.orderbook.height; // 284 — 3단
 const OB_MIN = obHeightFor(OB_MIN_LEVELS);
 const OB_MAX = obHeightFor(OB_MAX_LEVELS);
 
-/** 이보다 작으면 스크롤한다 — 글자를 줄이지 않는 대신 치르는 값 */
-export const MIN_WIDTH = 1280;
+/**
+ * 이보다 작으면 스크롤한다 — 글자를 줄이지 않는 대신 치르는 값.
+ * 1366 노트북에서 글로벌 사이드바를 열어도(왼쪽 영역 약 970~990, 스크롤바 폭에 따라) 스크롤이 생기지 않게.
+ * 이때 창문은 약 600 — 차트 도구 줄이 한 줄에 들어가는 폭이다. 더 작은 화면은 가로 스크롤.
+ * (오른쪽 관심 레일이 있던 때는 1280 — 레일은 글로벌 사이드바로 옮겨 갔다)
+ */
+export const MIN_WIDTH = 960;
 export const MIN_STAGE = TOP + OB_MIN + BLOCK_GAP + ORDER_H + BLOCK_GAP + VOLUME_MIN + BOTTOM_MIN;
 
 export interface Rect {
@@ -70,6 +75,14 @@ export interface Rect {
 
 export interface Layout {
   width: number;
+  /** 실제로 보이는 폭 — 화면을 담은 칸의 폭. MIN_WIDTH 보다 좁으면 width 보다 작고 나머지는 스크롤해야 보인다 */
+  viewWidth: number;
+  /**
+   * 3D 무대(캔버스) 폭 — 글로벌 사이드바를 접었을 때의 폭이라 여닫아도 변하지 않는다.
+   * 열면 오른쪽이 사이드바 밑에 깔린다(화면 칸 밖이라 잘려 안 보인다). 캔버스 크기를 바꾸면
+   * 3D 를 다시 맞춰야 하고 캐릭터가 움찔하므로, 여닫을 때는 블럭 · 창문만 움직인다.
+   */
+  canvasWidth: number;
   stageHeight: number;
   win: { left: number; top: number; right: number; bottom: number };
   winWidth: number;
@@ -84,7 +97,6 @@ export interface Layout {
   };
   /** 지금 호가 블럭에 한쪽 몇 단이 들어가는지 */
   orderbookLevels: number;
-  rail: Rect;
   character: Rect;
   floor: { horizon: number; vanishX: number };
 }
@@ -92,13 +104,15 @@ export interface Layout {
 /**
  * 창 크기 → 화면 좌표.
  *
- * 가로 — 좌측 열은 왼쪽 끝, 레일은 오른쪽 끝에 붙고 창문이 그 사이를 채운다.
+ * 가로 — 좌측 열은 왼쪽 끝에 붙고 창문이 나머지를 오른쪽 끝까지 채운다.
  * 세로 — 좌측 열이 쓸 높이가 남으면 **호가가 먼저** 가져간다(한쪽 10단까지).
  *        호가가 다 차면 거래량이 나머지를 가져간다. 주문은 고정.
  *        모자라면 아래 여백 → 호가 → 거래량 순으로 줄인다.
  * 캐릭터 — 창문 높이에 비례. 상반신이 늘 같은 비율로 창문에 걸린다.
+ *
+ * canvasW — 3D 무대 폭(Layout.canvasWidth). 모르면 보이는 폭과 같게.
  */
-export function computeLayout(availW: number, availH: number): Layout {
+export function computeLayout(availW: number, availH: number, canvasW = availW): Layout {
   const width = Math.max(availW, MIN_WIDTH);
   const stageHeight = Math.max(availH, MIN_STAGE);
 
@@ -139,12 +153,10 @@ export function computeLayout(availW: number, availH: number): Layout {
   // ── 가로 ────────────────────────────────────────────────
   const colLeft = EDGE;
   const colWidth = L.colWidth;
-  const railWidth = L.rail.width;
-  const railLeft = width - EDGE - railWidth;
 
   const win = {
     left: colLeft + colWidth + GAP_COL_WIN,
-    right: railLeft - GAP_COL_WIN,
+    right: width - EDGE,
     top: WIN_TOP,
     bottom: colBottom - WIN_SHORTER,
   };
@@ -172,6 +184,8 @@ export function computeLayout(availW: number, availH: number): Layout {
 
   return {
     width,
+    viewWidth: availW,
+    canvasWidth: Math.max(canvasW, width),
     stageHeight,
     win,
     winWidth,
@@ -185,7 +199,6 @@ export function computeLayout(availW: number, availH: number): Layout {
       volume: { top: volTop, height: colBottom - volTop },
     },
     orderbookLevels: levels,
-    rail: { left: railLeft, top: TOP, width: railWidth, height: colBottom - TOP },
     character,
     floor,
   };
@@ -198,11 +211,17 @@ export function computeLayout(availW: number, availH: number): Layout {
  * 미리보기에서는 대용 네비가 위에 있다. 그래서 화면 맨 위가 문서의 어디에서
  * 시작하는지 재서, 창 높이에서 그만큼 뺀 높이를 쓴다 — 네비 높이가 바뀌어도 맞는다.
  * 폭은 창이 아니라 화면을 담은 칸 — 오른쪽 글로벌 사이드바 밑이 잘리지 않게(hostArea).
+ * 그 칸의 크기를 듣고 있어서 사이드바를 여닫으면 여닫는 동안 매 프레임 블럭 · 창문이 따라 움직인다.
+ * 3D 무대 폭은 사이드바를 접었을 때의 칸 폭이라 그동안 그대로다(Layout.canvasWidth).
  */
 export function useViewportLayout(root: RefObject<HTMLElement | null>): Layout {
+  // 사이드바가 없으면(미리보기) 무대 폭 = 칸 폭. 있으면 접혀도 남는 아이콘 줄만큼 뺀 폭
+  const keep = useSidebar() ? SIDEBAR.railWidth : 0;
   const read = () => {
-    const top = root.current ? root.current.getBoundingClientRect().top + window.scrollY : 0;
-    return computeLayout(hostWidth(root.current), window.innerHeight - top);
+    const el = root.current;
+    const top = el ? el.getBoundingClientRect().top + window.scrollY : 0;
+    const w = hostWidth(el);
+    return computeLayout(w, window.innerHeight - top, Math.max(w, collapsedHostWidth(el, keep)));
   };
   const [layout, setLayout] = useState<Layout>(() => computeLayout(window.innerWidth, window.innerHeight));
   useLayoutEffect(() => {

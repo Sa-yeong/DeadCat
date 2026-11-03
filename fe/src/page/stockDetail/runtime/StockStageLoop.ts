@@ -202,8 +202,28 @@ export class StockStageLoop {
     return this.moving;
   }
 
+  /** 화면을 새로 다 맞춘다(창 크기가 바뀜) — 캐릭터도 바로 새 자리에 선다 */
   setFraming(f: Framing) {
+    this.back.cancelHome();
     this.scene.setFraming(f);
+  }
+
+  /**
+   * 창문 가운데만 x(px)로 옮겨 갔다(글로벌 사이드바 여닫기) — 캐릭터가 걸어/뛰어 온다(StageReturn).
+   * 아직 캐릭터가 안 떴으면 기다릴 것 없이 바로 옮긴다.
+   */
+  moveHome(x: number) {
+    const cur = this.scene.centerX;
+    if (!this.ready) {
+      if (cur !== null) this.scene.shiftCenter(x - cur);
+      return;
+    }
+    this.back.moveHome(x);
+  }
+
+  /** 무대 중 보이는 폭(px) — 사이드바 밑으로 들어간 캐릭터는 화면 밖으로 본다 */
+  setVisibleWidth(w: number) {
+    this.back.setVisibleWidth(w);
   }
 
   dispose() {

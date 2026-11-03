@@ -36,6 +36,19 @@ export interface Framing {
   winMid: number;
 }
 
+/** 가로 위치(캐릭터 가운데 · 소실점)만 다른가 — 그렇다면 캔버스를 다시 맞출 필요 없이 옮기기만 한다 */
+export function onlyCenterMoved(a: Framing, b: Framing): boolean {
+  return (
+    a.width === b.width &&
+    a.height === b.height &&
+    a.headTop === b.headTop &&
+    a.hips === b.hips &&
+    a.horizon === b.horizon &&
+    a.winMid === b.winMid &&
+    a.centerX - a.vanishX === b.centerX - b.vanishX
+  );
+}
+
 /** 지금 얹혀 있는 표정 한 겹. 모션이 바뀌면 이전 겹은 서서히 빠진다 */
 interface FaceLayer {
   tracks: FaceTrack[];
@@ -245,6 +258,22 @@ export class StockScene {
   setFraming(f: Framing) {
     this.framing = f;
     this.renderer.setSize(f.width, f.height, false);
+    this.applyFraming();
+  }
+
+  /** 지금 캐릭터를 걸어 둔 가로 위치(px, 창문 가운데) — 아직 안 정했으면 null */
+  get centerX(): number | null {
+    return this.framing ? this.framing.centerX : null;
+  }
+
+  /**
+   * 캐릭터를 걸 가로 위치와 소실점을 같이 dx px 옮긴다 — 화면 전체가 그만큼 평행 이동한다
+   * (카메라는 그대로, 렌즈만 옆으로 민다). 캔버스 크기는 안 바꾸므로 매 프레임 불러도 가볍다.
+   */
+  shiftCenter(dx: number) {
+    const f = this.framing;
+    if (!f || !dx) return;
+    this.framing = { ...f, centerX: f.centerX + dx, vanishX: f.vanishX + dx };
     this.applyFraming();
   }
 
