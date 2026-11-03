@@ -176,11 +176,11 @@ export function SearchingView(){
                 if(token){
                     response = await api.get('/home/rooms/search', {
                         headers: {Authorization: `Bearer ${token}`},
-                        params: {keywords: keywords, tags: selectedTags, order: order }
+                        params: {keywords: keywords, tags: selectedTags, sort: order }
                     })
                 }else{
                     response = await api.get('home/rooms/search', {
-                        params: {tags: selectedTags, keywords: keywords, order: order}
+                        params: {tags: selectedTags, keywords: keywords, sort: order}
                     })
                 }
 
@@ -190,6 +190,11 @@ export function SearchingView(){
         };
 
         // 버튼 클릭
+        if(selectedTags.length === 0 && keywords.length === 0){
+            setClickOpp(false);
+            setClickSim(false);
+            navigate('/explore')
+        }
         if(clickSim){
             return;
         }
@@ -223,7 +228,7 @@ export function SearchingView(){
             else
                 navigate('/explore');
         }
-    }, [selectedTags, keywords, navigate, clickSim, clickOpp, order])
+    }, [selectedTags, keywords, navigate, order])
 
     return <div className='rooms-container'>
         <div className='rooms-content'>
@@ -258,7 +263,8 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             key: '1',
             label: (
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
-                onClick={()=>setOrder('DEFAULT')}>
+                onClick={()=>{setOrder('DEFAULT')
+                    setClickOpp(false); setClickSim(false);}}>
                     기본순
                     {order === 'DEFAULT' ? <FaCheck style={{color: '#528bff'}} /> : null}
                 </span>
@@ -269,7 +275,8 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             key: '2',
             label: (
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                onClick={()=>setOrder('PROFIT_HIGH')}>
+                onClick={()=>{setOrder('PROFIT_HIGH');
+                    setClickOpp(false); setClickSim(false);}}>
                     급등순
                     {order === 'PROFIT_HIGH' ? <FaCheck style={{color: '#528bff'}} /> : null}
                 </span>
@@ -279,7 +286,8 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             key: '3',
             label: (
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                onClick={()=>setOrder('PROFIT_LOW')}>
+                onClick={()=>{setOrder('PROFIT_LOW')
+                    setClickOpp(false); setClickSim(false);}}>
                     급락순
                     {order === 'PROFIT_LOW' ? <FaCheck style={{color: '#528bff'}} /> : null}
                 </span>
@@ -291,7 +299,8 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
         <span className='left-side'>
             <SearchBar onAdd={(keyword: string) => { 
                 if(!findKeyword(keyword))
-                    setKeywords(prev => [...prev, keyword])}} />
+                    setKeywords(prev => [...prev, keyword])
+                setClickOpp(false); setClickSim(false);}} />
             <Popover content={content} trigger={"click"} arrow={false} placement='bottomLeft'
             title='태그 목록'>
                 <button>
