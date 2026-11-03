@@ -5,6 +5,7 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 export class AssetRepository {
     constructor(private readonly prisma: PrismaService) {}
 
+    //유저 자산정보 조회
     async findUserAssetData(userId: string) {
         const bigIntUserId = BigInt(userId);
 

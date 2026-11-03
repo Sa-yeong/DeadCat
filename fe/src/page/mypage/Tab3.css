@@ -38,6 +38,31 @@
     color: white;
     font-weight: 550;
 }
+.tab3 .header .search-bar{
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.tab3 .header .search-bar svg{
+    position: absolute;
+    left: 13px;
+    width: 15px;
+    height: 15px;
+    color: #9a9a93;
+    pointer-events: none;
+}
+.tab3 .header .search-bar input{
+    box-sizing: border-box;
+    width: 250px;
+    height: 40px;
+    padding: 0 14px 0 34px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 5px;
+    background: #2a2a2e;
+    color: #ededea;
+    font: inherit;
+    font-size: medium;
+}
 
 
 

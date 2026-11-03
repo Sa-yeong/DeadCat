@@ -21,6 +21,14 @@
     margin-left: 5px;
 }
 
+.roomList-container>div .no-room{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    font-weight: 500;
+}
+
 /* 캐러셀 */
 .roomList-container div .rooms-carousel .slick-dots.slick-dots-top{
     justify-content: end;

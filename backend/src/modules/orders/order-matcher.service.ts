@@ -5,6 +5,7 @@ import { PriceService } from 'src/price/price.service';
 import { KisProvider } from 'src/providers/kis/kis.provider';
 import { OrderSide } from './dto/create-order.dto';
 import { isForeignStock, isTriggered, toKrw, toMinor } from './order-rules';
+import { TagAssignmentService } from '../tags/services/tag-assignment.service';
 
 /** 체결에 필요한 대기 주문 정보 */
 export interface FillTarget {
@@ -33,7 +34,25 @@ export class OrderMatcher {
         private readonly repo: OrdersRepository,
         private readonly price: PriceService,
         private readonly kis: KisProvider,
+        // 주문 체결 후 투자 성향 태그 갱신
+        private readonly tagAssignmentService: TagAssignmentService,
     ) {}
+
+    /**
+     * 대기 주문 체결 완료 후 투자 성향 태그 갱신
+     */
+    private async refreshInvestmentTags(userId: bigint): Promise<void> {
+        try {
+            // 최신 보유 종목 기준으로 투자 성향 재계산
+            await this.tagAssignmentService.assignInvestmentTags(userId);
+        } catch (error) {
+            // 태그 갱신 실패가 이미 완료된 거래에 영향을 주지 않도록 로그 기록
+            this.logger.error(
+                `투자 성향 태그 갱신 실패 (userId: ${userId})`,
+                error instanceof Error ? error.stack : String(error),
+            );
+        }
+    }
 
     @Cron('*/5 * * * * *')
     async sweep(): Promise<void> {
@@ -53,7 +72,8 @@ export class OrderMatcher {
                 const side = (o.side ?? 'BUY') as OrderSide;
                 if (!isTriggered(o.type, side, o.price, toMinor(now, foreign)))
                     continue;
-                await this.fill(
+                // 대기 주문 체결 시도
+                const result = await this.fill(
                     {
                         id: o.id,
                         user_id: o.user_id,
@@ -64,6 +84,11 @@ export class OrderMatcher {
                     now,
                     foreign,
                 );
+
+                // 실제 체결에 성공한 경우에만 투자 성향 태그 갱신
+                if (result === 'COMPLETED') {
+                    await this.refreshInvestmentTags(o.user_id);
+                }
             }
         } catch (e) {
             this.logger.error(

@@ -10,8 +10,6 @@ import { CategoryList } from './page/stockListPage/CategoryList';
 import { Tab1 } from './page/mypage/Tab1';
 import { Tab2 } from './page/mypage/Tab2';
 import { Tab3 } from './page/mypage/Tab3';
-import { MyStockList } from './page/mypage/MyStockList';
-import { ChangeProfile } from './page/mypage/ChangeProile';
 import { MyPosts } from './page/mypage/MyPost';
 import { MyComments } from './page/mypage/MyComment';
 import { LikePosts } from './page/mypage/LikePost';
@@ -37,11 +35,7 @@ const router = createBrowserRouter([
       {path: 'room/:userId', element: <LivingRoomPage />},
       {path: 'mypage', element: <MyPageLayout />, children: [
         {index: true, element: <Navigate to='assets' replace />},
-        {path: 'assets', element: <Tab1 />, children:[
-          {index:true, element: <MyStockList />},
-          {path: 'list', element: <MyStockList />},
-          {path: 'profile', element: <ChangeProfile />}
-        ]},
+        {path: 'assets', element: <Tab1 />},
         {path: 'history', element: <Tab2 />},
         {path: 'community', element: <Tab3 />, children: [
           {index: true, element: <Navigate to='myPosts' />},

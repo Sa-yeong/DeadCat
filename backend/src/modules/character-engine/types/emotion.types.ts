@@ -25,6 +25,24 @@ export type MotionName =
 
 export type UserAction = 'CLICK' | 'BUY' | 'SELL' | 'SPAM_CLICK';
 
+export type Emotion =
+    | 'happy'
+    | 'sad'
+    | 'tired'
+    | 'depress'
+    | 'euphoria'
+    | 'panic'
+    | 'anxious'
+    | 'sleepy';
+
+//시장 이벤트 타입정의
+export type MarketEventType =
+    | 'sideCar_P'
+    | 'sideCar_N'
+    | 'curB1'
+    | 'curB2'
+    | 'curB3';
+
 export interface UserInteraction {
     type: UserAction;
     times?: number;
@@ -69,3 +87,38 @@ export interface EmotionOutput {
     duration: number | null;
     is_holding: boolean;
 }
+
+export interface CharacterData {
+    characterId: string; // stock_code 또는 stock_id
+    emotion: Emotion;
+}
+
+export interface FurnitureData {
+    furnitureId: string;
+    model: string;
+}
+
+// FE 전달용 SSE 이벤트 타입
+export type FeedEvent =
+    | {
+          type: 'snapshot';
+          data: {
+              characters: CharacterData[];
+              furniture: FurnitureData[];
+          };
+      }
+    | {
+          type: 'emotion';
+          characterId: string;
+          emotion: Emotion;
+      }
+    | {
+          type: 'marketEvent';
+          event: MarketEventType;
+          startedAt: number;
+          durationMs: number;
+      }
+    | {
+          type: 'marketEventEnded';
+          event: MarketEventType;
+      };

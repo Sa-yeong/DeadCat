@@ -75,7 +75,7 @@ export function Tab3(){
 
     return <div className="tab3">
         <div className='header'>
-            <ListTab list={[['작성 글', '/mypage/community/myPosts'],
+            <ListTab list={[[`작성 글 ${writtenPosts.length}`, '/mypage/community/myPosts'],
             ['작성 댓글', '/mypage/community/myComments'], ['좋아요 한 글', '/mypage/community/likes']]}/>
             <SearchBar placeholder='내 글에서 검색' />
         </div>

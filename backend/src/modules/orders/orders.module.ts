@@ -5,9 +5,10 @@ import { OrdersRepository } from './orders.repository';
 import { OrderMatcher } from './order-matcher.service';
 import { PriceModule } from 'src/price/price.module';
 import { KisModule } from 'src/providers/kis/kis.module';
+import { TagModule } from '../tags/tag.module';
 
 @Module({
-    imports: [PriceModule, KisModule],
+    imports: [PriceModule, KisModule, TagModule],
     controllers: [OrdersController],
     providers: [OrdersService, OrdersRepository, OrderMatcher],
 })

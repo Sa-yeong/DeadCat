@@ -50,7 +50,7 @@ export function Tab2(){
             }catch(e){console.error('거래내역 조회 실패: ', e);}
         }
 
-    useEffect(() => { fetchTransac(); },[type])
+    useEffect(() => { fetchTransac(); },[type, startDate, endDate])
 
     return <div className="tab2">
         <div className='tab2-header'>
@@ -63,7 +63,7 @@ export function Tab2(){
                 </span>
             </Dropdown>
             <div className='filter'>
-                <TransacFilter setType={setType} 
+                <TransacFilter startDate={startDate} endDate={endDate}
                 setStartDate={setStartDate} setEndDate={setEndDate} fetchTransac={fetchTransac} />
             </div>
         </div>
@@ -91,7 +91,7 @@ export function Tab2(){
     </div>;
 }
 
-function TransacFilter({setType, setStartDate, setEndDate, fetchTransac}:any){
+function TransacFilter({startDate, setStartDate, endDate, setEndDate, fetchTransac}:any){
     // 달력 미래 날짜 비활성화 변수
     const disableFutureDate = (current: dayjs.Dayjs) => {
         return current && current > dayjs().endOf('day');
@@ -99,7 +99,11 @@ function TransacFilter({setType, setStartDate, setEndDate, fetchTransac}:any){
 
     return <>
         <span className='calendar'>
-            <RangePicker defaultValue={[null, dayjs()]} disabledDate={disableFutureDate}
+            <RangePicker disabledDate={disableFutureDate}
+            value={[
+                startDate? dayjs(startDate) : null,
+                endDate? dayjs(endDate) : null
+            ]}
             onChange={(dates, dateString) => {
                 if(dates){ // 시작일과 종료일 둘다 정상적으로 선택되었을 경우
                     setStartDate(dateString[0]?dateString[0]:null);
@@ -107,7 +111,6 @@ function TransacFilter({setType, setStartDate, setEndDate, fetchTransac}:any){
                 } else { // x 버튼을 눌러 초기화시
                     setStartDate(null);
                     setEndDate(dayjs().format('YYYY-MM-DD'));
-                    fetchTransac();
                 }
             }} />
         </span>

@@ -21,12 +21,8 @@ export class PlacedCharacterDto {
     stock_return_rate!: number;
     holding_shares!: number;
     affinity_level!: number;
-    emotion!: string;
-    mood_desc!: string;
+    // emotion!: string;
     active_costume_id!: number | null;
-    target_object_id!: number | null;
-    position!: Vector3Dto;
-    rotation!: Vector3Dto;
     received_reactions!: ReactionCountDto[];
 }
 

@@ -9,8 +9,9 @@ import { GoMirror } from 'react-icons/go';
 import { api } from '../../api/axios';
 
 
-interface  RoomDetail{
+interface RoomDetail{
     user_id: string;
+    nickname: string;
     room_img_url: string;
     profit_rate: number;
     tags: string[];
@@ -26,6 +27,8 @@ export function SearchingView(){
     const [clickSim, setClickSim] = useState<boolean>(false);
     const [clickOpp, setClickOpp] = useState<boolean>(false);
     const [rooms, setRooms] = useState<RoomDetail[]>([]);
+    const [riseRooms, setRiseRooms] = useState<RoomDetail[]>([]);
+    const [fallRooms, setFallRooms] = useState<RoomDetail[]>([]);
 
     const cancelAll = () => {
         // 초기화
@@ -70,6 +73,7 @@ export function SearchingView(){
             setKeywords(prev => prev.filter(keyword => keyword !== current));
     }
 
+    // 처음 렌더링 시
     useEffect(() => {
         const fetchTags = async () => {
             try{
@@ -82,12 +86,84 @@ export function SearchingView(){
                     response = await api.get('/home/rooms/tags');
                 }
 
-                setTags(response.data.data.tags);
+                setTags(response.data.data.data.tags);
+                console.log(response.data.data.data.tags);
             }catch(e){console.error(`전체 태그 목록 조회 실패: `, e)}
+        }
+        
+        const fetchRooms = async () => {
+            try{
+                const token = localStorage.getItem('token');
+
+                let response;
+                if(token){
+                    response = await api.get('/home/rooms/explore',
+                        {headers: {Authorization: `Bearer ${token}`}}
+                    )
+                }else{response = await api.get('/home/rooms/explore')}
+
+                setRiseRooms(response.data.data.data.soaring_rooms);
+                setFallRooms(response.data.data.data.plummeting_rooms);
+                console.log(response.data.data.data);
+            }catch(e){console.error('급등 / 급락 거실 조회 실패: ', e);}
         }
 
         fetchTags();
+        fetchRooms();
     }, [])
+
+    // 유사, 반대 조회
+    useEffect(() => {
+        const fetchSim = async () => {
+            try{
+                const token = localStorage.getItem('token');
+
+                if(!token) {
+                    // 로그인 모달 창 띄우기
+                }
+
+                const response = await api.get('/home/rooms/similar', {
+                    headers: {Authorization: `Bearer ${token}`},
+                    params: {sort: {order}}
+                });
+
+                setRooms(response.data.data.data.rooms);
+                setSeletedTags(response.data.data.data.reference_tags)
+                console.log('유사한 거실 조회 성공 ', response.data.data.data)
+            }catch(e){console.error('유사한 거실 조회 실패: ', e);}
+        }
+
+        const fetchOpp = async () => {
+            try{
+                const token = localStorage.getItem('token');
+
+                if(!token) {
+                    // 로그인 모달 창 띄우기
+                }
+
+                const response = await api.get('/home/rooms/opposite', {
+                    headers: {Authorization: `Bearer ${token}`},
+                    params: {sort: {order}}
+                });
+
+                setRooms(response.data.data.data.rooms);
+                setSeletedTags(response.data.data.data.reference_tags)
+                console.log('정반대 거실 조회 성공 ', response.data.data.data)
+            }catch(e){console.error('정반대 거실 조회 실패: ', e);}
+        }
+
+        // 버튼 클릭
+        if(clickSim){
+            fetchSim();
+            navigate('./search');
+            return;
+        }
+        if(clickOpp){
+            fetchOpp();
+            navigate('./search');
+            return;
+        }
+    }, [clickSim, clickOpp, order])
 
     // 검색 관련
     useEffect(() => {
@@ -108,51 +184,16 @@ export function SearchingView(){
                     })
                 }
 
-                setRooms(response.data.data.rooms);
+                setRooms(response.data.data.data.rooms);
+                console.log(response.data.data.data);
             }catch(e){console.error('거실 리스트 조회 실패: ', e)}
         };
 
-        const fetchSim = async () => {
-            try{
-                const token = localStorage.getItem('token');
-
-                if(!token) {
-                    // 로그인 모달 창 띄우기
-                }
-
-                const response = await api.get('/home/rooms/similar', {
-                    headers: {Authorization: `Bearer ${token}`}
-                });
-
-                setRooms(response.data.data.rooms);
-            }catch(e){console.error('유사한 거실 조회 실패: ', e);}
-        }
-
-        const fetchOpp = async () => {
-            try{
-                const token = localStorage.getItem('token');
-
-                if(!token) {
-                    // 로그인 모달 창 띄우기
-                }
-
-                const response = await api.get('/home/rooms/opposite', {
-                    headers: {Authorization: `Bearer ${token}`}
-                });
-
-                setRooms(response.data.data.rooms);
-            }catch(e){console.error('정반대 거실 조회 실패: ', e);}
-        }
-
         // 버튼 클릭
         if(clickSim){
-            fetchSim();
-            navigate('./search');
             return;
         }
         if(clickOpp){
-            fetchOpp();
-            navigate('./search');
             return;
         }
         // 태그 검색
@@ -186,42 +227,29 @@ export function SearchingView(){
 
     return <div className='rooms-container'>
         <div className='rooms-content'>
-            <Header tags={tags} order={order} setOrder={setOrder}
-            selectedTags={selectedTags}setSelectedTags={setSeletedTags}
+            <Header tags={tags} order={order} setOrder={setOrder} setSelectedTags={setSeletedTags}
             setKeywords={setKeywords} setClickSim={setClickSim} setClickOpp={setClickOpp}
             findTag={findTag} findKeyword={findKeyword} />
-            <Outlet context={{cancelAll, deleteTag, deleteKeyword}} />
+            <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, riseRooms, fallRooms, rooms}} />
         </div>
     </div>
     ;
 }
 
-function Header({tags, order, setOrder, selectedTags, setSelectedTags, setKeywords,
+function Header({tags, order, setOrder, setSelectedTags, setKeywords,
     setClickSim, setClickOpp, findTag, findKeyword}:any){  
     // 태그 종류
     const content = (
         // api 연결 후 사용할 코드
-        // <div style={{display: 'flex', gap: '8px'}}>
-        //     {
-        //         tags.map((tag) => {
-        //             <p key={tag.tag_id}>{tag.name}</p>
-        //         })
-        //     }
-        // </div>
-
         <div style={{display: 'flex', gap: '8px'}}>
-            <p onClick={(tag) => {if(!findTag(tag.currentTarget.getHTML()))
-                setSelectedTags(prev => [...prev, '단기 투자'])}}>
-                단기 투자</p>   
-            <p onClick={(tag) => {if(!findTag(tag.currentTarget.getHTML())) 
-                setSelectedTags(prev => [...prev, '장기 투자'])}}>
-                장기 투자</p>
-            <p onClick={(tag) => {if(!findTag(tag.currentTarget.getHTML()))
-                setSelectedTags(prev => [...prev, '안전 추구'])}}>
-                안전 추구</p>
-            <p onClick={(tag) => {if(!findTag(tag.currentTarget.getHTML()))
-                setSelectedTags(prev => [...prev, '공격 투자'])}}>
-                공격 투자</p>
+            {
+                tags.map((tag) => {
+                    return <p onClick={() => {if(!findTag(tag.name))
+                        setSelectedTags(prev => [...prev, tag.name])
+                    }}
+                    key={tag.tag_id}>{tag.name}</p>
+                })
+            }
         </div>
     )
 
