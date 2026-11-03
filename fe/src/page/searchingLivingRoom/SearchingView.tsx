@@ -163,7 +163,7 @@ export function SearchingView(){
             navigate('./search');
             return;
         }
-    }, [clickSim, clickOpp, order])
+    }, [clickSim, clickOpp])
 
     // 검색 관련
     useEffect(() => {

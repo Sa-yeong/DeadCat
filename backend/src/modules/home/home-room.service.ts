@@ -264,6 +264,7 @@ export class HomeRoomsService {
 
         // 1. 현재 사용자의 시스템 투자 성향 태그 조회
         const myTags = await this.repository.getUserTags(currentUserId);
+
         const referenceTags = this.filterSystemTags(
             myTags.map((tag) => tag.content),
         );
@@ -387,17 +388,22 @@ export class HomeRoomsService {
             }),
         );
 
-        // 5. 정렬 처리
+        // 5. 반대 태그가 하나 이상 일치하는 사용자만 필터링
+        const filteredRooms = rankedRooms.filter(
+            (room) => room.oppositeCount > 0,
+        );
+
+        // 6. 정렬 처리
         if (sort === 'PROFIT_HIGH') {
-            rankedRooms.sort((a, b) => b.profit_rate - a.profit_rate);
+            filteredRooms.sort((a, b) => b.profit_rate - a.profit_rate);
         } else if (sort === 'PROFIT_LOW') {
-            rankedRooms.sort((a, b) => a.profit_rate - b.profit_rate);
+            filteredRooms.sort((a, b) => a.profit_rate - b.profit_rate);
         } else {
             // 기본값: 반대 투자 성향 태그가 많은 순
-            rankedRooms.sort((a, b) => b.oppositeCount - a.oppositeCount);
+            filteredRooms.sort((a, b) => b.oppositeCount - a.oppositeCount);
         }
 
-        // 6. 응답 반환
+        // 7. 응답 반환
         return {
             is_success: true,
             code: 'COMMON200',
@@ -405,7 +411,9 @@ export class HomeRoomsService {
             data: {
                 // 반대 거실 탐색에 사용한 기준 태그
                 reference_tags: referenceTags,
-                rooms: rankedRooms.map(({ oppositeCount, ...rest }) => rest),
+
+                // 필터링 및 정렬된 거실 목록 반환
+                rooms: filteredRooms.map(({ oppositeCount, ...rest }) => rest),
             },
         };
     }

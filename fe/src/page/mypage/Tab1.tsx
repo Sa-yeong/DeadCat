@@ -1,7 +1,5 @@
 import './Tab1.css'
-import { Outlet, useNavigate } from 'react-router-dom';
-// import { ChangeNickModal } from '../../modal/ChangeNickModal';
-// import { LuPencilLine } from 'react-icons/lu';
+import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { api } from '../../api/axios';
 import { MyStockList } from './MyStockList';
@@ -23,39 +21,9 @@ interface Assets{
 }
 
 export function Tab1(){
+    const navigate = useNavigate();
     const [mydata, setMydata] = useState<Me|null>(null);
     
-    return <div  className='tab1'>
-        <span className='assetInfo'> <AssetInfo /> </span>
-        <span className='charac'> <Represent mydata={mydata} setMydata={setMydata} /> </span>
-        <div className='holdings'>
-            <MyStockList />
-        </div>
-    </div>;
-}
-
-// 대표 캐릭터 이미지
-function Represent({mydata, setMydata}:any){
-    const [open, setOpen] = useState(false);
-    const [isShared, setIsShared] = useState<boolean>(mydata?.share_option);
-    const navigate = useNavigate();
-
-    const fetchSharedOption = async () => {
-        try{
-            const token = localStorage.getItem('token');
-
-            if(!token){
-                navigate('/login', {replace:true});
-                return null;
-            }
-
-            await api.patch('/users/me/share-option', 
-                {share_option: isShared},
-                {headers: {Authorization: `Bearer ${token}`}}
-            )
-        }catch(e){console.error('공유 여부 변경 실패: ', e);}
-    }
-
     useEffect(() => {
         const fetchMyData = async () => {
             try{
@@ -81,7 +49,38 @@ function Represent({mydata, setMydata}:any){
 
         fetchMyData();
         
-    }, [isShared])
+    }, [])
+    
+    return <div  className='tab1'>
+        <span className='assetInfo'> <AssetInfo /> </span>
+        <span className='charac'> <Represent mydata={mydata} /> </span>
+        <div className='holdings'>
+            <MyStockList />
+        </div>
+    </div>;
+}
+
+// 대표 캐릭터 이미지
+function Represent({mydata}:any){
+    const navigate = useNavigate();
+
+    const fetchSharedOption = async (newState: boolean) => {
+        try{
+            const token = localStorage.getItem('token');
+            console.log(newState);
+
+            if(!token){
+                navigate('/login', {replace:true});
+                return null;
+            }
+
+            await api.patch('/users/me/share-option', 
+                {share_option: newState},
+                {headers: {Authorization: `Bearer ${token}`}}
+            )
+        }catch(e){console.error('공유 여부 변경 실패: ', e);}
+    }
+
 
     return<>
         <div>
@@ -105,8 +104,12 @@ function Represent({mydata, setMydata}:any){
                 </div>
             </div>
             <div className='checkbox'>
-                <input type='checkbox' defaultChecked={isShared}
-                onClick={() => {setIsShared(!isShared); fetchSharedOption();}} />
+                <input type='checkbox' checked={mydata?.share_option}
+                onChange={(e) => {
+                    const newState = e.target.checked;
+                    setIsShared(newState);
+                    fetchSharedOption(newState);
+                }} />
                 내 거실 공유 허용
             </div>
         </div>
