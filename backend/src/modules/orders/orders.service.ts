@@ -5,13 +5,15 @@ import {
     NotFoundException,
     ServiceUnavailableException,
 } from '@nestjs/common';
-import { OrdersRepository } from './orders.repository';
+import { OrdersRepository, type OrderGuard } from './orders.repository';
 import { CreateOrderDto, OrderSide, OrderType } from './dto/create-order.dto';
 import { CreateOrderResponseDto } from './dto/create-order-response.dto';
 import { PendingOrderDto } from './dto/pending-order.dto';
+import { OrderAvailableDto } from './dto/order-available.dto';
 import { PriceService } from 'src/price/price.service';
 import { KisProvider } from 'src/providers/kis/kis.provider';
 import { OrderMatcher } from './order-matcher.service';
+import { OrderFundsService } from './order-funds.service';
 import {
     StoredType,
     apiType,
@@ -34,6 +36,8 @@ import { MarketTimeService } from '../character-engine/service/market-time.servi
  *  시장가 — 현재가로 즉시 체결(해외는 원화 환산). 장외에는 거절.
  *  지정가·예약 — PENDING으로 저장하고 체결은 OrderMatcher가 맡는다. 장외에도 접수한다.
  *    장중에 접수 순간 이미 조건이 맞으면(예: 현재가보다 높은 지정가 매수) 바로 한 번 체결을 시도한다.
+ *  접수 검사 — 대기 주문만큼 뺀 주문가능 금액 · 매도가능 수량으로 본다(OrderFundsService).
+ *    돈 · 주식을 옮기지는 않으므로 체결 순간 검사(조건부 update)도 그대로 남아 있다.
  */
 @Injectable()
 export class OrdersService {
@@ -48,6 +52,7 @@ export class OrdersService {
         // 투자 성향 태그 갱신 서비스
         private readonly tagAssignmentService: TagAssignmentService,
         private readonly marketTime: MarketTimeService,
+        private readonly funds: OrderFundsService,
     ) {}
 
     async createOrder(
@@ -97,15 +102,19 @@ export class OrdersService {
                 throw new BadRequestException('현재가 조회에 실패했습니다.');
             }
             const rate = foreign ? await this.usdKrw() : 1;
+            const tradePrice = toKrw(now, foreign, rate);
             const { orderId, filledPrice } =
-                await this.ordersRepository.executeMarketOrder({
-                    userId,
-                    stockId: stock.id,
-                    side: dto.order_side,
-                    quantity: dto.quantity,
-                    tradePrice: toKrw(now, foreign, rate),
-                    orderPrice: toMinor(now, foreign),
-                });
+                await this.ordersRepository.executeMarketOrder(
+                    {
+                        userId,
+                        stockId: stock.id,
+                        side: dto.order_side,
+                        quantity: dto.quantity,
+                        tradePrice,
+                        orderPrice: toMinor(now, foreign),
+                    },
+                    await this.fundsGuard(userId, stock.id, dto, tradePrice),
+                );
 
             // 시장가 주문 체결이 완료된 후 태그 갱신
             await this.refreshInvestmentTags(userId);
@@ -125,16 +134,22 @@ export class OrdersService {
             type = reservedType(target, toMinor(now, foreign));
         }
 
-        await this.precheck(userId, stock.id, dto, foreign);
-
-        const { id } = await this.ordersRepository.createPendingOrder({
-            userId,
-            stockId: stock.id,
-            side: dto.order_side,
-            type,
-            quantity: dto.quantity,
-            price: target,
-        });
+        // 해외 대기 매수는 필요 금액을 지금 환율로 본다 — 매도는 금액을 보지 않아 환율이 필요 없다
+        const unitKrw =
+            dto.order_side === OrderSide.BUY
+                ? toKrw(dto.price!, foreign, foreign ? await this.usdKrw() : 1)
+                : 0n;
+        const { id } = await this.ordersRepository.createPendingOrder(
+            {
+                userId,
+                stockId: stock.id,
+                side: dto.order_side,
+                type,
+                quantity: dto.quantity,
+                price: target,
+            },
+            await this.fundsGuard(userId, stock.id, dto, unitKrw),
+        );
 
         // 장중에 접수 순간 이미 체결 조건이면 바로 체결 시도(지정가에서 흔함)
         if (
@@ -162,6 +177,27 @@ export class OrdersService {
             return this.response(id, status, stock, dto, fillPrice);
         }
         return this.response(id, 'PENDING', stock, dto, null);
+    }
+
+    /** 쓸 수 있는 양 — 주문가능 금액(원) + stockCode를 주면 그 종목 매도가능 수량 */
+    async available(
+        userId: bigint,
+        stockCode?: string,
+    ): Promise<OrderAvailableDto> {
+        let sellable: number | null = null;
+        if (stockCode) {
+            const stock =
+                await this.ordersRepository.findStockByCode(stockCode);
+            if (!stock)
+                throw new NotFoundException('존재하지 않는 종목 코드입니다.');
+            sellable = await this.funds.sellableQuantity(userId, stock.id);
+        }
+        const cash = await this.funds.availableCash(
+            userId,
+            await this.funds.usdKrw(),
+        );
+        if (cash == null) throw new BadRequestException('유저 없음');
+        return { available_cash: Number(cash), sellable_quantity: sellable };
     }
 
     /** 내 대기 주문 목록 (stockCode를 주면 그 종목만) */
@@ -278,32 +314,36 @@ export class OrdersService {
     }
 
     /**
-     * 접수 전 명백히 안 되는 주문을 거른다(돈·주식을 묶어 두지는 않는다 — 체결 순간 다시 검사).
-     * 매수: 잔고 ≥ 지정가 × 수량(해외는 지금 환율로 환산) / 매도: 보유 ≥ 수량
+     * 주문 접수 검사 — 저장소가 사용자 행을 잠근 트랜잭션 안에서 부른다.
+     * 매수: 필요 금액(1주 원화 × 수량) ≤ 주문가능 금액 / 매도: 수량 ≤ 매도가능 수량.
+     * 환율은 잠금을 잡기 전에 여기서 받아 둔다.
      */
-    private async precheck(
+    private async fundsGuard(
         userId: bigint,
         stockId: bigint,
         dto: CreateOrderDto,
-        foreign: boolean,
-    ): Promise<void> {
+        unitKrw: bigint,
+    ): Promise<OrderGuard> {
         if (dto.order_side === OrderSide.BUY) {
-            const rate = foreign ? await this.usdKrw() : 1;
-            const need =
-                toKrw(dto.price!, foreign, rate) * BigInt(dto.quantity);
-            const balance = await this.ordersRepository.findBalance(userId);
-            if (balance == null) throw new BadRequestException('유저 없음');
-            if (balance < need)
-                throw new BadRequestException('잔고가 부족합니다.');
-        } else {
-            const held = await this.ordersRepository.findHoldingQuantity(
+            const usdKrw = await this.funds.usdKrw();
+            return async (tx) => {
+                const cash = await this.funds.availableCash(userId, usdKrw, tx);
+                if (cash == null) throw new BadRequestException('유저 없음');
+                if (cash < unitKrw * BigInt(dto.quantity)) {
+                    throw new BadRequestException('주문가능 금액이 부족해요.');
+                }
+            };
+        }
+        return async (tx) => {
+            const sellable = await this.funds.sellableQuantity(
                 userId,
                 stockId,
+                tx,
             );
-            if (held < dto.quantity) {
-                throw new BadRequestException('보유 수량이 부족합니다.');
+            if (sellable < dto.quantity) {
+                throw new BadRequestException('매도가능 수량이 부족해요.');
             }
-        }
+        };
     }
 
     /** fillPrice = 체결가(시장 통화 최소 단위). 응답의 가격은 전부 시장 통화로 내보낸다 */

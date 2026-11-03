@@ -113,6 +113,41 @@ export function formatTick(price: number, rule: TickRule): string {
     return `${tickSize(price, rule).toLocaleString('ko-KR')}원`;
 }
 
+/* ── 쓸 수 있는 양 — 돈 · 주식을 옮기지 않고 대기 주문만큼 빼서 계산한다 ── */
+
+export interface PendingBuy {
+    /** 시장 통화 최소 단위 */
+    price: bigint | null;
+    quantity: number;
+    foreign: boolean;
+}
+
+/**
+ * 주문가능 금액(원) = 잔고 − 대기 매수의 지정가 × 수량. 해외는 usdKrw로 환산.
+ * 이미 걸려 있던 초과 대기 주문 · 환율 변동으로 음수가 될 수 있어 0 아래로 내려가지 않게 한다.
+ */
+export function availableCash(
+    balance: bigint,
+    pendingBuys: readonly PendingBuy[],
+    usdKrw: number,
+): bigint {
+    const locked = pendingBuys.reduce((sum, o) => {
+        if (o.price == null) return sum;
+        const unit = toKrw(fromMinor(o.price, o.foreign), o.foreign, usdKrw);
+        return sum + unit * BigInt(o.quantity);
+    }, 0n);
+    return balance > locked ? balance - locked : 0n;
+}
+
+/** 매도가능 수량 = 보유 수량 − 그 종목 대기 매도 수량(0 아래로 내려가지 않음) */
+export function sellableQuantity(
+    held: number,
+    pendingSells: readonly { quantity: number }[],
+): number {
+    const locked = pendingSells.reduce((sum, o) => sum + o.quantity, 0);
+    return Math.max(0, held - locked);
+}
+
 /** 저장 유형 → API 유형 */
 export const apiType = (stored: string): 'MARKET' | 'LIMIT' | 'RESERVED' =>
     stored === 'RSV_UP' || stored === 'RSV_DOWN'

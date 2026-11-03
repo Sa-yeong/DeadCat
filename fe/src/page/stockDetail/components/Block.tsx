@@ -127,6 +127,7 @@ export function Block({
   width,
   height,
   tabs,
+  note,
   children,
 }: {
   title: string;
@@ -138,6 +139,8 @@ export function Block({
   height: number;
   /** 머리 줄 칩을 탭으로 — 없으면 블럭 이름 칩 하나 */
   tabs?: ReactNode;
+  /** 머리 줄 오른쪽, 배경 전환 버튼 앞에 놓는 작은 정보 */
+  note?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -154,7 +157,14 @@ export function Block({
         background: solid ? SOLID : TRANSLUCENT,
       }}
     >
-      <PanelHeader right={<SunToggle solid={solid} onToggle={onToggle} label={`${title} 블럭 배경 전환`} />}>
+      <PanelHeader
+        right={
+          <>
+            {note}
+            <SunToggle solid={solid} onToggle={onToggle} label={`${title} 블럭 배경 전환`} />
+          </>
+        }
+      >
         {tabs ?? <TabChip active label={title} />}
       </PanelHeader>
       <div className="flex min-h-0 flex-1 flex-col" style={{ padding: '10px 14px' }}>

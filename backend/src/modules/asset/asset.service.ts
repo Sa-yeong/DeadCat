@@ -2,12 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { AssetRepository } from './asset.repository';
 import { AssetInfoResponseDto } from './dto/asset-info-response.dto';
 import { PriceService } from '../../price/price.service';
+import { OrderFundsService } from '../orders/order-funds.service';
 
 @Injectable()
 export class AssetService {
     constructor(
         private readonly assetRepository: AssetRepository,
         private readonly priceService: PriceService,
+        private readonly funds: OrderFundsService,
     ) {}
 
     async getMyAssetInfo(userId: string): Promise<AssetInfoResponseDto> {
@@ -22,6 +24,12 @@ export class AssetService {
                 '사용자의 자산 정보를 찾을 수 없습니다.',
             );
         }
+
+        // 주문가능 금액 — 대기 매수만큼 뺀 값. 주문 접수 검사와 같은 계산
+        const availableCash = await this.funds.availableCash(
+            BigInt(userId),
+            await this.funds.usdKrw(),
+        );
 
         const holdings = userData.holdings || [];
 
@@ -69,7 +77,7 @@ export class AssetService {
         }
 
         return new AssetInfoResponseDto({
-            available_cash: String(userData.balance ?? 0),
+            available_cash: String(availableCash ?? 0),
             total_investment: String(totalInvestmentBigInt),
             total_valuation_profit: String(totalValuationProfitBigInt),
             valuation_return_rate: valuationReturnRate,

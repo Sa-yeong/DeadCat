@@ -1,5 +1,5 @@
 export class AssetInfoResponseDto {
-    available_cash: string; // 총주문가능금액(씨드머니)
+    available_cash: string; // 주문가능 금액 — 잔고에서 대기 매수만큼 뺀 값
     total_investment: string; // 총투자금액(매입금액)
     total_valuation_profit: string; // 총 평가 손익
     valuation_return_rate: number; // 총 수익률

@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLayout } from '../layout';
 import { Block, TabChip } from './Block';
-import { up, won } from '../format';
+import { availableLabel, up, won } from '../format';
 import { R } from '../radius';
 import { createOrder, errorMessage } from '../api';
 import type { StockBasic } from '../types';
 import { cleanPriceInput, formatPriceInput, priceToInput, snapToTick, tickDown, tickUp } from '../tick';
 import { OrderConfirmDialog, shouldSkipConfirm, type OrderDraft } from './OrderConfirmDialog';
 import { PendingOrderList, usePendingOrders } from './PendingOrders';
+import { useOrderAvailable } from '../useOrderAvailable';
 import { notify } from '../../../common/notifications/store';
 import { failedNotice, money, orderResultNotice } from '../../../common/notifications/orderNotices';
 
 /**
  * 매수/매도 주문. 전송 전 입력 상태를 자기가 들고 있어 «Control».
- * {주문가능금액 확인 없음 — 검증 규칙 미정}
+ * 머리 줄에 주문가능 금액(매수) · 매도가능 수량(매도)을 보인다. 넘는 주문은 서버가 거절한다.
  *
  * 시장가 — 가격 칸은 현재가를 흐리게 보여주기만 한다. 장외에는 고를 수 없다.
  * 지정가 — 가격 칸이 시세를 따라간다. 직접 입력 · ± · 호가 누르기 중 하나를 하면 그때부터 고정,
@@ -55,6 +56,7 @@ export function OrderBlock({
 
   const [tab, setTab] = useState<'order' | 'pending'>('order');
   const { orders: pending, reload: reloadPending } = usePendingOrders(stockCode);
+  const { available, reload: reloadAvailable } = useOrderAvailable(stockCode);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [type, setType] = useState<'MARKET' | 'LIMIT'>(marketClosed ? 'LIMIT' : 'MARKET');
   /** 사용자가 고정한 지정가(콤마 없는 글자) — null이면 시세를 따라간다 */
@@ -93,6 +95,11 @@ export function OrderBlock({
   const priceText = following ? livePrice : pinned;
   const total = (Number(priceText) || 0) * (Number(qty) || 0);
 
+  const chooseSide = (next: 'BUY' | 'SELL') => {
+    setSide(next);
+    void reloadAvailable();
+  };
+
   const chooseType = (next: 'MARKET' | 'LIMIT') => {
     if (next === 'MARKET' && marketClosed) return;
     setType(next);
@@ -128,6 +135,7 @@ export function OrderBlock({
       setSending(false);
       onDone();
       void reloadPending();
+      void reloadAvailable();
     }
   };
 
@@ -145,6 +153,13 @@ export function OrderBlock({
 
   const closeDraft = useCallback(() => setDraft(null), []);
 
+  const availableText = availableLabel(side, available);
+
+  const afterCancel = async () => {
+    void reloadAvailable();
+    await reloadPending();
+  };
+
   return (
     <>
       <Block
@@ -155,6 +170,13 @@ export function OrderBlock({
         top={b.top}
         width={L.colWidth}
         height={b.height}
+        note={
+          tab === 'order' && availableText ? (
+            <span title={availableText} style={{ fontSize: 11, color: '#A5A59C', whiteSpace: 'nowrap' }}>
+              {availableText}
+            </span>
+          ) : undefined
+        }
         tabs={
           <>
             <TabChip active={tab === 'order'} onClick={() => setTab('order')} label="주문" />
@@ -170,12 +192,12 @@ export function OrderBlock({
         }
       >
         {tab === 'pending' ? (
-          <PendingOrderList orders={pending} onChanged={reloadPending} />
+          <PendingOrderList orders={pending} onChanged={afterCancel} />
         ) : (
           <div className="flex flex-col" style={{ gap: 8 }}>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              <SideButton active={side === 'BUY'} onClick={() => setSide('BUY')} tone={up} label="매수" />
-              <SideButton active={side === 'SELL'} onClick={() => setSide('SELL')} tone="#5B8CFF" label="매도" />
+              <SideButton active={side === 'BUY'} onClick={() => chooseSide('BUY')} tone={up} label="매수" />
+              <SideButton active={side === 'SELL'} onClick={() => chooseSide('SELL')} tone="#5B8CFF" label="매도" />
             </div>
 
             <div className="flex" style={{ gap: 8 }}>

@@ -4,6 +4,16 @@ export const won = (n: number) => n.toLocaleString('ko-KR');
 
 export const signed = (n: number) => (n > 0 ? `+${won(n)}` : won(n));
 
+/** 주문 블럭의 쓸 수 있는 양 — 매수는 주문가능 금액(늘 원), 매도는 매도가능 수량. 모르면 null(표시 안 함) */
+export function availableLabel(
+  side: 'BUY' | 'SELL',
+  a: { available_cash: number; sellable_quantity: number | null } | null,
+): string | null {
+  if (!a) return null;
+  if (side === 'BUY') return `주문가능 ${won(a.available_cash)}원`;
+  return a.sellable_quantity == null ? null : `매도가능 ${won(a.sellable_quantity)}주`;
+}
+
 export const pct = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(2)}%`;
 /** 관심종목 레일용 — 시안은 소수 1자리 */
 export const pct1 = (n: number) => `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;

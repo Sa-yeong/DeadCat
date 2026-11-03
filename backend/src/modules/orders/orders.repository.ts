@@ -4,6 +4,9 @@ import { Prisma } from 'generated/prisma/client';
 import { OrderSide } from './dto/create-order.dto';
 import type { StoredType } from './order-rules';
 
+/** 접수 검사 — 사용자 행을 잠근 트랜잭션 안에서 불린다. 통과 못 하면 던진다(아무것도 저장되지 않음) */
+export type OrderGuard = (tx: Prisma.TransactionClient) => Promise<void>;
+
 /** 체결 한 건에 필요한 값 */
 interface TradeParams {
     userId: bigint;
@@ -31,58 +34,63 @@ export class OrdersRepository {
         });
     }
 
-    async findBalance(userId: bigint): Promise<bigint | null> {
-        const u = await this.prisma.users.findUnique({
-            where: { id: userId },
-            select: { balance: true },
-        });
-        return u ? u.balance : null;
-    }
-
-    async findHoldingQuantity(
+    /**
+     * 같은 사용자의 주문 접수를 한 줄로 세운다 — 거의 동시에 들어온 두 주문이 같은 잔고를 보고 둘 다 통과하지 않게.
+     * 트랜잭션이 끝날 때 풀린다.
+     */
+    private async lockUser(
+        tx: Prisma.TransactionClient,
         userId: bigint,
-        stockId: bigint,
-    ): Promise<number> {
-        const h = await this.prisma.holdings.findUnique({
-            where: { user_id_stock_id: { user_id: userId, stock_id: stockId } },
-            select: { quantity: true },
-        });
-        return h?.quantity ?? 0;
+    ): Promise<void> {
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
     }
 
-    /** 대기 주문 저장(지정가·예약). price = 시장 통화 최소 단위(국내 원, 해외 센트) */
-    async createPendingOrder(data: {
-        userId: bigint;
-        stockId: bigint;
-        side: OrderSide;
-        type: StoredType;
-        quantity: number;
-        price: bigint;
-    }) {
-        return await this.prisma.orders.create({
-            data: {
-                user_id: data.userId,
-                stock_id: data.stockId,
-                side: data.side,
-                type: data.type,
-                quantity: data.quantity,
-                price: data.price,
-                status: 'PENDING',
-                create_at: new Date(),
-            },
-            select: { id: true },
+    /**
+     * 대기 주문 저장(지정가·예약). price = 시장 통화 최소 단위(국내 원, 해외 센트)
+     * 사용자 행을 잠그고 guard(접수 검사)를 통과해야 저장한다.
+     */
+    async createPendingOrder(
+        data: {
+            userId: bigint;
+            stockId: bigint;
+            side: OrderSide;
+            type: StoredType;
+            quantity: number;
+            price: bigint;
+        },
+        guard: OrderGuard,
+    ) {
+        return await this.prisma.$transaction(async (tx) => {
+            await this.lockUser(tx, data.userId);
+            await guard(tx);
+            return await tx.orders.create({
+                data: {
+                    user_id: data.userId,
+                    stock_id: data.stockId,
+                    side: data.side,
+                    type: data.type,
+                    quantity: data.quantity,
+                    price: data.price,
+                    status: 'PENDING',
+                    create_at: new Date(),
+                },
+                select: { id: true },
+            });
         });
     }
 
     /**
-     * 시장가: 체결 + 주문 기록을 **한 트랜잭션**으로. 체결이 실패하면 주문 기록도 남지 않는다.
+     * 시장가: 접수 검사 + 체결 + 주문 기록을 **한 트랜잭션**으로(사용자 행 잠금). 실패하면 주문 기록도 남지 않는다.
      * orderPrice = 주문 기록에 남길 가격이자 체결가(시장 통화 최소 단위)
      * 접수 응답으로 화면이 결과를 바로 알기 때문에 알림은 이미 보여준 것으로 둔다(notified_at).
      */
     async executeMarketOrder(
         params: TradeParams & { orderPrice: bigint },
+        guard: OrderGuard,
     ): Promise<{ orderId: bigint; filledPrice: bigint }> {
         return await this.prisma.$transaction(async (tx) => {
+            await this.lockUser(tx, params.userId);
+            await guard(tx);
             await this.applyTrade(tx, params);
             const now = new Date();
             const order = await tx.orders.create({

@@ -176,6 +176,15 @@ export const getPendingOrders = (code: string) => get<PendingOrder[]>('/orders/p
 export const cancelOrder = (orderId: string) =>
   del<Omit<OrderResult, 'status'> & { status: 'CANCELLED' }>(`/orders/${encodeURIComponent(orderId)}`);
 
+/** GET /orders/available — 대기 주문만큼 뺀, 지금 쓸 수 있는 양 */
+export interface OrderAvailable {
+  /** 주문가능 금액(원) — 해외 종목을 볼 때도 원이다 */
+  available_cash: number;
+  /** 이 종목 매도가능 수량 */
+  sellable_quantity: number | null;
+}
+export const getOrderAvailable = (code: string) => get<OrderAvailable>('/orders/available', { stock_code: code });
+
 /** 실패한 요청에서 사용자에게 보일 문장 — 서버가 보낸 message 를 우선 */
 export function errorMessage(e: unknown, fallback = '주문하지 못했어요.'): string {
   const r = (e as { response?: { status?: number; data?: { message?: string | string[] } } })?.response;

@@ -12,7 +12,6 @@ export class AssetRepository {
         return await this.prisma.users.findUnique({
             where: { id: bigIntUserId },
             select: {
-                balance: true,
                 holdings: {
                     select: {
                         stock_id: true,
