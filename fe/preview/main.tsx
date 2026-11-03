@@ -1,4 +1,4 @@
-/** 단일 HTML 미리보기 전용 엔트리 — 라우터 없이 개별종목 화면만 렌더 */
+/** 단일 HTML 미리보기 전용 엔트리 — 팀 라우터 · 네비 없이 개별종목 화면 + 글로벌 사이드바만 렌더 */
 // 가짜 백엔드 · 3D 파일 — 화면 코드보다 먼저 깔아야 첫 조회부터 가로챈다
 import './mockApi';
 import { StrictMode } from 'react';
@@ -8,7 +8,15 @@ import '../src/styles/dc.css';
 import { StockDetailPage } from '../src/page/stockDetail/StockDetailPage';
 import { GlobalBar } from '../src/page/stockDetail/components/GlobalBar';
 import { StageDevPanel } from './StageDevPanel';
-import { NotificationCenter } from '../src/common/notifications/NotificationCenter';
+import { Shell } from './Shell';
+
+// 로그인 — 가짜 백엔드는 토큰이 있으면 「내 계좌」를 답한다. 주소에 ?guest 를 붙이면 로그인 안 한 상태로 시작
+try {
+  if (location.search.includes('guest')) localStorage.removeItem('token');
+  else if (!localStorage.getItem('token')) localStorage.setItem('token', 'preview-token');
+} catch {
+  /* 저장소가 막힌 창 — 로그인 안 한 상태로 본다 */
+}
 
 // 미리보기 표시 — 캐릭터 런타임이 감정 테스트 패널에 자신을 건넨다
 (window as unknown as { __DC_PREVIEW__?: boolean }).__DC_PREVIEW__ = true;
@@ -20,13 +28,14 @@ createRoot(document.getElementById('root')!).render(
         <Route
           path="/stocks/:stockCode"
           element={
-            <>
+            <Shell>
               {/* 앱에서는 팀의 GlobalNavBar가 이 자리를 맡는다. 미리보기에서만 대용 네비 */}
               <GlobalBar />
-              <StockDetailPage />
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', background: '#0b0d12', color: 'white' }}>
+                <StockDetailPage />
+              </div>
               <StageDevPanel />
-              <NotificationCenter />
-            </>
+            </Shell>
           }
         />
       </Routes>

@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { Outlet } from "react-router-dom";
 import { GlobalNavBar } from "../common/GlobalNavBar";
+import { FavoritesSync } from "../common/favorites/FavoritesSync";
 import { NotificationCenter } from "../common/notifications/NotificationCenter";
 import { Sidebar } from "../common/sidebar/Sidebar";
 import { SidebarContext, sidebarWidth } from "../common/sidebar/sidebarState";
@@ -31,6 +32,8 @@ export default function Root(){
             <Sidebar />
             {/* 화면에는 창 기준(fixed)으로 뜨지만 --dc-sidebar-w 를 물려받으려고 이 안에 둔다 */}
             <NotificationCenter />
+            {/* 관심 종목 — 사이드바가 닫혀 있어도 종목리스트 하트가 쓰므로 앱 틀에서 로그인을 따라간다 */}
+            <FavoritesSync />
         </div>
     </SidebarContext.Provider>;
 }
