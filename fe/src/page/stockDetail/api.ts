@@ -31,6 +31,14 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return res.data.data;
 }
 
+async function del<T>(url: string): Promise<T> {
+  const res = await api.delete<{ success: boolean; data: T }>(url, { headers: authHeader() });
+  return res.data.data;
+}
+
+/** 로그인 토큰이 있는가 — 로그인해야만 되는 조회를 괜히 보내 401을 만들지 않으려고 */
+export const hasLogin = () => authHeader() !== undefined;
+
 const path = (code: string) => `/stocks/${encodeURIComponent(code)}`;
 
 /** GET /stocks/{code} — 현재가·등락률. 전일대비(원)는 오지 않는다 → QuoteSync가 계산 */
@@ -148,14 +156,39 @@ export type OrderInput = { stock_code: string; order_side: 'BUY' | 'SELL'; quant
 );
 export const createOrder = (body: OrderInput) => post<OrderResult>('/orders', body);
 
+/** GET /orders/pending 한 줄 */
+export interface PendingOrder {
+  order_id: string;
+  stock_code: string;
+  stock_name: string;
+  order_side: 'BUY' | 'SELL';
+  order_type: 'MARKET' | 'LIMIT' | 'RESERVED';
+  quantity: number;
+  /** 지정가(시장 통화) */
+  price: number | null;
+  currency: 'KRW' | 'USD';
+  created_at: string;
+}
+/** 이 종목의 내 대기 주문 — 최근 접수가 먼저 */
+export const getPendingOrders = (code: string) => get<PendingOrder[]>('/orders/pending', { stock_code: code });
+
+/** DELETE /orders/{id} — 내 대기 주문 취소. 그 사이 체결됐으면 서버가 404로 거절한다 */
+export const cancelOrder = (orderId: string) =>
+  del<Omit<OrderResult, 'status'> & { status: 'CANCELLED' }>(`/orders/${encodeURIComponent(orderId)}`);
+
 /** 실패한 요청에서 사용자에게 보일 문장 — 서버가 보낸 message 를 우선 */
-export function errorMessage(e: unknown): string {
+export function errorMessage(e: unknown, fallback = '주문하지 못했어요.'): string {
   const r = (e as { response?: { status?: number; data?: { message?: string | string[] } } })?.response;
   if (r?.status === 401) return '로그인이 필요해요.';
   const m = r?.data?.message;
   if (Array.isArray(m)) return m[0] ?? '주문하지 못했어요.';
   if (m) return m;
-  return r ? '주문하지 못했어요.' : '서버에 연결하지 못했어요.';
+  return r ? fallback : '서버에 연결하지 못했어요.';
+}
+
+/** 응답이 401(로그인 안 됨 · 풀림)인지 */
+export function isUnauthorized(e: unknown): boolean {
+  return (e as { response?: { status?: number } })?.response?.status === 401;
 }
 
 /** 응답이 404(없는 종목)인지 */

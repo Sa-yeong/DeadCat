@@ -52,6 +52,15 @@ function filled(o: Pick<OrderResultLike, 'stock_code' | 'stock_name' | 'order_si
 
 export const failedNotice = (message: string): NoticeInput => ({ tone: 'FAIL', title: ['주문 실패'], body: [message] });
 
+/** 대기 주문을 취소했다 — 실패가 아니라 띠는 매수 · 매도 색 */
+export const cancelledNotice = (o: Pick<OrderResultLike, 'stock_name' | 'order_side' | 'quantity'>): NoticeInput => ({
+  tone: o.order_side,
+  title: ['대기 취소'],
+  body: [`${o.stock_name} ${o.quantity}주 `, { side: o.order_side }, ' 대기를 취소했어요'],
+});
+
+export const cancelFailedNotice = (message: string): NoticeInput => ({ tone: 'FAIL', title: ['취소 실패'], body: [message] });
+
 /** 주문 응답 → 알림. 체결 · 대기 접수 · 그 밖은 실패 */
 export function orderResultNotice(r: OrderResultLike): NoticeInput {
   if (r.status === 'COMPLETED') return filled(r);

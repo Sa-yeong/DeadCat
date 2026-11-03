@@ -6,6 +6,17 @@ import { notify } from './store';
 const isOrderNotification = (d: unknown): d is OrderNotification =>
   (d as OrderNotification | null)?.type === 'order' && typeof (d as OrderNotification).order_id === 'string';
 
+const listeners = new Set<(n: OrderNotification) => void>();
+
+/**
+ * 통로로 받은 나중 체결 · 거절(놓친 것 포함)을 화면도 듣는다 — 대기 목록처럼 다시 받아야 하는 곳.
+ * 주문마다 한 번만 온다. 돌려주는 함수로 끊는다.
+ */
+export function subscribeOrderEvents(fn: (n: OrderNotification) => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 /**
  * 대기 주문이 나중에 체결 · 거절됐을 때의 알림 통로(지시서 6 · 7). 로그인한 동안만 연다.
  *   GET /notifications/stream 으로 실시간 이벤트를 받고, 이을 때마다(처음 · 끊겼다가 다시) GET /notifications/unread 로 놓친 것을 받는다.
@@ -32,6 +43,8 @@ export function startOrderFeed(token: string): () => void {
       .catch((e) => console.warn('[알림 통로] 보여줬음 표시 실패', e));
   };
 
+  const tell = (list: OrderNotification[]) => list.forEach((n) => listeners.forEach((fn) => fn(n)));
+
   const loadMissed = async () => {
     try {
       const res = await api.get<{ data: OrderNotification[] }>('/notifications/unread', { headers });
@@ -39,6 +52,7 @@ export function startOrderFeed(token: string): () => void {
       const list = fresh(res.data.data);
       missedNotices(list).forEach(notify);
       markRead(list);
+      tell(list);
     } catch (e) {
       console.warn('[알림 통로] 놓친 알림 조회 실패', e);
     }
@@ -56,6 +70,7 @@ export function startOrderFeed(token: string): () => void {
       const list = fresh([d]);
       list.map(laterNotice).forEach(notify);
       markRead(list);
+      tell(list);
     },
   });
 

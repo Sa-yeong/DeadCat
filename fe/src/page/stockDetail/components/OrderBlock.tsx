@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLayout } from '../layout';
-import { Block } from './Block';
+import { Block, TabChip } from './Block';
 import { up, won } from '../format';
 import { R } from '../radius';
 import { createOrder, errorMessage } from '../api';
 import type { StockBasic } from '../types';
 import { cleanPriceInput, formatPriceInput, priceToInput, snapToTick, tickDown, tickUp } from '../tick';
 import { OrderConfirmDialog, shouldSkipConfirm, type OrderDraft } from './OrderConfirmDialog';
+import { PendingOrderList, usePendingOrders } from './PendingOrders';
 import { notify } from '../../../common/notifications/store';
 import { failedNotice, money, orderResultNotice } from '../../../common/notifications/orderNotices';
 
@@ -17,6 +18,8 @@ import { failedNotice, money, orderResultNotice } from '../../../common/notifica
  * 시장가 — 가격 칸은 현재가를 흐리게 보여주기만 한다. 장외에는 고를 수 없다.
  * 지정가 — 가격 칸이 시세를 따라간다. 직접 입력 · ± · 호가 누르기 중 하나를 하면 그때부터 고정,
  *          「현재가」를 누르면 다시 따라간다. 낡은 가격으로 주문이 나가지 않게 하려는 것이다.
+ *
+ * 머리 줄 탭 「주문 | 대기」 — 대기 탭은 지금 종목의 대기 주문 목록. 탭을 오가도 입력은 그대로 남는다.
  *
  * 결과(체결 · 대기 접수 · 서버 거절)는 앱 공용 알림으로 띄운다. '주문 총액' 자리에는 입력 오류만 4초 동안 보인다.
  *
@@ -50,6 +53,8 @@ export function OrderBlock({
   const currentPrice = basic?.current_price ?? 0;
   const marketClosed = basic?.market_open === false;
 
+  const [tab, setTab] = useState<'order' | 'pending'>('order');
+  const { orders: pending, reload: reloadPending } = usePendingOrders(stockCode);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [type, setType] = useState<'MARKET' | 'LIMIT'>(marketClosed ? 'LIMIT' : 'MARKET');
   /** 사용자가 고정한 지정가(콤마 없는 글자) — null이면 시세를 따라간다 */
@@ -77,6 +82,7 @@ export function OrderBlock({
   useEffect(() => {
     if (!picked || picked.n === seenPick.current) return;
     seenPick.current = picked.n;
+    setTab('order'); // 대기 탭을 보고 있어도 누른 결과가 보이게
     setType('LIMIT');
     setPinned(priceToInput(snapToTick(picked.price, rule), rule));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,6 +127,7 @@ export function OrderBlock({
     } finally {
       setSending(false);
       onDone();
+      void reloadPending();
     }
   };
 
@@ -148,95 +155,112 @@ export function OrderBlock({
         top={b.top}
         width={L.colWidth}
         height={b.height}
+        tabs={
+          <>
+            <TabChip active={tab === 'order'} onClick={() => setTab('order')} label="주문" />
+            <TabChip
+              active={tab === 'pending'}
+              onClick={() => {
+                setTab('pending');
+                void reloadPending();
+              }}
+              label={pending.rows.length ? `대기 ${pending.rows.length}` : '대기'}
+            />
+          </>
+        }
       >
-        <div className="flex flex-col" style={{ gap: 8 }}>
-          <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            <SideButton active={side === 'BUY'} onClick={() => setSide('BUY')} tone={up} label="매수" />
-            <SideButton active={side === 'SELL'} onClick={() => setSide('SELL')} tone="#5B8CFF" label="매도" />
-          </div>
+        {tab === 'pending' ? (
+          <PendingOrderList orders={pending} onChanged={reloadPending} />
+        ) : (
+          <div className="flex flex-col" style={{ gap: 8 }}>
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <SideButton active={side === 'BUY'} onClick={() => setSide('BUY')} tone={up} label="매수" />
+              <SideButton active={side === 'SELL'} onClick={() => setSide('SELL')} tone="#5B8CFF" label="매도" />
+            </div>
 
-          <div className="flex" style={{ gap: 8 }}>
-            <div className="flex min-w-0 flex-1 flex-col" style={{ gap: 4 }}>
-              {/* 블럭 높이를 늘리지 않으려고 시장가/지정가 · 현재가를 '가격' 글자 줄에 붙인다 */}
-              <div className="flex items-center" style={{ height: 15, gap: 6 }}>
-                <label htmlFor="dc-order-price" style={FIELD_LABEL}>
-                  가격
-                </label>
-                <div role="group" aria-label="주문 종류" className="flex" style={{ gap: 2 }}>
-                  <MiniButton
-                    label="시장가"
-                    active={type === 'MARKET'}
-                    disabled={marketClosed}
-                    title={marketClosed ? '장 시간이 아니에요' : undefined}
-                    onClick={() => chooseType('MARKET')}
-                  />
-                  <MiniButton label="지정가" active={type === 'LIMIT'} onClick={() => chooseType('LIMIT')} />
+            <div className="flex" style={{ gap: 8 }}>
+              <div className="flex min-w-0 flex-1 flex-col" style={{ gap: 4 }}>
+                {/* 블럭 높이를 늘리지 않으려고 시장가/지정가 · 현재가를 '가격' 글자 줄에 붙인다 */}
+                <div className="flex items-center" style={{ height: 15, gap: 6 }}>
+                  <label htmlFor="dc-order-price" style={FIELD_LABEL}>
+                    가격
+                  </label>
+                  <div role="group" aria-label="주문 종류" className="flex" style={{ gap: 2 }}>
+                    <MiniButton
+                      label="시장가"
+                      active={type === 'MARKET'}
+                      disabled={marketClosed}
+                      title={marketClosed ? '장 시간이 아니에요' : undefined}
+                      onClick={() => chooseType('MARKET')}
+                    />
+                    <MiniButton label="지정가" active={type === 'LIMIT'} onClick={() => chooseType('LIMIT')} />
+                  </div>
+                  {!following && (
+                    <span style={{ marginLeft: 'auto' }}>
+                      <MiniButton label="현재가" title="다시 현재가를 따라가요" onClick={() => setPinned(null)} />
+                    </span>
+                  )}
                 </div>
-                {!following && (
-                  <span style={{ marginLeft: 'auto' }}>
-                    <MiniButton label="현재가" title="다시 현재가를 따라가요" onClick={() => setPinned(null)} />
-                  </span>
-                )}
+                <PriceInput
+                  value={formatPriceInput(priceText)}
+                  decimal={rule === 'USD_CENT'}
+                  locked={type === 'MARKET'}
+                  onChange={(v) => setPinned(cleanPriceInput(v, rule))}
+                  onBlur={snapPinned}
+                  onUp={() => step(tickUp)}
+                  onDown={() => step(tickDown)}
+                />
               </div>
-              <PriceInput
-                value={formatPriceInput(priceText)}
-                decimal={rule === 'USD_CENT'}
-                locked={type === 'MARKET'}
-                onChange={(v) => setPinned(cleanPriceInput(v, rule))}
-                onBlur={snapPinned}
-                onUp={() => step(tickUp)}
-                onDown={() => step(tickDown)}
-              />
+              <div className="flex shrink-0 flex-col" style={{ width: 80, gap: 4 }}>
+                <label htmlFor="dc-order-qty" style={FIELD_LABEL}>
+                  수량
+                </label>
+                <input
+                  id="dc-order-qty"
+                  type="text"
+                  inputMode="numeric"
+                  value={qty}
+                  onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ''))}
+                  className="w-full min-w-0 box-border"
+                  style={{ ...INPUT_BOX, ...INPUT_TEXT, padding: '0 10px' }}
+                />
+              </div>
             </div>
-            <div className="flex shrink-0 flex-col" style={{ width: 80, gap: 4 }}>
-              <label htmlFor="dc-order-qty" style={FIELD_LABEL}>
-                수량
-              </label>
-              <input
-                id="dc-order-qty"
-                type="text"
-                inputMode="numeric"
-                value={qty}
-                onChange={(e) => setQty(e.target.value.replace(/[^\d]/g, ''))}
-                className="w-full min-w-0 box-border"
-                style={{ ...INPUT_BOX, ...INPUT_TEXT, padding: '0 10px' }}
-              />
-            </div>
-          </div>
 
-          <div className="flex items-center justify-between" style={{ height: 18, gap: 8, fontSize: 12.5 }}>
-            {/* 입력 오류는 블럭 높이를 늘리지 않으려고 '주문 총액' 자리에 잠깐 띄운다 — 호가창 몫을 줄이지 않게 */}
-            {inputError ? (
-              <span role="status" className="truncate" style={{ minWidth: 0, color: '#FF8A80' }} title={inputError}>
-                {inputError}
+            <div className="flex items-center justify-between" style={{ height: 18, gap: 8, fontSize: 12.5 }}>
+              {/* 입력 오류는 블럭 높이를 늘리지 않으려고 '주문 총액' 자리에 잠깐 띄운다 — 호가창 몫을 줄이지 않게 */}
+              {inputError ? (
+                <span role="status" className="truncate" style={{ minWidth: 0, color: '#FF8A80' }} title={inputError}>
+                  {inputError}
+                </span>
+              ) : (
+                <span style={{ color: '#A5A59C' }}>{type === 'MARKET' ? '주문 총액(예상)' : '주문 총액'}</span>
+              )}
+              <span style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 14, fontWeight: 700 }}>
+                {currency === 'USD' ? money(total, 'USD') : won(total)}
               </span>
-            ) : (
-              <span style={{ color: '#A5A59C' }}>{type === 'MARKET' ? '주문 총액(예상)' : '주문 총액'}</span>
-            )}
-            <span style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 14, fontWeight: 700 }}>
-              {currency === 'USD' ? money(total, 'USD') : won(total)}
-            </span>
-          </div>
+            </div>
 
-          <button
-            type="button"
-            onClick={submit}
-            disabled={sending}
-            style={{
-              height: 32,
-              border: 'none',
-              borderRadius: R.control,
-              background: '#EDEDEA',
-              color: '#1C1C1E',
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: sending ? 'progress' : 'pointer',
-              opacity: sending ? 0.7 : 1,
-            }}
-          >
-            {sending ? '전송 중…' : `${side === 'BUY' ? '매수' : '매도'} 주문`}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={submit}
+              disabled={sending}
+              style={{
+                height: 32,
+                border: 'none',
+                borderRadius: R.control,
+                background: '#EDEDEA',
+                color: '#1C1C1E',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: sending ? 'progress' : 'pointer',
+                opacity: sending ? 0.7 : 1,
+              }}
+            >
+              {sending ? '전송 중…' : `${side === 'BUY' ? '매수' : '매도'} 주문`}
+            </button>
+          </div>
+        )}
       </Block>
 
       {draft && (

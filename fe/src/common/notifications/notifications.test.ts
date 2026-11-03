@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../../api/axios';
-import { startOrderFeed } from './orderFeed';
-import { failedNotice, laterNotice, missedNotices, money, orderResultNotice, type OrderNotification, type OrderResultLike } from './orderNotices';
+import { startOrderFeed, subscribeOrderEvents } from './orderFeed';
+import { cancelFailedNotice, cancelledNotice, failedNotice, laterNotice, missedNotices, money, orderResultNotice, type OrderNotification, type OrderResultLike } from './orderNotices';
 import { clearNotices, dismissNotice, getNotices, notify, type NoticeInput, type NoticePart } from './store';
 
 /** 글 조각을 글자로 — 매수/매도 · 종목명까지 펼쳐서 문구를 비교한다 */
@@ -94,6 +94,16 @@ describe('주문 알림 문구', () => {
     expect(failedNotice('로그인이 필요해요.').body).toEqual(['로그인이 필요해요.']);
   });
 
+  it('대기 취소 — 매수 · 매도 색 띠, 실패는 회색', () => {
+    const n = cancelledNotice(result({ order_side: 'BUY' }));
+    expect(n.tone).toBe('BUY');
+    expect(text(n.title)).toBe('대기 취소');
+    expect(text(n.body)).toBe('삼성전자 10주 매수 대기를 취소했어요');
+    const failed = cancelFailedNotice('취소할 수 있는 대기 주문이 없습니다.');
+    expect(failed.tone).toBe('FAIL');
+    expect(text(failed.title)).toBe('취소 실패');
+  });
+
   it('나중 체결 — 체결가를 모르면 지정가를 적지 않고 뺀다', () => {
     expect(text(laterNotice(later()).body)).toBe('삼성전자 10주 · 71,400원');
     expect(text(laterNotice(later({ fill_price: null })).body)).toBe('삼성전자 10주');
@@ -180,6 +190,25 @@ describe('알림 통로', () => {
     expect(bodies()).toEqual(['삼성전자 10주 · 71,400원', '삼성전자 2주 · 71,400원']);
     expect(postSpy).toHaveBeenCalledTimes(2);
     expect(postSpy).toHaveBeenLastCalledWith('/notifications/read', { order_ids: ['9'] }, expect.anything());
+  });
+
+  it('놓친 것 · 실시간 모두 화면에 한 번씩 전한다 — 끊으면 안 온다', async () => {
+    const s = sse();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(s.res));
+    unread = [later({ order_id: '7' })];
+    const heard: string[] = [];
+    const off = subscribeOrderEvents((n) => heard.push(n.order_id));
+    const stop = startOrderFeed('tok');
+    await flush();
+    s.push(later({ order_id: '7' }));
+    s.push(later({ order_id: '9' }));
+    s.push({ type: 'ping' });
+    await flush();
+    off();
+    s.push(later({ order_id: '11' }));
+    await flush();
+    stop();
+    expect(heard).toEqual(['7', '9']);
   });
 
   it('끊겼다 다시 이으면 놓친 것을 또 받되 이미 띄운 것은 다시 안 띄운다', async () => {

@@ -22,6 +22,14 @@ export function shares(n: number): string {
   return String(n);
 }
 
+/** 주문 접수 시각 — 오늘이면 14:03, 지난 날이면 11/02 14:03 */
+export function orderTime(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  const two = (n: number) => String(n).padStart(2, '0');
+  const time = `${two(d.getHours())}:${two(d.getMinutes())}`;
+  return d.toDateString() === now.toDateString() ? time : `${two(d.getMonth() + 1)}/${two(d.getDate())} ${time}`;
+}
+
 /** 상승 빨강 / 하락 파랑 (한국 시장 관례) */
 export const up = '#F2564C';
 export const down = '#5B8CFF';
