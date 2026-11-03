@@ -13,6 +13,8 @@ import {
 } from './order-rules';
 import { TagAssignmentService } from '../tags/services/tag-assignment.service';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { toOrderNotification } from '../notifications/dto/order-notification.dto';
 
 /** 체결에 필요한 대기 주문 정보 */
 export interface FillTarget {
@@ -23,10 +25,11 @@ export interface FillTarget {
     quantity: number;
 }
 
-/** 체결 시도 결과. fillPrice = 체결가(시장 통화 최소 단위), 체결됐을 때만 */
+/** 체결 시도 결과. fillPrice = 체결가(시장 통화 최소 단위), 체결됐을 때만 / reason = 거절 이유, 거절됐을 때만 */
 export interface FillResult {
     status: 'COMPLETED' | 'REJECTED' | 'PENDING';
     fillPrice: bigint | null;
+    reason?: string;
 }
 
 /**
@@ -50,6 +53,7 @@ export class OrderMatcher {
         // 주문 체결 후 투자 성향 태그 갱신
         private readonly tagAssignmentService: TagAssignmentService,
         private readonly marketTime: MarketTimeService,
+        private readonly notifications: NotificationsService,
     ) {}
 
     /**
@@ -91,7 +95,7 @@ export class OrderMatcher {
                 if (!isTriggered(o.type, side, o.price, toMinor(now, foreign)))
                     continue;
                 // 대기 주문 체결 시도
-                const { status } = await this.fill(
+                const { status, fillPrice, reason } = await this.fill(
                     {
                         id: o.id,
                         user_id: o.user_id,
@@ -106,6 +110,18 @@ export class OrderMatcher {
                 // 실제 체결에 성공한 경우에만 투자 성향 태그 갱신
                 if (status === 'COMPLETED') {
                     await this.refreshInvestmentTags(o.user_id);
+                }
+
+                // 나중에 난 결과를 화면에 알린다. 접수 순간의 결과는 응답으로 이미 알아서 여기(sweep)서만 보낸다
+                if (status !== 'PENDING') {
+                    this.notifications.publish(
+                        o.user_id,
+                        toOrderNotification(
+                            { ...o, status, filled_price: fillPrice },
+                            new Date(),
+                            reason ?? null,
+                        ),
+                    );
                 }
             }
         } catch (e) {
@@ -153,11 +169,19 @@ export class OrderMatcher {
                 : { status: 'PENDING', fillPrice: null };
         } catch (e) {
             if (e instanceof BadRequestException) {
-                await this.repo.closePendingOrder(order.id, 'REJECTED', {
-                    acknowledged,
-                });
+                const closed = await this.repo.closePendingOrder(
+                    order.id,
+                    'REJECTED',
+                    { acknowledged },
+                );
+                // 그 사이 사용자가 취소했으면 거절이 아니다
+                if (closed === 0) return { status: 'PENDING', fillPrice: null };
                 this.logger.warn(`대기 주문 거부 #${order.id}: ${e.message}`);
-                return { status: 'REJECTED', fillPrice: null };
+                return {
+                    status: 'REJECTED',
+                    fillPrice: null,
+                    reason: e.message,
+                };
             }
             throw e;
         }

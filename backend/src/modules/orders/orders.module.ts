@@ -7,9 +7,16 @@ import { PriceModule } from 'src/price/price.module';
 import { KisModule } from 'src/providers/kis/kis.module';
 import { TagModule } from '../tags/tag.module';
 import { MarketTimeModule } from '../character-engine/market-time.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-    imports: [PriceModule, KisModule, TagModule, MarketTimeModule],
+    imports: [
+        PriceModule,
+        KisModule,
+        TagModule,
+        MarketTimeModule,
+        NotificationsModule,
+    ],
     controllers: [OrdersController],
     providers: [OrdersService, OrdersRepository, OrderMatcher],
 })

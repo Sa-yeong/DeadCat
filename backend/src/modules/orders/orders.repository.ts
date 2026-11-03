@@ -117,7 +117,9 @@ export class OrdersRepository {
                 type: true,
                 quantity: true,
                 price: true,
-                stocks: { select: { code: true, stock_type: true } },
+                stocks: {
+                    select: { code: true, name: true, stock_type: true },
+                },
             },
             orderBy: { create_at: 'asc' },
         });
