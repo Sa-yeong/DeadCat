@@ -1,8 +1,3 @@
-/* .searched-container{
-    flex: 1;
-    overflow-y: scroll;
-} */
-
 /* 태그 리스트 */
 .searched-container .searched-tag-list{
     margin: 10px auto;

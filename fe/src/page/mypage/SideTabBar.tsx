@@ -10,7 +10,7 @@ export function SideTabBar(){
         내 정보 </Link>
         <Link to='/mypage/history' className={path === '/mypage/history' ? 'active' : 'inactive'}> 
         거래 내역 </Link>
-        <Link to='/mypage/community' className={path === '/mypage/community' ? 'active' : 'inactive'}>
+        <Link to='/mypage/community' className={path === '/mypage/community/myPosts' ? 'active' : 'inactive'}>
          작성 글 · 댓글 </Link>
     </>;
 }

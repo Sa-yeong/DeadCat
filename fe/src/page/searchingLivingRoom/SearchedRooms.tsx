@@ -30,7 +30,7 @@ export function SearchedRooms(){
         <div>
             <div className='searched-label'>
                 필터 결과
-                <span>{rooms.legnth}</span>
+                <span>{rooms.length}</span>
             </div>
             <div className='searchedRooms'>
                 {

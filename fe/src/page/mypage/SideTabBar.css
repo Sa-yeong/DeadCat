@@ -1,7 +1,6 @@
 .sideBar a{
     text-decoration: none;
     font-family: inherit;
-    /* border: 1px solid gray; */
     border-radius: 10px;
     cursor: pointer;
     margin: 0px auto;
@@ -9,6 +8,10 @@
     width: 220px;
     color: #566072;
     font-size: medium;
+}
+.sideBar a:hover{
+    background: #161c24;
+    color: white;
 }
 .sideBar a.active{
     background: #232b3a;

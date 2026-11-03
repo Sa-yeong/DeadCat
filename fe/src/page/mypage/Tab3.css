@@ -2,10 +2,9 @@
     flex: 1;
     margin: 0px 5vw;
     padding: 0.5vw 1.5vw;
-    height: calc(100vh - 107px);
-    display: grid;
-    grid-template-rows: repeat(3, 1fr);
-    gap: 1.5vw;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
     overflow: hidden;
     box-sizing: border-box;
 }
@@ -31,6 +30,11 @@
     font-size: small;
     padding: 3px 15px;
     margin: 3px;
+}
+.tab3 .header .tab>a:hover{
+    border-radius: 5px;
+    background: #161c24;
+    color: white;
 }
 .tab3 .header .tab .active{
     border-radius: 5px;
@@ -63,9 +67,6 @@
     font: inherit;
     font-size: medium;
 }
-
-
-
 
 .tab3 .list-box{
     display: flex;
