@@ -137,12 +137,16 @@ export interface OrderResult {
 }
 
 /**
- * POST /orders — 화면의 주문 블럭은 가격 칸이 있는 지정가 주문이다(LIMIT).
- * 백엔드는 접수 순간 체결 조건이면(매수: 현재가 ≤ 가격, 매도: 현재가 ≥ 가격) 바로 체결하고,
- * 아니면 대기 주문으로 둔다 — 가격 칸이 현재가로 채워져 있으므로 보통은 바로 체결된다.
+ * POST /orders
+ *  시장가: 가격 없이 보낸다 — 장중이면 현재가로 바로 체결, 장외면 서버가 거절한다.
+ *  지정가: 장중이고 체결 조건이면(매수: 현재가 ≤ 가격, 매도: 현재가 ≥ 가격) 바로 체결,
+ *          아니면 대기 주문으로 둔다. 장외에는 대기로 접수돼 다음 장에 체결된다.
  */
-export const createOrder = (body: { stock_code: string; order_side: 'BUY' | 'SELL'; quantity: number; price: number }) =>
-  post<OrderResult>('/orders', { ...body, order_type: 'LIMIT' });
+export type OrderInput = { stock_code: string; order_side: 'BUY' | 'SELL'; quantity: number } & (
+  | { order_type: 'MARKET' }
+  | { order_type: 'LIMIT'; price: number }
+);
+export const createOrder = (body: OrderInput) => post<OrderResult>('/orders', body);
 
 /** 실패한 요청에서 사용자에게 보일 문장 — 서버가 보낸 message 를 우선 */
 export function errorMessage(e: unknown): string {

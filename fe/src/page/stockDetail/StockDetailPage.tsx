@@ -345,7 +345,8 @@ export function StockDetailPage() {
         <OrderBlock
           key={stockCode}
           stockCode={stockCode}
-          currentPrice={basic?.current_price ?? 0}
+          // 종목을 바꾼 직후 한 번은 tick이 아직 옛 종목 값이다 — 장 상태 · 호가 규칙이 섞이지 않게 거른다
+          basic={basic?.stock_code === stockCode ? basic : null}
           picked={picked?.code === stockCode ? picked : null}
           solid={solid.order}
           onToggle={() => setBlockSolid('order')}

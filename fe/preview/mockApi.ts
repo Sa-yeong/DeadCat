@@ -230,6 +230,8 @@ function basic(code: string) {
     market: 'DOMESTIC',
     is_favorite: code === '005930' || code === '000660',
     is_event: false,
+    tick_rule: 'KRX_STOCK',
+    market_open: true,
   };
 }
 

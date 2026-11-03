@@ -1,6 +1,8 @@
 /** 백엔드 응답 타입 — backend-merge(1163fa7, 2026-09-28) 실제 응답에 맞춘다.
  *  처음엔 API 명세서(2026-05-19 초안) 기준이었다. */
 
+import type { TickRule } from './tick';
+
 export interface StockBasic {
   stock_code: string;
   stock_name: string;
@@ -10,6 +12,10 @@ export interface StockBasic {
   market: 'DOMESTIC' | 'FOREIGN';
   is_favorite: boolean;
   is_event: boolean;
+  /** 호가 단위 규칙 — 프론트가 같은 표(tick.ts)로 ±를 계산한다 */
+  tick_rule: TickRule;
+  /** 지금 장중인가 — 아니면 시장가 주문을 낼 수 없다 */
+  market_open: boolean;
   /** 명세에 없음 — 헤더 전일대비 표시에 필요 */
   change_price?: number;
 }
