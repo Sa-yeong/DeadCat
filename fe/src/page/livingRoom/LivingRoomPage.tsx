@@ -432,7 +432,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       {debug && rt && !isPrivate && <DebugLabels loop={rt.loop} />}
       {snapshot && rt && !isPrivate && (
         // 오른쪽 창이 열리면 그 왼쪽으로 비켜난다
-        <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.dockTop} onZoom={zoomTo} onStep={zoomStep} />
+        <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.zoomTop} onZoom={zoomTo} onStep={zoomStep} />
       )}
       <LoginPrompt open={needLogin} onClose={() => setNeedLogin(false)} />
     </div>

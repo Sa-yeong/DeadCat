@@ -326,7 +326,7 @@ export function RoomHud({
   const overChar = dragging !== null && itemOver ? chars.find((c) => charIdOf(c) === itemOver) : undefined;
   const maxOverAt = overChar && isMaxAffinity(overChar.affinityProgress) ? loop.screenOf(itemOver!) : null;
   const centerX = layout.width / 2;
-  const barTop = layout.stageHeight - 92;
+  const barTop = layout.barTop;
   const normal = interaction === 'NORMAL';
 
   return (
