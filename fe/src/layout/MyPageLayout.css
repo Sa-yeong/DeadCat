@@ -1,8 +1,8 @@
 .myPgLayout{
     flex: 1;
     display: flex;
-    gap: 20px;
-    margin: 0px 20px;
+    margin: 0px auto;
+    max-width: 1400px;
 }
 .myPgLayout .sideBar{
     border: 1px solid black;
@@ -11,8 +11,7 @@
     align-items: start;
     justify-content: flex-start;
     padding-top: 60px;
-    gap: 80px;
+    gap: 10px;
     height: 480px;
     width: 276px;
-    background: #F5F5F5;
 }

@@ -1,0 +1,30 @@
+{
+  "tired":                { "kind": "clip", "clip": null, "loop": true },
+  "console":              { "kind": "clip", "clip": null, "loop": true },
+  "cheer_up":             { "kind": "clip", "clip": null, "loop": true },
+  "tease":                { "kind": "clip", "clip": null, "loop": true },
+  "crying":               { "kind": "clip", "clip": null, "loop": true },
+  "crying_together":      { "kind": "clip", "clip": null, "loop": true },
+  "crouch_crying":        { "kind": "clip", "clip": null, "loop": true },
+  "space_out":            { "kind": "clip", "clip": null, "loop": true },
+  "lean_forward":         { "kind": "clip", "clip": null, "loop": true },
+  "lie_down":             { "kind": "clip", "clip": null, "loop": true },
+  "sleep":                { "kind": "clip", "clip": null, "loop": true },
+  "hiding":               { "kind": "clip", "clip": null, "loop": true },
+  "crouch":               { "kind": "clip", "clip": null, "loop": true },
+  "anxious":              { "kind": "clip", "clip": null, "loop": true },
+
+  "wake_up":              { "kind": "clip", "clip": null },
+  "surprise":             { "kind": "clip", "clip": null },
+  "fall_down":            { "kind": "clip", "clip": null },
+  "jumping":              { "kind": "clip", "clip": null },
+  "breaking_desk":        { "kind": "clip", "clip": null },
+  "breaking_sofa":        { "kind": "clip", "clip": null },
+  "console_together":     { "kind": "clip", "clip": null},
+  "trembling":            { "kind": "clip", "clip": null},
+  "idle":                 { "kind": "clip", "clip": null },
+
+  "avoid":                { "kind": "behavior", "behavior": "move_away" },
+  "pass_by":              { "kind": "behavior", "behavior": "keep_walking" },
+  "ignore":               { "kind": "behavior", "behavior": "keep_walking" }
+}

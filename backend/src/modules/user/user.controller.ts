@@ -1,7 +1,21 @@
-import { Controller, Get, UseGuards, Request } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    UseGuards,
+    Request,
+    Patch,
+    Body,
+    Query,
+} from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { UserProfileResponseDto } from './dto/user-profile.response.dto';
+import { User } from 'src/common/decorators/user.decorator';
+import {
+    ShareOptionResponseDto,
+    UpdateShareOptionDto,
+} from './dto/update-share-option.dto';
+import { UserRelationResponseDto } from './dto/user-relation-response.dto';
 
 interface AuthenticatedRequest extends Request {
     user: {
@@ -22,5 +36,24 @@ export class UserController {
         const userId = String(req.user.id);
 
         return await this.userService.getMyProfile(userId);
+    }
+
+    // 18. 팔로잉 & 팔로워 유저 리스트 조회
+    @UseGuards(JwtAuthGuard)
+    @Get('users/me/relations')
+    async getUserRelations(
+        @Request() req: AuthenticatedRequest,
+        @Query('type') type: 'FOLLOWER' | 'FOLLOWING',
+    ): Promise<UserRelationResponseDto[]> {
+        const userId = String(req.user.id);
+        return await this.userService.getUserRelations(userId, type);
+    }
+    //19. 거실 공유여부 설정
+    @Patch('me/share-option')
+    async updateShareOption(
+        @User() userId: string,
+        @Body() dto: UpdateShareOptionDto,
+    ): Promise<ShareOptionResponseDto> {
+        return await this.userService.updateShareOption(userId, dto);
     }
 }

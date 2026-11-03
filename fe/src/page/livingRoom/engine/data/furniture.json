@@ -1,0 +1,17 @@
+{
+  "desk_small": {
+    "category": "desk",
+    "interactionRadius": 0.8,
+    "anchors": [
+      { "id": "chair", "offset": [0, 0.6], "facing": 180 }
+    ]
+  },
+  "sofa_2seat": {
+    "category": "sofa",
+    "interactionRadius": 1.0,
+    "anchors": [
+      { "id": "seat_l", "offset": [-0.5, 0], "facing": 0 },
+      { "id": "seat_r", "offset": [0.5, 0], "facing": 0 }
+    ]
+  }
+}

@@ -12,11 +12,14 @@ import { Tab2 } from './page/mypage/Tab2';
 import { Tab3 } from './page/mypage/Tab3';
 import { MyStockList } from './page/mypage/MyStockList';
 import { ChangeProfile } from './page/mypage/ChangeProile';
-import { MyPost } from './page/mypage/MyPost';
-import { MyComment } from './page/mypage/MyComment';
-import { LikePost } from './page/mypage/LikePost';
+import { MyPosts } from './page/mypage/MyPost';
+import { MyComments } from './page/mypage/MyComment';
+import { LikePosts } from './page/mypage/LikePost';
 import { StockDetailPage } from './page/stockDetail/StockDetailPage';
 import { LivingRoomPage } from './page/livingRoom/LivingRoomPage';
+import { SearchingView } from './page/searchingLivingRoom/SearchingView';
+import { RoomList } from './page/searchingLivingRoom/RoomsList';
+import { SearchedRooms } from './page/searchingLivingRoom/SearchedRooms';
 
 const router = createBrowserRouter([
   {
@@ -25,7 +28,7 @@ const router = createBrowserRouter([
     children: [
       {index: true, element: <Navigate to='/stocks' replace />},
       {path: 'stocks', element: <StockListView />, children: [
-        {index: true, element: <StockList />},
+        {index: true, element: <Navigate to='basic-list' />},
         {path:'basic-list', element:<StockList />},
         {path:'category', element: <CategoryList />}
       ]},
@@ -40,11 +43,18 @@ const router = createBrowserRouter([
           {path: 'profile', element: <ChangeProfile />}
         ]},
         {path: 'history', element: <Tab2 />},
-        {path: 'community', element: <Tab3 />}
+        {path: 'community', element: <Tab3 />, children: [
+          {index: true, element: <Navigate to='myPosts' />},
+          {path: 'myPosts', element: <MyPosts />},
+          {path: 'myComments', element: <MyComments />},
+          {path: 'likes', element: <LikePosts />}
+        ]}
       ]},
-      {path: 'mypage/community/myPosts', element: <MyPost />},
-      {path: 'mypage/community/myComments', element: <MyComment />},
-      {path: 'mypage/community/likes', element: <LikePost />}
+      {path: 'explore', element: <SearchingView />, children: [
+        {index: true, element: <RoomList />},
+        {path: 'basic', element: <RoomList />},
+        {path: 'search', element: <SearchedRooms />}
+      ]}
     ]
   },
   {path: 'login', element: <LoginPage />},

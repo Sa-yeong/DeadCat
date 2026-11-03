@@ -1,0 +1,202 @@
+[
+	{
+		"id": "basic_meet_basic",
+		"when": { "self": ["happy", "sad"], "other": ["happy", "sad"] },
+		"priority": 50,
+		"effect": [
+            {"weight": 1, "self": "idle", "other": "idle"}
+        ],
+        "group": false,
+		"cooldownMs": 20000,
+		"interruptible": true
+	},
+	{
+		"id": "basic_meet_depress",
+		"when": {"self": ["happy", "sad"], "other": ["depress"]},
+        "priority": 70,
+        "effect": [
+            {"weight": 1, "self": "console", "other": "crying"}
+        ],
+        "group": {"focus": "other"},
+        "cooldownMs": 20000,
+        "interruptible": true
+	},
+    {
+        "id": "basic_meet_sleepy",
+        "when":{"self": ["happy", "sad"], "other": ["sleepy"]},
+        "priority": 60,
+        "effect":[
+            {"weight": 1, "self": ["wake_up", "idle"], "other": ["surprise", "idle"], "otherEmotionTo": ["happy", "sad"]}           
+        ],
+        "group": false,
+        "cooldownMs":15000,
+        "interruptible": true
+    },
+    {
+        "id": "basic_meet_tired",
+        "when": {"self":["happy", "sad"], "other": ["tired"]},
+        "priority":50,
+        "effect":[
+            {"weight": 6, "self": "cheer_up", "other": "tired"},
+            {"weight": 4, "self": "tease", "other": "tired"}
+        ],
+        "group": {"focus": "other"},
+        "cooldownMs": 15000,
+        "interruptible": true
+    },
+    {
+        "id": "tired_meet_depress",
+        "when": {"self": ["tired"], "other": ["depress"]},
+        "priority": 60,
+        "effect": [
+            {"weight": 1, "self": "console", "other": "crying"}
+        ],
+        "group": {"focus": "other"},
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "tired_meet_sleepy",
+        "when": {"self": ["tired"], "other": ["sleepy"]},
+        "priority": 50,
+        "effect":[
+            {"weight": 1, "self": ["wake_up", "idle"], "other": ["surprise", "idle"], "otherEmotionTo": ["happy", "sad"]}           
+        ],
+        "group": false,
+        "cooldownMs": 15000,
+        "interruptible": true
+    },
+    {
+        "id": "tired_meet_tired",
+        "when": {"self": ["tired"], "other": ["tired"]},
+        "priority": 50,
+        "effect":[
+            {"weight": 1, "self": "console_together", "other": "console_together"}
+        ],
+        "group": {"focus": null},
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "depress_meet_madness",
+        "when": {"self": ["depress"], "other": ["euphoria", "panic"]},
+        "priority": 60,
+        "effect": [
+            {"weight": 1, "self": "pass_by", "other": "pass_by"}
+        ],
+        "group": false,
+        "cooldownMs": 0,
+        "interruptible": true
+    },
+    {
+        "id": "depress_meet_depress",
+        "when":{"self": ["depress"], "other": ["depress"]},
+        "priority": 60,
+        "effect":[
+            {"weight":1, "self": "crying_together", "other": "crying_together"}
+        ],
+        "group": {"focus": null},
+        "cooldownMs":20000,
+        "interruptible": true
+    },
+    {
+        "id": "depress_meet_sleepy",
+        "when": {"self": ["depress"], "other": ["sleepy"]},
+        "priority": 50,
+        "effect":[
+            {"weight": 1, "self": ["wake_up", "idle"], "other": ["surprise", "idle"], "otherEmotionTo": ["happy", "sad"]}           
+        ],
+        "group": false,
+        "cooldownMs": 15000,
+        "interruptible": true
+    },
+    {
+        "id": "madness_meet_sleepy",
+        "when":{"self": ["euphoria", "panic"], "other":["sleepy"]},
+        "priority": 100,
+        "effect":[
+            {"weight": 1, "self": "pass_by", "other": "fall_down"}
+        ],
+        "group": false,
+        "cooldownMs": 5000,
+        "interruptible": false
+    },
+    {
+        "id": "madness_meet_other",
+        "when": {"self": ["euphoria", "panic"], "other": ["happy", "sad", "tired","anxious"]},
+        "priority": 100,
+        "effect":[
+            {"weight": 7, "self": "pass_by", "other": "avoid"},
+            {"weight": 3, "self": "pass_by", "other": "fall_down"}
+        ],
+        "group":false,
+        "cooldownMs": 15000,
+        "interruptible": false
+    },
+    {
+        "id": "madness_meet_madness",
+        "when": {"self": ["euphoria", "panic"], "other": ["euphoria", "panic"]},
+        "priority": 50,
+        "effect":[
+            {"weight": 1, "self": "pass_by", "other": "pass_by"}
+        ],
+        "group": false,
+        "cooldownMs": 0,
+        "interruptible": true
+    },
+    {
+        "id": "anxious_meet_basic",
+        "when": {"self": ["anxious"], "other": ["happy", "sad"]},
+        "priority": 50,
+        "effect":[
+            {"weight": 1, "self": "anxious", "other": "console"}
+        ],
+        "group": {"focus": "self"},
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    { 
+        "id": "anxious_meet_depress",
+        "when": {"self": ["anxious"], "other": ["depress"]},
+        "priority": 70,
+        "effect":[
+            {"weight": 1, "self": "console_together", "other": "console_together"}
+        ],
+        "group": {"focus": null},
+        "cooldownMs": 15000,
+        "interruptible": true
+    },
+    {
+        "id": "anxious_meet_sleepy",
+        "when":{"self": ["anxious"], "other": ["sleepy"]},
+        "priority": 50,
+        "effect": [
+            {"weight": 1, "self": "wake_up", "other": ["trembling", "surprise", "avoid"]}
+        ],
+        "group": false,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "anxious_meet_tired",
+        "when": {"self": ["anxious"], "other": ["tired"]},
+        "priority": 50,
+        "effect": [
+            {"weight": 1, "self": "anxious", "other": "anxious"}
+        ],
+        "group": {"focus": null},
+        "cooldownMs": 15000,
+        "interruptible": true
+    },
+    {
+        "id": "anxious_meet_anxious",
+        "when": {"self": ["anxious"], "other": ["anxious"]},
+        "priority": 60,
+        "effect": [
+            {"weight": 1, "self": "console_together", "other": "console_together"}
+        ],
+        "group": {"focus": null},
+        "cooldownMs": 20000,
+        "interruptible": true
+    }
+] 

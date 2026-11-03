@@ -1,0 +1,7 @@
+{
+  "sideCar_P": { "reaction": "surprise", "emotionTo": "happy" },
+  "sideCar_N": { "reaction": "surprise", "emotionTo": "sad" },
+  "curB1":     { "reaction": "surprise", "emotionTo": "anxious" },
+  "curB2":     { "reaction": "surprise", "emotionTo": "depress" },
+  "curB3":     { "reaction": "surprise", "emotionTo": "panic" }
+}

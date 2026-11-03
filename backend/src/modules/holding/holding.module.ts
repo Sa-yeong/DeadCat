@@ -8,6 +8,6 @@ import { PriceModule } from '../../price/price.module';
     imports: [PriceModule],
     controllers: [HoldingController],
     providers: [HoldingService, HoldingRepository],
-    exports: [HoldingService],
+    exports: [HoldingService, HoldingRepository],
 })
 export class HoldingModule {}

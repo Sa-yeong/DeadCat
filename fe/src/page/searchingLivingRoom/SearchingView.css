@@ -1,0 +1,116 @@
+.rooms-container{
+    background: hsl(240, 7%, 8%);
+    flex:1;
+    min-height: 100%;
+}
+.rooms-content{
+    max-width: 1200px;;
+    margin: 0 auto;
+    padding-top: 3vh;
+    color: white;
+}
+
+/* 거실탐색 페이지 헤더 */
+.rooms-container .rooms-header{
+    display: flex;
+    height: 35px;
+    align-items: center;
+    justify-content: space-between;
+}
+.rooms-container .rooms-header .left-side{
+    display: flex;
+}
+.rooms-container .rooms-header .right-side{
+    display: flex;
+    align-items: center;
+}
+.rooms-container .rooms-header button{
+    height: 100%;
+    margin-left: 10px;
+    background: transparent;
+    border: 1px solid gray;
+    border-radius: 5px;
+    color: #9a9a93;
+    height: 35px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+    /* 검색창 */
+.rooms-container .rooms-header .left-side .search-bar{
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.rooms-container .rooms-header .left-side .search-bar svg{
+    position: absolute;
+    left: 8px;
+    width: 15px;
+    height: 15px;
+    color: #9a9a93;
+    pointer-events: none;
+}
+.rooms-container .rooms-header .left-side .search-bar input{
+    box-sizing: border-box;
+    width: 250px;
+    height: 35px;
+    padding: 0 14px 0 34px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 5px;
+    background: #2a2a2e;
+    color: #ededea;
+    font: inherit;
+    font-size: medium;
+}
+    /* popover */
+.rooms-container .rooms-header .left-side button{
+    cursor:pointer
+}
+.ant-popover-container{
+    border: 1px solid #9a9a93 !important;
+    background: #141417 !important;
+}
+.ant-popover-container div.ant-popover-title{
+    color: white;
+}
+.ant-popover-container p{
+    color: white;
+    margin: 0;
+    border: 1px solid #9a9a93;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: small;
+    font-weight: lighter;
+    cursor: pointer;
+}
+
+    /* 드랍다운 */
+.rooms-container .rooms-header .right-side span.ant-dropdown-trigger{
+    border: 1px solid #9a9a93;
+    border-radius: 5px;
+    box-sizing: border-box;
+    height: 35px;
+    display: flex;
+    align-items: center;
+    font-size: medium;
+    font-weight: lighter;
+    color: #9a9a93;
+    gap: 5px;
+    padding: 0px 10px;
+}
+.rooms-container .rooms-header .right-side span.ant-dropdown-trigger div.ant-space-item{
+    font-size: small;
+}
+ul.ant-dropdown-menu.ant-dropdown-menu-root.ant-dropdown-menu-vertical.ant-dropdown-menu-light.css-dev-only-do-not-override-xsuzon.css-var-root.ant-dropdown-css-var.css-var-root.ant-dropdown-menu-css-var{
+    background: #141417;
+    border: 1px solid #9a9a93;
+}
+li.ant-dropdown-menu-item.ant-dropdown-menu-item-only-child span{
+    color: white;
+}
+li.ant-dropdown-menu-item.ant-dropdown-menu-item-only-child svg{
+    color: lightblue;
+}

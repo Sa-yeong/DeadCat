@@ -1,59 +1,99 @@
 .tab2{
-    border: 1px solid black;
+    /* border: 1px solid black; */
     flex: 1;
     display: flex;
     flex-direction: column;
-    margin: 0px 1.5vw;
-    padding:0px 8.5vw;
-    height: 85vh;
+    /* margin: 0px 1.5vw;
+    padding:0px 8.5vw; */
+    /* height: 85vh; */
     gap: 50px;
 }
-.tab2 .filter{
-    border: 1px solid black;
-    height: 239px;
-    margin-top: 2vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-.tab2 .list{
-    flex: 1;
-    border: 1px solid black;
-    margin-bottom: 2vh;
-    overflow: hidden;
-}
 
-/* 거래 필터 */
-.tab2 .filter .row{
+/* 헤더 */
+.tab2 .tab2-header{
+    /* border: 1px solid white; */
     display: flex;
     align-items: center;
-    padding: 25px 60px;
+    justify-content: flex-start;
+    margin-top: 40px;
+    gap: 20px;
 }
-.tab2 .filter .label{
-    font-size: 24px;
-    color: black;
-}
-.tab2 .filter .middle-group{
-    width: 400px;
+.tab2 .tab2-header .ant-dropdown-trigger{
+    border: 1px solid gray;
+    border-radius: 5px;
+    padding: 2px 10px;
+    font-size: medium;
+    color: #8b95a1;
     display: flex;
-    justify-content: space-evenly;
+    align-items: center;
+    gap: 5px;
 }
-.tab2 .filter button{
-    padding: 5px 20px;
-    font-size: 17px;
+/* 필터 */
+.tab2 .tab2-header .filter{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    /* padding: 25px 60px; */
+}
+.tab2 .tab2-header .filter .ant-picker{
+    border: 1px solid gray;
+    background: #0D1117;
+    color: #8b95a1;
+}
+.tab2 .tab2-header .filter .ant-picker svg{
+    color: #8b95a1;
+}
+.tab2 .tab2-header .filter button{
+    border: none;
+    border-radius: 10px;
+    background: #3182f6;
+    padding: 4px 10px;
+    font-size: 16px;
+    font-weight: 550;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 /* 거래 내역 리스트 */
+.tab2 .list{
+    flex: 1;
+    border: 1px solid gray;
+    border-radius: 10px;
+    margin-bottom: 2vh;
+    overflow: hidden;
+}
+.tab2 .list .list-header{
+    background: #12161e;
+    color: #566072;
+}
 .tab2 .list .list-content{
-    overflow-y: auto;
+    /* overflow-y: auto; */
     height: 100%;
 }
 .tab2 .list .list-row{
     display: grid;
-    grid-template-columns: 1fr 1fr .5fr .5fr 1fr 1fr 1fr .7fr;
-    justify-items: center;
+    grid-template-columns: 1.3fr .5fr .5fr 1fr 1fr 1fr .7fr;
+    justify-items: flex-start;
     align-items: center;
+    padding-left: 10px;
     height: 50px;
-    border-bottom: 1px solid black;
+    border-bottom: 1px solid gray;
     text-align: center;
+    font-size: medium;
+}
+.tab2 .list .list-content .list-row .first{
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+}
+.tab2 .list .list-content .list-row .first>span{
+    line-height: 1.25;
+}
+.tab2 .list .list-content .list-row .first .date{
+    font-size: small;
+    font-weight: lighter;
+    color: #566072;
 }

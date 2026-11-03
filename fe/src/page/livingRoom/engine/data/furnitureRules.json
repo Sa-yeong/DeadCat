@@ -1,0 +1,126 @@
+[
+    {
+        "id": "basic_furnitures",
+        "when": {"self": ["happy", "sad"], "furniture": ["desk", "sofa"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "idle"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "tired_desk",
+        "when": {"self": ["tired"], "furniture": ["desk"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 6, "self": "space_out"},
+            {"weight": 4, "self": "lean_forward"}
+        ],
+        "occupy": true,
+        "cooldownMs":20000,
+        "interruptible": true
+    },
+    {
+        "id": "tired_sofa",
+        "when": {"self":["tired"], "furniture": ["sofa"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 6, "self": "lie_down"},
+            {"weight": 4, "self": "sleep"}
+        ],
+        "occupy":true,
+        "cooldownMs":20000,
+        "interruptible":true
+    },
+    {
+        "id": "depress_desk",
+        "when":{"self": ["depress"], "furniture": ["desk"]},
+        "priority":80,
+        "effect":[
+            {"weight": 5, "self": "space_out"},
+            {"weight": 5, "self": "crying"}
+        ],
+        "occupy": true,
+        "cooldownMs":20000,
+        "interruptible": true
+    },
+    {
+        "id": "depress_sofa",
+        "when": {"self": ["depress"], "furniture": ["sofa"]},
+        "priority":80,
+        "effect":[
+            {"weight":1, "self": "crouch_crying"}
+        ],
+        "occupy":true,
+        "cooldownMs":20000,
+        "interruptible": true
+    },
+    {
+        "id": "euphoria_desk",
+        "when":{"self": ["euphoria"], "furniture": ["desk"]},
+        "priority": 50,
+        "effect":[
+            {"weight":1, "self": "pass_by"}
+        ],
+        "occupy":false,
+        "cooldownMs":0,
+        "interruptible":true
+    },
+    {
+        "id": "euphoria_sofa",
+        "when":{"self": ["euphoria"], "furniture": ["sofa"]},
+        "priority": 80,
+        "effect": [
+            {"weight": 1, "self": "jumping"}
+        ],
+        "occupy": true,
+        "cooldownMs":20000,
+        "interruptible": false
+    },
+    {
+        "id": "panic_desk",
+        "when":{"self": ["panic"], "furniture": ["desk"]},
+        "priority": 80,
+        "effect":[
+            {"weight":1, "self": "breaking_desk"}
+        ],
+        "occupy": true,
+        "cooldownMs":20000,
+        "interruptible": false
+    },
+    {
+        "id": "panic_sofa",
+        "when": {"self": ["panic"], "furniture": ["sofa"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "breaking_sofa"}
+        ],
+        "occupy": true,
+        "cooldownMs":20000,
+        "interruptible": false
+    },
+    {
+        "id": "anxious_desk",
+        "when": {"self": ["anxious"], "furniture": ["desk"]},
+        "priority":80,
+        "effect":[
+            {"weight":1, "self": "hiding"}
+        ],
+        "occupy": false,
+        "cooldownMs":20000,
+        "interruptible":true
+    },
+    {
+        "id": "anxious_sofa",
+        "when": {"self": ["anxious"], "furniture": ["sofa"]},
+        "priority": 80,
+        "effect":[
+            {"weight":1, "self": "crouch"}
+        ],
+        "occupy": true,
+        "cooldownMs":20000,
+        "interruptible": true
+    }
+]

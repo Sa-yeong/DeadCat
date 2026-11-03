@@ -1,0 +1,29 @@
+.room-container{
+    border: 1px solid blue;
+    border-radius: 10px;
+    margin: 0 10px;
+    display: flex;
+    flex-direction: column;
+    height: 180px;
+}
+.room-container .img{
+    border-bottom: 1px solid saddlebrown;
+    flex: 3;
+    color: white;
+}
+.room-container .room-footer{
+    /* border: 1px solid red; */
+    flex: 1;
+    color: white;
+    padding: 5px 20px;
+}
+.room-container .room-footer .first-line{
+    display: flex;
+    justify-content: space-between;
+    font-size: medium;
+    font-weight: 500;
+}
+.room-container .room-footer .tag-list{
+    font-size: small;
+    font-weight: lighter;
+}

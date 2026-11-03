@@ -13,7 +13,9 @@ export class FavoritesRepository {
             select: { id: true },
         });
         if (!stock) {
-            throw new NotFoundException(`존재하지 않는 종목코드입니다: ${code}`);
+            throw new NotFoundException(
+                `존재하지 않는 종목코드입니다: ${code}`,
+            );
         }
         return stock.id;
     }
@@ -39,5 +41,23 @@ export class FavoritesRepository {
             select: { stocks: { select: { code: true } } },
         });
         return rows.map((r) => r.stocks.code);
+    }
+
+    //유저의 관심 종목 조회
+    async findFavoriteStocksByUser(userId: bigint) {
+        return await this.prisma.interest.findMany({
+            where: { user_id: userId },
+            select: {
+                stocks: {
+                    select: {
+                        code: true,
+                        name: true,
+                        characters: {
+                            select: { img_url: true },
+                        },
+                    },
+                },
+            },
+        });
     }
 }

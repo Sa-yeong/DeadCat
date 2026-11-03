@@ -54,8 +54,9 @@ function IndexGraph({ graphData, isPositive }: IndexGraphProps) {
           
           {/* 마우스 올렸을 때 보여주는 툴팁 */}
           <Tooltip
-            labelFormatter={(label) => `날짜: ${label}`}
+            labelFormatter={(label) => `날짜 : ${label.slice(0,4)}-${label.slice(4,6)}-${label.slice(6,)}`}
             formatter={(value: any) => [`${Number(value).toLocaleString()} p`, '종가']}
+            contentStyle={{background: '#12161e', border: '1px solid gray', borderRadius: '5px'}}
           />
           
           {/* 그라데이션 효과 설정 */}

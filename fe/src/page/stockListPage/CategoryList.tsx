@@ -86,19 +86,23 @@ export function CategoryList(){
     }, [])
 
     return <div className="cate-list">
-        <CategoryRow order={'순위'} c_name={'카테고리 이름'} rate={'총 상승률'} amount={''} />
-        {cateRows.map((cateRow) => {
-            return <>
-                <CategoryRow key={cateRow.sector_code} 
-                    order={cateRow.rank} 
-                    c_name={cateRow.sector_name} 
-                    rate={cateRow.change_rate} 
-                    amount={cateRow.stock_count + ' 개 중에 ' + cateRow.num_of_incre_stocks +' 개 상승'}
-                    mouseOver={() => setActiveImg(cateRow.sector_img_url)}
-                    open={() => {handleClick(cateRow)}} />
-            </>
-            }
-        )}
+        <div className='list-header'>
+            <CategoryRow order={'순위'} c_name={'카테고리 이름'} rate={'총 상승률'} amount={''} />
+        </div>
+        <div className='list-body'>
+            {cateRows.map((cateRow) => {
+                return <>
+                    <CategoryRow key={cateRow.sector_code} 
+                        order={cateRow.rank} 
+                        c_name={cateRow.sector_name} 
+                        rate={cateRow.change_rate} 
+                        amount={cateRow.stock_count + ' 개 중에 ' + cateRow.num_of_incre_stocks +' 개 상승'}
+                        mouseOver={() => setActiveImg(cateRow.sector_img_url)}
+                        open={() => {handleClick(cateRow)}} />
+                </>
+                }
+            )}
+        </div>
         <CategoryModal isOpen={open} onClose={() => setOpen(false)} 
         category={selectCate} stocks={stocks} />
     </div>;
@@ -109,7 +113,7 @@ function CategoryRow({order, c_name, rate, amount, open, mouseOver}:any){
     return <div className="cate-rows" onClick={open} onMouseOver={mouseOver}>
         <span>{order}</span>
         <span>{c_name}</span>
-        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}> 
+        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}> 
             {(typeof rate =='string')?rate:rate + '%'}
         </span>
         <span>

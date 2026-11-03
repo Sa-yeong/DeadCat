@@ -1,5 +1,6 @@
 import './MyStockList.css'
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/axios';
 
 interface Holdings{
@@ -16,6 +17,7 @@ interface Holdings{
 
 export function MyStockList() {
     const [myHoldings, setMyHoldings] = useState<Holdings[]>([]);
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchHoldings = async () => {
@@ -36,7 +38,7 @@ export function MyStockList() {
 
     return <div className='my-stock-list'>
         <div className='stock-list-header'>
-            <MyStock s_name='종목' quantity='수량' price='현재가' mean_price='평균단가' profit='손익' rate='수익률' />
+            <MyStock s_name='종목' quantity='수량' price='현재가' mean_price='평균단가' profit='평가손익' rate='수익률' />
         </div>
         <div className='stock-list-body'>
             {
@@ -49,7 +51,8 @@ export function MyStockList() {
                         mean_price={myStock.purchase_price}
                         profit={myStock.valuation_profit}
                         rate={myStock.return_rate}
-                        market={myStock.market} />
+                        market={myStock.market}
+                        onClick={() => navigate(`/stocks/${myStock.stock_code}`)} />
                 )
             }
         </div>
@@ -57,7 +60,7 @@ export function MyStockList() {
     </div>;
 }
 
-function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, market}:any){
+function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, market, onClick}:any){
     const formatComma = (market:string,value: number|string) => {
         const num = Number(value);
 
@@ -69,23 +72,23 @@ function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, mark
         }
     }
 
-    return<div className='stock-row'>
+    return<div className='stock-row' onClick={onClick}>
         <span className='stock-name'>
             {s_img && <img className='stock-thumb' src={s_img} alt='' />}
             {s_name}
         </span>
-        <span className='quantity'>{quantity}</span>
         <span className='current-price'>
             {formatComma(market, price)}
         </span>
         <span className='unit-price'>
             {formatComma(market, mean_price)}
         </span>
-        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
-            {formatComma(market, profit)}
-        </span>
-        <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'red':'blue')}}>
+        <span className='quantity'>{quantity}</span>
+        <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}>
             {(typeof rate =='string')?rate:rate + '%'}
+        </span>
+        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}>
+            {formatComma(market, profit)}
         </span>
     </div>
 }

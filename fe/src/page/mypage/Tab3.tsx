@@ -1,7 +1,8 @@
 import './Tab3.css'
-import { ActivityListLayout } from '../../layout/ActivityListLayout';
-import { RxDotsHorizontal } from 'react-icons/rx';
-import { Link } from 'react-router-dom';
+// import { ActivityListLayout } from '../../layout/ActivityListLayout';
+import { ListTab } from '../../common/ListTab';
+import { SearchBar } from '../../common/SearchBar';
+import { Outlet } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { api } from '../../api/axios';
 
@@ -73,61 +74,11 @@ export function Tab3(){
     }, []);
 
     return <div className="tab3">
-        <div className='list-box'>
-            <div className='label'>
-                작성한 게시글 리스트
-                <Link to='/mypage/community/myPosts'>
-                    <RxDotsHorizontal />
-                </Link>
-            </div>
-            <div className='rows'>
-                {
-                    writtenPosts.map((post) => 
-                        <ActivityListLayout key={`post-${post.post_id}`}
-                        title={post.title} comments={post.comment_count}
-                        likes={post.like_count} writer={post.author_nickname}
-                        date={post.created_at} />
-                    )
-                }
-            </div>
+        <div className='header'>
+            <ListTab list={[['작성 글', '/mypage/community/myPosts'],
+            ['작성 댓글', '/mypage/community/myComments'], ['좋아요 한 글', '/mypage/community/likes']]}/>
+            <SearchBar placeholder='내 글에서 검색' />
         </div>
-        <div className='list-box'>
-            <div className='label'>
-                작성한 댓글 리스트 
-                <Link to='/mypage/community/myComments'>
-                    <RxDotsHorizontal />
-                </Link>
-            </div>
-            <div className='rows'>
-                {
-                    writtenComments.map((comment) => 
-                        <ActivityListLayout key={`comment-${comment.post_id}`}
-                        title={comment.post_title} 
-                        writer={comment.post_author_nickname}
-                        comments={comment.post_comment_count}
-                        likes={comment.post_like_count} 
-                        date={comment.post_created_at} />
-                    )
-                }
-            </div>
-        </div>
-        <div className='list-box'>
-            <div className='label'>
-                좋아요한 게시글 리스트
-                <Link to='/mypage/community/likes'>
-                    <RxDotsHorizontal />
-                </Link>
-            </div>
-            <div className='rows'>
-                {
-                    likedPosts.map((post) => 
-                        <ActivityListLayout key={`liked-${post.post_id}`}
-                        title={post.title} comments={post.comment_count}
-                        likes={post.like_count} writer={post.author_nickname}
-                        date={post.created_at} />
-                    )
-                }
-            </div>
-        </div>
+        <Outlet context={{writtenPosts, writtenComments, likedPosts}} />
     </div>;
 }

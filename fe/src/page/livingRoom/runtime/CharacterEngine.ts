@@ -1,26 +1,55 @@
-import type { ActName, Mood } from '../types';
+import type { Emotion, MarketEventType } from '../engine/type/type';
+import type { RuleSet } from '../engine/ruleLoader';
 
-/**
- * 캐릭터 엔진 — 내부는 별도 장. {메커니즘 미확정 — 지금은 잠정 스텁}
- * 무상태 · 인스턴스 하나를 모든 캐릭터가 같이 쓴다. 직전 기분은 CharacterHandle 이 든다.
- * 거실 코드는 기분 값으로 분기하지 않는다 — 받은 값을 다시 엔진과 카탈로그에 넘길 뿐이다.
- */
-export interface CharacterEngine {
-  /** 등락률(%) · 민감도 · 직전 기분 → 새 기분, 바뀌었으면 changed */
-  update(changeRate: number, sensitivity: number, lastMood: Mood | null): { mood: Mood; changed: boolean };
-  /** 상대 기분 · 내 민감도 → 마주쳤을 때 행동 */
-  encounter(otherMood: Mood, sensitivity: number): ActName;
+export type MotionStep = { name: string; kind: 'clip' | 'behavior'; loop: boolean }
+
+export type FeedEvent = 
+  | {type: 'emotion'; characterId: string; emotion: Emotion}
+  | {type: 'marketEvent'; event: MarketEventType; startedAt: number; durationMs: number}
+  | {type: 'marketEventEnded'; event: MarketEventType}
+
+export type EmotionFeed = {
+  subscribe(handler: (e: FeedEvent) => void): () => void
 }
 
-/** 잠정 — 등락률 × 민감도를 다섯 구간으로. 히스테리시스 없음 */
-export class StubEngine implements CharacterEngine {
-  update(changeRate: number, sensitivity: number, lastMood: Mood | null): { mood: Mood; changed: boolean } {
-    const v = changeRate * sensitivity;
-    const mood: Mood = v >= 5 ? 'VERY_GOOD' : v >= 1.5 ? 'GOOD' : v > -1.5 ? 'NEUTRAL' : v > -5 ? 'BAD' : 'VERY_BAD';
-    return { mood, changed: mood !== lastMood };
-  }
+export type EngineCommand =
+  | { type: 'play'; characterId: string; steps: MotionStep[] } // 순차 재생, 마지막이 반복이면 cancel 전까지 유지
+  | { type: 'cancel'; characterId: string }
+  | { type: 'emotion'; characterId: string; emotion: Emotion }  
 
-  encounter(otherMood: Mood): ActName {
-    return otherMood === 'BAD' || otherMood === 'VERY_BAD' ? 'comfort' : 'greet';
+export type EngineOptions = {
+  rules: RuleSet                                  // loadRules(...)의 결과
+  feed: EmotionFeed
+  onCommand: (cmd: EngineCommand) => void
+  now?: () => number
+  random?: () => number
+}
+
+export interface CharacterEngine {
+  addCharacter(id: string): void; // 캐릭터가 거실에 추가된 경우
+  deleteCharacter(id: string): void; // 캐릭터 거실에서 삭제된 경우
+  addFurniture(id: number): void; // 가구가 거실에 추가된 경우
+  deleteFurniture(id: number): void; // 가구가 거실에 삭제된 경우
+
+  emotionOf(id: string): Emotion|undefined; // 특정 캐릭터 감정 조회
+
+  encounter(c1: string, c2: string): void; // 캐릭터끼리 접근했을 경우
+  visitFurniture(characterId: string, furnitureId: number): void; // 가구와의 인터렉션
+
+  motionFinished(characterId: string, motion: string): void; //coolDown을 세기위해 모션이 끝나는 시간 받는 함수
+  interrupt(id: string): void; // 사용자가 캐릭터를 들었을때 하던 interaction 중지
+
+  start(): void; // 거실 진입시, be에 구독 시작 후 웹소켓으로 지속적으로 기저 감정 데이터 받기
+  dispose(): void; // 거실 화면을 나간 경우 be으로 부터 지속적인 데이터 받기 정지
+}
+
+export class LivingRoomEngine implements CharacterEngine{
+  private readonly feed: EmotionFeed;
+  private readonly onCommand: (cmd: EngineCommand) => void; // 출력 통로
+  private unsubscribe: (() => void) | null = null;
+
+  constructor(opts:EngineOptions){
+    this.feed = opts.feed;
+    this.onCommand = opts.onCommand;
   }
 }

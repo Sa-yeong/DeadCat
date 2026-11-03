@@ -10,6 +10,9 @@
 .stockListView .stockList .table-header svg{
     display: none;
 }
+.stock-table .table-header .list-row span {
+    color: white !important;
+}
 .stockListView .stockList .table-header .list-row .stock-order{
     display:flex;
     gap: 5px;
@@ -19,13 +22,15 @@
     /* padding: 0px; */
     padding-bottom: 12px;
     align-self: flex-end;
-
 }
 /* 테이블 body */
 .stock-table .table-body{
     flex: 1;
     overflow: auto;
     min-height: 0;
+}
+.stock-table .table-body .list-row:hover{
+    background-color: #171c27;
 }
 /* 테이블 리스트 */
 .stockListView .stockList .table-body span:has(svg){

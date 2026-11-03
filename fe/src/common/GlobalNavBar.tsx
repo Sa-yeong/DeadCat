@@ -17,7 +17,7 @@ export function GlobalNavBar(){
         <nav className='gnb-menu'>
             <Link to='/room' className={on('/room')}>홈</Link>
             <Link to='/stocks' className={on('/stocks')}>전체종목</Link>
-            <button type='button'>거실 탐색</button>
+            <Link to='/explore' className={on('/explore')}>거실 탐색</Link>
             <Link to='/mypage' className={on('/mypage')}>마이페이지</Link>
         </nav>
         <div className='gnb-right'>

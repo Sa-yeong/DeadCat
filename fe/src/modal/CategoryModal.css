@@ -37,3 +37,6 @@
     border-right: none;
     border-left: none;
 }
+.cate-modal .stockList .list-row:hover{
+    background: #171c27;
+}
