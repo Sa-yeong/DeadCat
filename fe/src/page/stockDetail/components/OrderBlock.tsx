@@ -4,13 +4,15 @@ import { Block } from './Block';
 import { up, won } from '../format';
 import { R } from '../radius';
 import { createOrder, errorMessage } from '../api';
+import { notify } from '../../../common/notifications/store';
+import { failedNotice, orderResultNotice } from '../../../common/notifications/orderNotices';
 
 /**
  * 매수/매도 주문. 전송 전 입력 상태를 자기가 들고 있어 «Control».
  * {주문가능금액 확인 없음 — 검증 규칙 미정}
  *
  * POST /orders 로 지정가 주문을 보낸다(2026-11-03 연결 — 그 전엔 가짜로 0.3초 기다리기만 했다).
- * 결과(체결 · 대기 접수 · 실패 이유)는 '주문 총액' 자리에 4초 동안 보인다.
+ * 결과(체결 · 대기 접수 · 서버 거절)는 앱 공용 알림으로 띄운다. '주문 총액' 자리에는 입력 오류만 4초 동안 보인다.
  *
  * 성공·실패와 무관하게 끝나면 onDone을 부른다 → 페이지가 현재가·호가를
  * 즉시 한 번 다시 받는다. 옛 값을 들고 있으면 사용자가 또 누른다.
@@ -56,13 +58,13 @@ export function OrderBlock({
   }, [pickedN]);
   const [qty, setQty] = useState('10');
   const [sending, setSending] = useState(false);
-  /** 마지막 주문 결과 — '주문 총액' 자리에 4초 */
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  /** 입력 오류 — '주문 총액' 자리에 4초 */
+  const [inputError, setInputError] = useState<string | null>(null);
   useEffect(() => {
-    if (!result) return;
-    const t = window.setTimeout(() => setResult(null), 4000);
+    if (!inputError) return;
+    const t = window.setTimeout(() => setInputError(null), 4000);
     return () => window.clearTimeout(t);
-  }, [result]);
+  }, [inputError]);
 
   const total = (Number(price) || 0) * (Number(qty) || 0);
 
@@ -70,25 +72,18 @@ export function OrderBlock({
     const p = Number(price);
     const q = Number(qty);
     if (!p || !q) {
-      setResult({ ok: false, text: !p ? '가격을 입력해 주세요.' : '수량을 입력해 주세요.' });
+      setInputError(!p ? '가격을 입력해 주세요.' : '수량을 입력해 주세요.');
       return;
     }
     setSending(true);
-    setResult(null);
+    setInputError(null);
     try {
       const r = await createOrder({ stock_code: stockCode, order_side: side, quantity: q, price: p });
-      const label = side === 'BUY' ? '매수' : '매도';
-      if (r.status === 'COMPLETED') {
-        setResult({ ok: true, text: `${label} 체결됐어요.` });
-        // 캐릭터 반응은 실제로 체결됐을 때만
-        onFilled?.(side);
-      } else if (r.status === 'PENDING') {
-        setResult({ ok: true, text: `${won(p)}원 ${label} 대기 주문으로 접수됐어요.` });
-      } else {
-        setResult({ ok: false, text: r.message || '주문이 거절됐어요.' });
-      }
+      notify(orderResultNotice(r));
+      // 캐릭터 반응은 실제로 체결됐을 때만
+      if (r.status === 'COMPLETED') onFilled?.(side);
     } catch (e) {
-      setResult({ ok: false, text: errorMessage(e) });
+      notify(failedNotice(errorMessage(e)));
     } finally {
       setSending(false);
       onDone();
@@ -117,10 +112,10 @@ export function OrderBlock({
         </div>
 
         <div className="flex items-center justify-between" style={{ height: 18, gap: 8, fontSize: 12.5 }}>
-          {/* 주문 결과는 블럭 높이를 늘리지 않으려고 '주문 총액' 자리에 잠깐 띄운다 — 호가창 몫을 줄이지 않게 */}
-          {result ? (
-            <span role="status" className="truncate" style={{ minWidth: 0, color: result.ok ? '#8FD18F' : '#FF8A80' }} title={result.text}>
-              {result.text}
+          {/* 입력 오류는 블럭 높이를 늘리지 않으려고 '주문 총액' 자리에 잠깐 띄운다 — 호가창 몫을 줄이지 않게 */}
+          {inputError ? (
+            <span role="status" className="truncate" style={{ minWidth: 0, color: '#FF8A80' }} title={inputError}>
+              {inputError}
             </span>
           ) : (
             <span style={{ color: '#A5A59C' }}>주문 총액</span>

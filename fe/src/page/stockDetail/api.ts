@@ -124,6 +124,16 @@ export interface OrderResult {
   order_id: string;
   /** COMPLETED = 체결 · PENDING = 대기 주문으로 접수 · REJECTED = 거절 */
   status: 'COMPLETED' | 'PENDING' | 'REJECTED';
+  stock_code: string;
+  stock_name: string;
+  order_side: 'BUY' | 'SELL';
+  order_type: 'MARKET' | 'LIMIT' | 'RESERVED';
+  quantity: number;
+  /** 지정가(시장 통화) — 시장가는 null */
+  price: number | null;
+  /** 체결가(시장 통화) — 체결됐을 때만 */
+  fill_price: number | null;
+  currency: 'KRW' | 'USD';
 }
 
 /**

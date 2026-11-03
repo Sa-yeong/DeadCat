@@ -1,0 +1,94 @@
+/* 감정 테스트 패널(9999) 같은 개발용 패널보다 위 */
+.dc-notices {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 300px;
+    max-width: calc(100vw - 32px);
+    pointer-events: none;
+}
+
+.dc-notice {
+    position: relative;
+    box-sizing: border-box;
+    padding: 10px 30px 10px 15px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #26262B;
+    color: #EDEDEA;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    pointer-events: auto;
+    animation: dc-notice-rise 0.2s ease-out;
+}
+
+.dc-notice-strip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+}
+
+.dc-notice-title {
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 700;
+}
+
+.dc-notice-body {
+    font-size: 12.5px;
+    line-height: 18px;
+    color: #C6C6BE;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+}
+
+.dc-notice-title + .dc-notice-body {
+    margin-top: 2px;
+}
+
+.dc-notice-body a {
+    color: #EDEDEA;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.dc-notice-close {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #9A9A93;
+    font-size: 12px;
+    line-height: 20px;
+    cursor: pointer;
+}
+
+.dc-notice-close:hover {
+    color: #EDEDEA;
+}
+
+@keyframes dc-notice-rise {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dc-notice {
+        animation: none;
+    }
+}

@@ -8,6 +8,7 @@ import '../src/styles/dc.css';
 import { StockDetailPage } from '../src/page/stockDetail/StockDetailPage';
 import { GlobalBar } from '../src/page/stockDetail/components/GlobalBar';
 import { StageDevPanel } from './StageDevPanel';
+import { NotificationCenter } from '../src/common/notifications/NotificationCenter';
 
 // 미리보기 표시 — 캐릭터 런타임이 감정 테스트 패널에 자신을 건넨다
 (window as unknown as { __DC_PREVIEW__?: boolean }).__DC_PREVIEW__ = true;
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
               <GlobalBar />
               <StockDetailPage />
               <StageDevPanel />
+              <NotificationCenter />
             </>
           }
         />
