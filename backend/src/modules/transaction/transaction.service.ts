@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { TransactionRepository } from './transaction.repository';
 import { TransactionQueryDto } from './dto/transaction-query.dto';
 import { TransactionItemDto } from './dto/transaction-response.dto';
+import { kstDateString } from '../../common/time/kst-date';
 
 @Injectable()
 export class TransactionService {
@@ -26,8 +27,9 @@ export class TransactionService {
 
         return histories.map((history) => {
             const stockName = history.stocks?.name || '알 수 없는 종목';
+            // 한국 시간 날짜 — UTC로 자르면 한국 0~9시 체결이 하루 전으로 보인다
             const tradeDate = history.transaction_time
-                ? history.transaction_time.toISOString().split('T')[0]
+                ? kstDateString(history.transaction_time)
                 : '날짜 정보 없음';
 
             const isSell = history.trade_type === 'SELL';
