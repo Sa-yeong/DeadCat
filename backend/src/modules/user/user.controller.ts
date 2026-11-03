@@ -49,6 +49,7 @@ export class UserController {
         return await this.userService.getUserRelations(userId, type);
     }
     //19. 거실 공유여부 설정
+    @UseGuards(JwtAuthGuard)
     @Patch('users/me/share-option')
     async updateShareOption(
         @User() userId: string,
