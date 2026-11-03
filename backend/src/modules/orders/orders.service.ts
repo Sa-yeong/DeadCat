@@ -15,20 +15,25 @@ import { OrderMatcher } from './order-matcher.service';
 import {
     StoredType,
     apiType,
+    formatTick,
     fromMinor,
     isForeignStock,
+    isOnTick,
     isTriggered,
+    marketOf,
     reservedType,
+    tickRuleOf,
     toKrw,
     toMinor,
 } from './order-rules';
 import { TagAssignmentService } from '../tags/services/tag-assignment.service';
+import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /**
  * 주문 접수.
- *  시장가 — 현재가로 즉시 체결(해외는 원화 환산).
- *  지정가·예약 — PENDING으로 저장하고 체결은 OrderMatcher가 맡는다.
- *    접수 순간 이미 조건이 맞으면(예: 현재가보다 높은 지정가 매수) 바로 한 번 체결을 시도한다.
+ *  시장가 — 현재가로 즉시 체결(해외는 원화 환산). 장외에는 거절.
+ *  지정가·예약 — PENDING으로 저장하고 체결은 OrderMatcher가 맡는다. 장외에도 접수한다.
+ *    장중에 접수 순간 이미 조건이 맞으면(예: 현재가보다 높은 지정가 매수) 바로 한 번 체결을 시도한다.
  */
 @Injectable()
 export class OrdersService {
@@ -42,6 +47,7 @@ export class OrdersService {
         private readonly matcher: OrderMatcher,
         // 투자 성향 태그 갱신 서비스
         private readonly tagAssignmentService: TagAssignmentService,
+        private readonly marketTime: MarketTimeService,
     ) {}
 
     async createOrder(
@@ -67,6 +73,21 @@ export class OrdersService {
                 '국내 종목 주문 가격은 원 단위 정수여야 합니다.',
             );
         }
+        if (!isMarket) {
+            const rule = tickRuleOf(foreign, stock.categories?.name);
+            if (!isOnTick(dto.price!, rule)) {
+                throw new BadRequestException(
+                    `호가 단위(${formatTick(dto.price!, rule)})에 맞지 않는 가격이에요.`,
+                );
+            }
+        }
+
+        const marketOpen = this.marketTime.isOperatingTime(marketOf(foreign));
+        if (isMarket && !marketOpen) {
+            throw new BadRequestException(
+                '장 시간이 아니라 시장가로 주문할 수 없어요. 지정가로 주문하면 다음 장에 체결돼요.',
+            );
+        }
 
         const now = await this.currentPrice(dto.stock_code);
 
@@ -76,19 +97,20 @@ export class OrdersService {
                 throw new BadRequestException('현재가 조회에 실패했습니다.');
             }
             const rate = foreign ? await this.usdKrw() : 1;
-            const { orderId } = await this.ordersRepository.executeMarketOrder({
-                userId,
-                stockId: stock.id,
-                side: dto.order_side,
-                quantity: dto.quantity,
-                tradePrice: toKrw(now, foreign, rate),
-                orderPrice: toMinor(now, foreign),
-            });
+            const { orderId, filledPrice } =
+                await this.ordersRepository.executeMarketOrder({
+                    userId,
+                    stockId: stock.id,
+                    side: dto.order_side,
+                    quantity: dto.quantity,
+                    tradePrice: toKrw(now, foreign, rate),
+                    orderPrice: toMinor(now, foreign),
+                });
 
             // 시장가 주문 체결이 완료된 후 태그 갱신
             await this.refreshInvestmentTags(userId);
 
-            return this.response(orderId, 'COMPLETED');
+            return this.response(orderId, 'COMPLETED', stock, dto, filledPrice);
         }
 
         // ── 지정가·예약: 대기 주문 ─────────────────────────
@@ -114,12 +136,13 @@ export class OrdersService {
             price: target,
         });
 
-        // 접수 순간 이미 체결 조건이면 바로 체결 시도(지정가에서 흔함)
+        // 장중에 접수 순간 이미 체결 조건이면 바로 체결 시도(지정가에서 흔함)
         if (
+            marketOpen &&
             now != null &&
             isTriggered(type, dto.order_side, target, toMinor(now, foreign))
         ) {
-            const result = await this.matcher.fill(
+            const { status, fillPrice } = await this.matcher.fill(
                 {
                     id,
                     user_id: userId,
@@ -129,15 +152,16 @@ export class OrdersService {
                 },
                 now,
                 foreign,
+                true,
             );
             // 실제 체결에 성공한 경우에만 태그 갱신
-            if (result === 'COMPLETED') {
+            if (status === 'COMPLETED') {
                 await this.refreshInvestmentTags(userId);
             }
 
-            return this.response(id, result);
+            return this.response(id, status, stock, dto, fillPrice);
         }
-        return this.response(id, 'PENDING');
+        return this.response(id, 'PENDING', stock, dto, null);
     }
 
     /** 내 대기 주문 목록 (stockCode를 주면 그 종목만) */
@@ -193,16 +217,29 @@ export class OrdersService {
         const n = await this.ordersRepository.closePendingOrder(
             id,
             'CANCELLED',
-            userId,
+            { userId, acknowledged: true },
         );
         if (n === 0) {
             throw new NotFoundException('취소할 수 있는 대기 주문이 없습니다.');
         }
+        const order = await this.ordersRepository.findMyOrder(id, userId);
+        if (!order) {
+            throw new NotFoundException('취소할 수 있는 대기 주문이 없습니다.');
+        }
+        const foreign = isForeignStock(order.stocks.stock_type);
         return new CreateOrderResponseDto({
             code: 'SUCCESS',
             message: '주문 취소 완료',
             order_id: orderId,
             status: 'CANCELLED',
+            stock_code: order.stocks.code,
+            stock_name: order.stocks.name,
+            order_side: (order.side ?? 'BUY') as OrderSide,
+            order_type: apiType(order.type),
+            quantity: order.quantity,
+            price: order.price != null ? fromMinor(order.price, foreign) : null,
+            fill_price: null,
+            currency: foreign ? 'USD' : 'KRW',
         });
     }
 
@@ -269,7 +306,15 @@ export class OrdersService {
         }
     }
 
-    private response(orderId: bigint, status: string): CreateOrderResponseDto {
+    /** fillPrice = 체결가(시장 통화 최소 단위). 응답의 가격은 전부 시장 통화로 내보낸다 */
+    private response(
+        orderId: bigint,
+        status: string,
+        stock: { code: string; name: string; stock_type: string },
+        dto: CreateOrderDto,
+        fillPrice: bigint | null,
+    ): CreateOrderResponseDto {
+        const foreign = isForeignStock(stock.stock_type);
         const message =
             status === 'COMPLETED'
                 ? '주문 체결 완료'
@@ -281,6 +326,15 @@ export class OrdersService {
             message,
             order_id: String(orderId),
             status,
+            stock_code: stock.code,
+            stock_name: stock.name,
+            order_side: dto.order_side,
+            order_type: dto.order_type,
+            quantity: dto.quantity,
+            price: dto.order_type === OrderType.MARKET ? null : dto.price!,
+            fill_price:
+                fillPrice != null ? fromMinor(fillPrice, foreign) : null,
+            currency: foreign ? 'USD' : 'KRW',
         });
     }
 }

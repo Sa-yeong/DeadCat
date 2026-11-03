@@ -21,7 +21,13 @@ export class OrdersRepository {
     async findStockByCode(code: string) {
         return await this.prisma.stocks.findFirst({
             where: { code },
-            select: { id: true, code: true, stock_type: true },
+            select: {
+                id: true,
+                code: true,
+                name: true,
+                stock_type: true,
+                categories: { select: { name: true } },
+            },
         });
     }
 
@@ -70,13 +76,15 @@ export class OrdersRepository {
 
     /**
      * 시장가: 체결 + 주문 기록을 **한 트랜잭션**으로. 체결이 실패하면 주문 기록도 남지 않는다.
-     * orderPrice = 주문 기록에 남길 가격(시장 통화 최소 단위)
+     * orderPrice = 주문 기록에 남길 가격이자 체결가(시장 통화 최소 단위)
+     * 접수 응답으로 화면이 결과를 바로 알기 때문에 알림은 이미 보여준 것으로 둔다(notified_at).
      */
     async executeMarketOrder(
         params: TradeParams & { orderPrice: bigint },
-    ): Promise<{ orderId: bigint }> {
+    ): Promise<{ orderId: bigint; filledPrice: bigint }> {
         return await this.prisma.$transaction(async (tx) => {
             await this.applyTrade(tx, params);
+            const now = new Date();
             const order = await tx.orders.create({
                 data: {
                     user_id: params.userId,
@@ -86,11 +94,14 @@ export class OrdersRepository {
                     quantity: params.quantity,
                     price: params.orderPrice,
                     status: 'COMPLETED',
-                    create_at: new Date(),
+                    create_at: now,
+                    filled_price: params.orderPrice,
+                    filled_at: now,
+                    notified_at: now,
                 },
                 select: { id: true },
             });
-            return { orderId: order.id };
+            return { orderId: order.id, filledPrice: params.orderPrice };
         });
     }
 
@@ -139,16 +150,23 @@ export class OrdersRepository {
      * 대기 주문 체결. 먼저 PENDING → COMPLETED로 **선점**하고(다른 서버가 이미 체결했으면 0건 → 건너뜀),
      * 같은 트랜잭션에서 잔고·보유를 바꾼다. 잔고·보유 부족이면 전체가 되돌아가 PENDING으로 남는다
      * — 호출 쪽이 REJECTED로 바꾼다.
+     * filledPrice = 체결가(시장 통화 최소 단위). acknowledged = 화면이 결과를 이미 앎(접수 응답) → 알림 대상 아님.
      * @returns 이번에 체결했으면 true, 이미 다른 곳에서 처리됐으면 false
      */
     async fillPendingOrder(
         orderId: bigint,
-        params: TradeParams,
+        params: TradeParams & { filledPrice: bigint; acknowledged: boolean },
     ): Promise<boolean> {
         return await this.prisma.$transaction(async (tx) => {
+            const now = new Date();
             const claimed = await tx.orders.updateMany({
                 where: { id: orderId, status: 'PENDING' },
-                data: { status: 'COMPLETED' },
+                data: {
+                    status: 'COMPLETED',
+                    filled_price: params.filledPrice,
+                    filled_at: now,
+                    ...(params.acknowledged ? { notified_at: now } : {}),
+                },
             });
             if (claimed.count === 0) return false;
             await this.applyTrade(tx, params);
@@ -156,11 +174,14 @@ export class OrdersRepository {
         });
     }
 
-    /** 대기 → 다른 상태(REJECTED·CANCELLED). 내 주문만 바꾸려면 userId를 넘긴다. 바뀐 건수 */
+    /**
+     * 대기 → 다른 상태(REJECTED·CANCELLED). 바뀐 건수.
+     * 내 주문만 바꾸려면 userId, 화면이 결과를 이미 알면(접수 응답·본인 취소) acknowledged를 넘긴다.
+     */
     async closePendingOrder(
         orderId: bigint,
         status: 'REJECTED' | 'CANCELLED',
-        userId?: bigint,
+        { userId, acknowledged }: { userId?: bigint; acknowledged?: boolean },
     ): Promise<number> {
         const r = await this.prisma.orders.updateMany({
             where: {
@@ -168,9 +189,30 @@ export class OrdersRepository {
                 status: 'PENDING',
                 ...(userId ? { user_id: userId } : {}),
             },
-            data: { status },
+            data: {
+                status,
+                ...(acknowledged ? { notified_at: new Date() } : {}),
+            },
         });
         return r.count;
+    }
+
+    /** 내 주문 한 건 — 취소 응답용 */
+    async findMyOrder(orderId: bigint, userId: bigint) {
+        return await this.prisma.orders.findFirst({
+            where: { id: orderId, user_id: userId },
+            select: {
+                id: true,
+                side: true,
+                type: true,
+                quantity: true,
+                price: true,
+                status: true,
+                stocks: {
+                    select: { code: true, name: true, stock_type: true },
+                },
+            },
+        });
     }
 
     /**

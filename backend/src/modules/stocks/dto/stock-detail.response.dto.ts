@@ -1,4 +1,6 @@
 // src/modules/stocks/dto/stock-detail.response.dto.ts
+import type { TickRule } from '../../orders/order-rules';
+
 export class StockDetailResponseDto {
     stock_code: string;
     stock_name: string;
@@ -8,6 +10,8 @@ export class StockDetailResponseDto {
     market: string;
     is_favorite: boolean;
     is_event: boolean;
+    tick_rule: TickRule;
+    market_open: boolean;
 
     constructor(data: {
         stock_code: string;
@@ -18,6 +22,8 @@ export class StockDetailResponseDto {
         market: string;
         is_favorite: boolean;
         is_event: boolean;
+        tick_rule: TickRule;
+        market_open: boolean;
     }) {
         this.stock_code = data.stock_code;
         this.stock_name = data.stock_name;
@@ -27,5 +33,7 @@ export class StockDetailResponseDto {
         this.market = data.market;
         this.is_favorite = data.is_favorite;
         this.is_event = data.is_event;
+        this.tick_rule = data.tick_rule;
+        this.market_open = data.market_open;
     }
 }

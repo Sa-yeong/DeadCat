@@ -4,8 +4,15 @@ import { OrdersRepository } from './orders.repository';
 import { PriceService } from 'src/price/price.service';
 import { KisProvider } from 'src/providers/kis/kis.provider';
 import { OrderSide } from './dto/create-order.dto';
-import { isForeignStock, isTriggered, toKrw, toMinor } from './order-rules';
+import {
+    isForeignStock,
+    isTriggered,
+    marketOf,
+    toKrw,
+    toMinor,
+} from './order-rules';
 import { TagAssignmentService } from '../tags/services/tag-assignment.service';
+import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /** 체결에 필요한 대기 주문 정보 */
 export interface FillTarget {
@@ -16,6 +23,12 @@ export interface FillTarget {
     quantity: number;
 }
 
+/** 체결 시도 결과. fillPrice = 체결가(시장 통화 최소 단위), 체결됐을 때만 */
+export interface FillResult {
+    status: 'COMPLETED' | 'REJECTED' | 'PENDING';
+    fillPrice: bigint | null;
+}
+
 /**
  * 대기 주문(지정가·예약) 체결 엔진.
  * 5초마다 PENDING 주문을 모아 실시간 현재가(Redis)와 비교하고, 조건이 맞으면 현재가로 체결한다.
@@ -23,7 +36,7 @@ export interface FillTarget {
  *  - 현재가가 캐시에 없는 종목은 이번 회차를 건너뛴다(추측 가격으로 체결하지 않는다).
  *  - 서버가 여러 대여도 같은 주문을 두 번 체결하지 않는다 — 체결은 PENDING→COMPLETED 선점으로 시작.
  *  - 체결 순간 잔고·보유가 모자라면 REJECTED로 닫는다(계속 재시도하지 않는다).
- *  - 장 시간은 보지 않는다 — 장 마감 후에도 마지막 체결가 기준으로 판단(모의 거래소 단순화).
+ *  - 체결은 장중에만 — 장외 주문은 건너뛰고 다음 장이 열리면 체결한다(판정은 캐릭터 수면과 같은 MarketTimeService).
  */
 @Injectable()
 export class OrderMatcher {
@@ -36,6 +49,7 @@ export class OrderMatcher {
         private readonly kis: KisProvider,
         // 주문 체결 후 투자 성향 태그 갱신
         private readonly tagAssignmentService: TagAssignmentService,
+        private readonly marketTime: MarketTimeService,
     ) {}
 
     /**
@@ -59,7 +73,11 @@ export class OrderMatcher {
         if (this.running) return;
         this.running = true;
         try {
-            const pending = await this.repo.findPendingOrders();
+            const pending = (await this.repo.findPendingOrders()).filter((o) =>
+                this.marketTime.isOperatingTime(
+                    marketOf(isForeignStock(o.stocks.stock_type)),
+                ),
+            );
             if (pending.length === 0) return;
 
             const codes = [...new Set(pending.map((o) => o.stocks.code))];
@@ -73,7 +91,7 @@ export class OrderMatcher {
                 if (!isTriggered(o.type, side, o.price, toMinor(now, foreign)))
                     continue;
                 // 대기 주문 체결 시도
-                const result = await this.fill(
+                const { status } = await this.fill(
                     {
                         id: o.id,
                         user_id: o.user_id,
@@ -86,7 +104,7 @@ export class OrderMatcher {
                 );
 
                 // 실제 체결에 성공한 경우에만 투자 성향 태그 갱신
-                if (result === 'COMPLETED') {
+                if (status === 'COMPLETED') {
                     await this.refreshInvestmentTags(o.user_id);
                 }
             }
@@ -101,18 +119,21 @@ export class OrderMatcher {
 
     /**
      * 대기 주문 한 건을 현재가(now, 시장 통화)로 체결한다.
+     * acknowledged = 접수 응답으로 화면이 결과를 바로 아는 경우 — 알림을 이미 보여준 것으로 둔다.
      * @returns COMPLETED(체결) / REJECTED(잔고·보유 부족) / PENDING(환율 실패·이미 처리됨 등으로 이번엔 못 함)
      */
     async fill(
         order: FillTarget,
         now: number,
         foreign: boolean,
-    ): Promise<'COMPLETED' | 'REJECTED' | 'PENDING'> {
+        acknowledged = false,
+    ): Promise<FillResult> {
         let rate = 1;
         if (foreign) {
             rate = await this.kis.getUsdKrwRate().catch(() => 0);
-            if (!(rate > 0)) return 'PENDING'; // 환율이 오면 다음 회차에
+            if (!(rate > 0)) return { status: 'PENDING', fillPrice: null }; // 환율이 오면 다음 회차에
         }
+        const fillPrice = toMinor(now, foreign);
         try {
             const done = await this.repo.fillPendingOrder(order.id, {
                 userId: order.user_id,
@@ -120,17 +141,23 @@ export class OrderMatcher {
                 side: order.side,
                 quantity: order.quantity,
                 tradePrice: toKrw(now, foreign, rate),
+                filledPrice: fillPrice,
+                acknowledged,
             });
             if (done)
                 this.logger.log(
                     `대기 주문 체결 #${order.id} (${order.side} ${order.quantity}주 @ ${now})`,
                 );
-            return done ? 'COMPLETED' : 'PENDING';
+            return done
+                ? { status: 'COMPLETED', fillPrice }
+                : { status: 'PENDING', fillPrice: null };
         } catch (e) {
             if (e instanceof BadRequestException) {
-                await this.repo.closePendingOrder(order.id, 'REJECTED');
+                await this.repo.closePendingOrder(order.id, 'REJECTED', {
+                    acknowledged,
+                });
                 this.logger.warn(`대기 주문 거부 #${order.id}: ${e.message}`);
-                return 'REJECTED';
+                return { status: 'REJECTED', fillPrice: null };
             }
             throw e;
         }

@@ -6,9 +6,10 @@ import { OrderMatcher } from './order-matcher.service';
 import { PriceModule } from 'src/price/price.module';
 import { KisModule } from 'src/providers/kis/kis.module';
 import { TagModule } from '../tags/tag.module';
+import { MarketTimeModule } from '../character-engine/market-time.module';
 
 @Module({
-    imports: [PriceModule, KisModule, TagModule],
+    imports: [PriceModule, KisModule, TagModule, MarketTimeModule],
     controllers: [OrdersController],
     providers: [OrdersService, OrdersRepository, OrderMatcher],
 })

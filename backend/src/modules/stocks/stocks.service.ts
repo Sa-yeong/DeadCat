@@ -16,6 +16,8 @@ import {
     KisProvider,
 } from 'src/providers/kis/kis.provider';
 import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
+import { marketOf, tickRuleOf } from '../orders/order-rules';
+import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /** KIS 호가 조회 결과(국내·해외 공통 모양) */
 type OrderbookData = {
@@ -56,6 +58,7 @@ export class StocksService {
         private readonly favorites: FavoritesService,
         private readonly repo: StocksRepository,
         private readonly kisProvider: KisProvider,
+        private readonly marketTime: MarketTimeService,
     ) {}
 
     // GET /stocks/ranking: 거래대금 상위 종목. market 지정 시 해당 시장만(rank 재부여).
@@ -156,6 +159,7 @@ export class StocksService {
                   stockCode,
               )
             : false;
+        const foreign = this.isForeign(meta);
 
         return new StockDetailResponseDto({
             stock_code: meta.code,
@@ -166,6 +170,8 @@ export class StocksService {
             market: meta.stock_type,
             is_favorite: isFavorite,
             is_event: meta.is_event,
+            tick_rule: tickRuleOf(foreign, meta.categories?.name),
+            market_open: this.marketTime.isOperatingTime(marketOf(foreign)),
         });
     }
 
