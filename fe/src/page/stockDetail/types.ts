@@ -17,7 +17,8 @@ export interface StockBasic {
   /** 지금 장중인가 — 아니면 시장가 주문을 낼 수 없다 */
   market_open: boolean;
   /** 명세에 없음 — 헤더 전일대비 표시에 필요 */
-  change_price?: number;
+  /** 전일 대비 금액(시장 통화) — 서버 값. 서버가 모르면 차트 종가에서 찾는다(QuoteSync) */
+  change_price?: number | null;
 }
 
 export type Timeframe = '1M' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
@@ -55,6 +56,10 @@ export interface FavoriteItem {
   stock_code: string;
   stock_name: string;
   change_rate: number;
+  /** 현재가(원) — 해외는 평가용 환율로 환산. 시세도 종가도 없으면 null */
+  current_price_krw: number | null;
+  /** 전일 대비 금액(원). 모르면 null */
+  change_price_krw: number | null;
   character_img_url: string | null;
   is_favorite: boolean;
 }

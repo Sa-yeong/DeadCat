@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { LayoutContext, MIN_STAGE, MIN_WIDTH, useLayout, useViewportLayout } from './layout';
-import { QuoteSync, SLOW_MS, fetchCandles, type Tick } from './QuoteSync';
-import { getRanking, isNotFound, type RankingItem } from './api';
+import { useParams } from 'react-router-dom';
+import { LayoutContext, MIN_STAGE, MIN_WIDTH, SlidingContext, slideTransition, useLayout, useViewportLayout } from './layout';
+import { QuoteSync, fetchCandles, type Tick } from './QuoteSync';
+import { isNotFound } from './api';
 import type { Candle, Timeframe, VolumeSummary } from './types';
 import { StageView } from './components/StageView';
 import { CharacterStage, type StageStatus } from './components/CharacterStage';
@@ -13,7 +13,6 @@ import { StockHeader } from './components/StockHeader';
 import { OrderBookBlock } from './components/OrderBookBlock';
 import { OrderBlock } from './components/OrderBlock';
 import { VolumeBlock } from './components/VolumeBlock';
-import { WatchRail } from './components/WatchRail';
 import { SolidBatchToggle } from './components/SolidBatchToggle';
 import { Block } from './components/Block';
 import { EmotionTestPanel } from './components/EmotionTestPanel';
@@ -23,8 +22,8 @@ import { useEmotionFeed } from './useEmotionFeed';
 const emotionTestOn = () =>
   import.meta.env.DEV || !!(window as unknown as { __DC_PREVIEW__?: boolean }).__DC_PREVIEW__;
 
-type BlockId = 'orderbook' | 'order' | 'volume' | 'rail';
-const BLOCK_IDS: BlockId[] = ['orderbook', 'order', 'volume', 'rail'];
+type BlockId = 'orderbook' | 'order' | 'volume';
+const BLOCK_IDS: BlockId[] = ['orderbook', 'order', 'volume'];
 /** 이만큼(px) 안 움직이고 이 시간(ms) 안에 떼면 '누르기' — 넘으면 차트 끌기 */
 const TAP_SLOP_PX = 5;
 const TAP_MAX_MS = 500;
@@ -36,8 +35,9 @@ const TAP_MAX_MS = 500;
  * 차트는 그 벽에 난 창문이고, 벽은 반투명이라 뒤가 비쳐 보이되 그 위에 UI를 올린다.
  *
  * 상태를 페이지가 드는 것과 아닌 것 —
- *   여러 곳이 같이 보는 값만 페이지가 든다(tab · timeframe · solid · 관심목록 · tick · volume · candles).
- *   주문 입력, 관심 레일의 전체/관심 탭, 글쓰기 모달은 각자 든다.
+ *   여러 곳이 같이 보는 값만 페이지가 든다(tab · timeframe · solid · tick · volume · candles).
+ *   주문 입력, 글쓰기 모달은 각자 든다.
+ *   관심종목 · 전체 목록은 이 화면이 아니라 글로벌 사이드바가 든다(오른쪽 레일은 사이드바로 옮겨 갔다).
  *
  * 데이터 조달은 세 갈래다. 주기가 다르기 때문이다.
  *   ① 빠른 주기 — 현재가·등락·호가·차트 마지막 봉 (QuoteSync.fastTick)
@@ -48,10 +48,9 @@ const TAP_MAX_MS = 500;
 export function StockDetailPage() {
   const { stockCode = '000000' } = useParams();
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const L = useViewportLayout(rootRef);
+  const { layout: L, sliding } = useViewportLayout(rootRef);
   const layoutRef = useRef(L);
   layoutRef.current = L;
-  const navigate = useNavigate();
 
   const [tab, setTab] = useState<WindowTab>('CHART');
   const [timeframe, setTimeframe] = useState<Timeframe>('DAY');
@@ -59,10 +58,7 @@ export function StockDetailPage() {
     orderbook: false,
     order: false,
     volume: false,
-    rail: false,
   });
-  const [favorites, setFavorites] = useState<Set<string>>(() => new Set());
-  const [rail, setRail] = useState<RankingItem[]>([]);
   /** 헤더에 띄울 받기 실패 문구 — 성공하면 지운다 */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tick, setTick] = useState<Tick | null>(null);
@@ -158,57 +154,13 @@ export function StockDetailPage() {
     return out;
   }, [baseCandles, liveLast, timeframe, volume]);
 
-  /**
-   * 우측 레일 '전체' 목록 — 거래대금 상위(GET /stocks/ranking). 느린 주기로 다시 받는다.
-   * 관심 하트는 처음 받을 때만 응답의 is_favorite로 채운다 — 그 뒤엔 사용자가 누른 상태가 우선.
-   * {관심 등록·해제 API(POST/DELETE /favorites)는 로그인 연결 때 붙인다 — 지금은 화면 안에서만}
-   */
-  useEffect(() => {
-    let alive = true;
-    let seeded = false;
-    const load = () =>
-      getRanking()
-        .then((list) => {
-          if (!alive) return;
-          setRail(list);
-          if (!seeded) {
-            seeded = true;
-            setFavorites(new Set(list.filter((i) => i.is_favorite).map((i) => i.stock_code)));
-          }
-        })
-        .catch(() => {}); // 목록은 못 받아도 화면은 돈다 — 다음 주기에 다시
-    void load();
-    const t = window.setInterval(load, SLOW_MS);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
-  }, []);
-
-  const openStock = useCallback(
-    (code: string) => {
-      if (code === stockCode) return;
-      navigate(`/stocks/${code}`); // 탭과 주기는 유지한다 — 차트를 보던 사람은 계속 차트를 본다
-    },
-    [navigate, stockCode],
-  );
-
-  const toggleFavorite = useCallback((code: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
-  }, []);
-
   const setBlockSolid = useCallback((id: BlockId) => {
     setSolid((s) => ({ ...s, [id]: !s[id] }));
   }, []);
 
   const allSolid = BLOCK_IDS.every((id) => solid[id]);
   const setAllSolid = useCallback((v: boolean) => {
-    setSolid({ orderbook: v, order: v, volume: v, rail: v });
+    setSolid({ orderbook: v, order: v, volume: v });
   }, []);
 
   /**
@@ -222,7 +174,6 @@ export function StockDetailPage() {
       { left: L.colLeft, top: L.blocks.orderbook.top, width: L.colWidth, height: L.blocks.orderbook.height, solid: solid.orderbook },
       { left: L.colLeft, top: L.blocks.order.top, width: L.colWidth, height: L.blocks.order.height, solid: solid.order },
       { left: L.colLeft, top: L.blocks.volume.top, width: L.colWidth, height: L.blocks.volume.height, solid: solid.volume },
-      { left: L.rail.left, top: L.rail.top, width: L.rail.width, height: L.rail.height, solid: solid.rail },
       { left: L.win.left, top: L.win.top, width: L.winWidth, height: L.tabHeight, solid: true },
     ];
     // {반투명 블럭을 가림으로 칠지 미정} — 지금은 불투명일 때만 가림으로 본다
@@ -290,6 +241,7 @@ export function StockDetailPage() {
 
   return (
     <LayoutContext.Provider value={L}>
+    <SlidingContext.Provider value={sliding}>
     <div
       ref={rootRef}
       className="dc-screen relative overflow-hidden"
@@ -304,7 +256,8 @@ export function StockDetailPage() {
       }}
     >
       {/* 네비는 그리지 않는다 — 앱에서는 팀의 GlobalNavBar(Root)가 위에 있다 */}
-      <main className="relative" style={{ width: L.width, height: L.stageHeight }}>
+      {/* 폭도 창틀과 같이 움직인다 — 오른쪽에 붙은 「전부 불투명」 버튼이 창문 오른쪽 끝을 따라가게 */}
+      <main className="relative" style={{ width: L.width, height: L.stageHeight, transition: sliding ? slideTransition('width') : undefined }}>
         <StageView
           live={stage === 'ready'}
           windowOpen={tab === 'CHART'}
@@ -325,6 +278,7 @@ export function StockDetailPage() {
           tab={tab}
           onSwitch={setTab}
           stockCode={stockCode}
+          market={basic?.stock_code === stockCode ? basic.market : undefined}
           timeframe={timeframe}
           onTimeframe={setTimeframe}
           candles={baseCandles}
@@ -366,16 +320,6 @@ export function StockDetailPage() {
           <Placeholder id="volume" title="거래량" solid={solid.volume} onToggle={() => setBlockSolid('volume')} />
         )}
 
-        <WatchRail
-          items={rail}
-          favorites={favorites}
-          currentCode={stockCode}
-          solid={solid.rail}
-          onToggle={() => setBlockSolid('rail')}
-          onSelect={openStock}
-          onToggleHeart={toggleFavorite}
-        />
-
         <PostComposer
           open={composing}
           onClose={() => setComposing(false)}
@@ -385,6 +329,7 @@ export function StockDetailPage() {
         {emotionTestOn() && <EmotionTestPanel getLoop={getStageLoop} onActive={setEmotionTesting} />}
       </main>
     </div>
+    </SlidingContext.Provider>
     </LayoutContext.Provider>
   );
 }

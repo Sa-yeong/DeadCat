@@ -1,5 +1,5 @@
 import { HEADER_H, HEADER_TOP, useLayout } from '../layout';
-import { pct, tone, toneSoft, won } from '../format';
+import { marketPrice, pct, tone, toneSoft } from '../format';
 import type { StockBasic } from '../types';
 
 /**
@@ -49,10 +49,10 @@ export function StockHeader({
             color: c,
           }}
         >
-          {won(basic.current_price)}
+          {marketPrice(basic.current_price, basic.market)}
         </span>
         <span style={{ fontSize: 13, fontWeight: 700, color: soft }}>
-          {basic.change_rate >= 0 ? '▲' : '▼'} {changePrice != null && `${won(Math.abs(changePrice))} `}({pct(basic.change_rate)})
+          {basic.change_rate >= 0 ? '▲' : '▼'} {changePrice != null && `${marketPrice(Math.abs(changePrice), basic.market)} `}({pct(basic.change_rate)})
         </span>
         {status && <span style={{ fontSize: 12, color: '#A5A59C' }}>{status}</span>}
       </div>

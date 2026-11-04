@@ -1,4 +1,5 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
+import { hostWidth, observeHost } from '../../layout/hostArea';
 import { ROOM, ROOM_MID_X, ROOM_SPAN_Y, VIEW } from './runtime/projection';
 import { WALL_H } from './runtime/roomShell';
 
@@ -16,7 +17,8 @@ import { WALL_H } from './runtime/roomShell';
  * 방명록 패널은 방 위에 겹친다(방이 비켜나지 않는다).
  */
 
-export const MIN_WIDTH = 1280;
+/** 작은 노트북(1366)에서 글로벌 사이드바를 열어도(왼쪽 영역 973~990) 가로 스크롤이 없는 폭. 그보다 좁으면 가로 스크롤 */
+export const MIN_WIDTH = 960;
 export const MIN_STAGE = 560;
 
 const STAGE_PER_TILE = 20.41; // 무대 높이 / 1칸 (규칙 ①)
@@ -27,6 +29,25 @@ export const ZOOM_MAX = 2.169;
 const BOUND_PAD = 30; //         줌인 때 끌 수 있는 범위 — 방 끝에서 이만큼(px, 줌아웃 기준) 더
 const PANEL_W = 360; // 방명록 패널
 const PANEL_TOP = 60;
+const ZOOM_W = 200; //   확대 도구 폭
+const ZOOM_H = 42;
+const DOCK_W = 104; //   가운데 아래 「배치」 버튼 묶음
+const HUD_GAP = 8;
+
+/** 모드 중 하단 트레이 폭 */
+export const bottomBarWidth = (width: number) => Math.min(760, width - 120);
+
+/**
+ * 확대 도구의 위 끝. 평소에는 오른쪽 아래 줄(dockTop)이다.
+ * 좁은 화면에서는 가운데 아래 도구와 부딪힌다 — 배치 트레이가 도구를 덮거나, 창이 열려 왼쪽으로 비켜난 도구가
+ * 「배치」 버튼을 덮는다. 트레이를 여닫을 때마다 튀지 않게 부딪히는 폭이면 늘 트레이 위 줄에 둔다.
+ */
+function zoomTopOf(width: number, dockTop: number, barTop: number): number {
+  const center = width / 2;
+  const clashTray = center + bottomBarWidth(width) / 2 + HUD_GAP > width - 12 - ZOOM_W;
+  const clashDock = center + DOCK_W / 2 + HUD_GAP > width - (PANEL_W + 24) - ZOOM_W;
+  return clashTray || clashDock ? barTop - HUD_GAP - ZOOM_H : dockTop;
+}
 
 export interface RoomLayout {
   width: number;
@@ -37,6 +58,9 @@ export interface RoomLayout {
   room: { l: number; r: number; t: number; b: number };
   panel: { left: number; top: number; width: number; height: number };
   dockTop: number;
+  /** 모드 중 하단 트레이의 위 끝 */
+  barTop: number;
+  zoomTop: number;
 }
 
 export function computeRoomLayout(availW: number, availH: number): RoomLayout {
@@ -52,13 +76,17 @@ export function computeRoomLayout(availW: number, availH: number): RoomLayout {
     t: oy - WALL_H * Z * scale - BOUND_PAD,
     b: oy + (ROOM_SPAN_Y + SLAB * Z) * scale + BOUND_PAD,
   };
+  const dockTop = stageHeight - 62;
+  const barTop = stageHeight - 92;
   return {
     width,
     stageHeight,
     base: { scale, ox, oy },
     room,
     panel: { left: width - PANEL_W - 12, top: PANEL_TOP, width: PANEL_W, height: stageHeight - PANEL_TOP - 12 },
-    dockTop: stageHeight - 62,
+    dockTop,
+    barTop,
+    zoomTop: zoomTopOf(width, dockTop, barTop),
   };
 }
 
@@ -121,11 +149,12 @@ export function projectionOf(L: RoomLayout, v: RoomView): { scale: number; ox: n
 /**
  * 창 크기를 따라가는 레이아웃. 화면 위에 무엇이 있는지(앱의 GlobalNavBar, 미리보기 대용 네비)는
  * 모르므로, 화면 맨 위가 문서의 어디서 시작하는지 재서 창 높이에서 뺀다.
+ * 폭은 창이 아니라 화면을 담은 칸 — 오른쪽 글로벌 사이드바 밑으로 3D 가 파고들지 않게(hostArea).
  */
 export function useRoomLayout(root: RefObject<HTMLElement | null>): RoomLayout {
   const read = () => {
     const top = root.current ? root.current.getBoundingClientRect().top + window.scrollY : 0;
-    return computeRoomLayout(document.documentElement.clientWidth, window.innerHeight - top);
+    return computeRoomLayout(hostWidth(root.current), window.innerHeight - top);
   };
   const [layout, setLayout] = useState<RoomLayout>(() => computeRoomLayout(window.innerWidth, window.innerHeight - 56));
   useLayoutEffect(() => {
@@ -138,9 +167,12 @@ export function useRoomLayout(root: RefObject<HTMLElement | null>): RoomLayout {
       raf = requestAnimationFrame(() => setLayout(read()));
     };
     window.addEventListener('resize', onResize);
+    // 창은 그대로인데 화면 칸만 바뀌는 경우(글로벌 사이드바 여닫기)
+    const unobserve = observeHost(root.current, onResize);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
+      unobserve();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

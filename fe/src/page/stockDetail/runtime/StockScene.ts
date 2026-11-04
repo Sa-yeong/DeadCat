@@ -36,6 +36,19 @@ export interface Framing {
   winMid: number;
 }
 
+/** 가로 위치(캐릭터 가운데 · 소실점)만 다른가 — 그렇다면 캔버스를 다시 맞출 필요 없이 옮기기만 한다 */
+export function onlyCenterMoved(a: Framing, b: Framing): boolean {
+  return (
+    a.width === b.width &&
+    a.height === b.height &&
+    a.headTop === b.headTop &&
+    a.hips === b.hips &&
+    a.horizon === b.horizon &&
+    a.winMid === b.winMid &&
+    a.centerX - a.vanishX === b.centerX - b.vanishX
+  );
+}
+
 /** 지금 얹혀 있는 표정 한 겹. 모션이 바뀌면 이전 겹은 서서히 빠진다 */
 interface FaceLayer {
   tracks: FaceTrack[];
@@ -100,6 +113,12 @@ export class StockScene {
   private pxPerM = 1;
   /** 캐릭터 위치(m, 가로)와 몸 방향(+ = 화면 오른쪽을 봄) */
   private rootX = 0;
+  /**
+   * 캐릭터 자리가 카메라 가운데(framing.centerX)에서 떨어진 화면 거리(px) — 글로벌 사이드바를 여닫아
+   * 창문 가운데가 옮겨 가도 카메라 · 바닥은 그대로 두고 캐릭터 자리만 옮긴다. 화면 거리로 들고 있어
+   * 카메라가 물러나도(확대 축소 · 드론) 캐릭터는 창문 가운데에 남는다.
+   */
+  private charShift = 0;
   private rootYaw = 0;
   private baseYaw = 0;
 
@@ -244,7 +263,31 @@ export class StockScene {
 
   setFraming(f: Framing) {
     this.framing = f;
+    this.charShift = 0;
     this.renderer.setSize(f.width, f.height, false);
+    this.applyFraming();
+  }
+
+  /** 지금 캐릭터를 걸어 둔 가로 위치(px, 창문 가운데) — 아직 안 정했으면 null */
+  get centerX(): number | null {
+    return this.framing ? this.framing.centerX + this.charShift : null;
+  }
+
+  /** 캐릭터를 걸 가로 위치만 x(px)로 옮긴다 — 카메라 · 바닥은 그대로 */
+  setCharacterCenter(x: number) {
+    if (!this.framing) return;
+    this.charShift = x - this.framing.centerX;
+    this.placeRoot();
+  }
+
+  /**
+   * 캐릭터를 걸 가로 위치와 소실점을 같이 dx px 옮긴다 — 화면 전체가 그만큼 평행 이동한다
+   * (카메라는 그대로, 렌즈만 옆으로 민다). 캔버스 크기는 안 바꾸므로 매 프레임 불러도 가볍다.
+   */
+  shiftCenter(dx: number) {
+    const f = this.framing;
+    if (!f || !dx) return;
+    this.framing = { ...f, centerX: f.centerX + dx, vanishX: f.vanishX + dx };
     this.applyFraming();
   }
 
@@ -266,10 +309,14 @@ export class StockScene {
   setRoot(x: number, yaw: number) {
     this.rootX = x;
     this.rootYaw = yaw;
-    if (this.vrm) {
-      this.vrm.scene.position.x = x;
-      this.vrm.scene.rotation.y = this.baseYaw + yaw;
-    }
+    if (this.vrm) this.vrm.scene.rotation.y = this.baseYaw + yaw;
+    this.placeRoot();
+  }
+
+  /** 캐릭터의 3D 가로 위치 = 움직인 만큼 + 자리 옮긴 만큼(화면 px 을 지금 카메라 기준 m 로) */
+  private placeRoot() {
+    const x = this.rootX + this.charShift / this.pxPerM;
+    if (this.vrm) this.vrm.scene.position.x = x;
     this.env.setFocus(x);
   }
 
@@ -283,7 +330,7 @@ export class StockScene {
     const f = this.framing;
     if (!f) return null;
     // 드론 뷰에서는 캐릭터가 창문 가운데(소실점 자리)에 온다
-    return { centerX: f.centerX + (f.vanishX - f.centerX) * this.drone, width: f.width };
+    return { centerX: f.centerX + this.charShift + (f.vanishX - f.centerX) * this.drone, width: f.width };
   }
 
   /** 화면 좌표(캔버스 기준 px)가 캐릭터 몸에 닿는가 */
@@ -387,6 +434,7 @@ export class StockScene {
     // 캐릭터 깊이(시선 방향 거리) — 화면 px ↔ m 환산과 안개 거리에 쓴다
     const depth = (py - cy) * Math.sin(pitch) + pz * Math.cos(pitch);
     this.pxPerM = s / depth;
+    this.placeRoot(); // 카메라가 물러나면 같은 화면 거리의 3D 거리도 달라진다
 
     // 시점 이동 — 가상의 더 큰 화면 가운데가 (vanishX, 기준 높이) 에 오도록 그중 일부만 그린다.
     // 기준 높이는 정면일 때 지평선, 드론일 때 창문 가운데(캐릭터를 바로 보므로 캐릭터가 거기 걸린다)

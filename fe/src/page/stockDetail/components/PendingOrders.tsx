@@ -3,6 +3,7 @@ import { cancelOrder, errorMessage, getPendingOrders, hasLogin, isUnauthorized, 
 import { down, orderTime, up } from '../format';
 import { R } from '../radius';
 import { subscribeOrderEvents } from '../../../common/notifications/orderFeed';
+import { subscribeOrderChanges } from '../../../common/orders/orderChanges';
 import { cancelFailedNotice, cancelledNotice, money } from '../../../common/notifications/orderNotices';
 import { notify } from '../../../common/notifications/store';
 
@@ -14,7 +15,9 @@ export interface PendingOrdersState {
 
 /**
  * 이 종목의 내 대기 주문. 탭의 개수를 보여야 해서 탭을 열기 전에도 받아 둔다.
- * 다시 받는 때: 종목에 들어올 때 · 알림 통로로 이 종목 체결 · 거절이 왔을 때 + 부르는 쪽의 reload(탭 열기 · 주문 뒤 · 취소 뒤).
+ * 다시 받는 때: 종목에 들어올 때 · 알림 통로로 이 종목 체결 · 거절이 왔을 때 · 주문 · 취소 신호(이 화면이든 사이드바든)
+ * + 부르는 쪽의 reload(탭 열기).
+ * 신호는 종목을 가리지 않는다 — 사이드바에서 다른 종목 대기를 취소해도 한 번 더 받을 뿐 목록은 그대로다.
  * 로그인 안 했으면 비어 있는 것으로 친다.
  */
 export function usePendingOrders(stockCode: string) {
@@ -43,8 +46,10 @@ export function usePendingOrders(stockCode: string) {
     const stop = subscribeOrderEvents((n) => {
       if (n.stock_code === stockCode) void reload();
     });
+    const stopChanges = subscribeOrderChanges(reload);
     return () => {
       stop();
+      stopChanges();
       latest.current++; // 떠난 뒤 도착한 응답은 버린다
     };
   }, [stockCode, reload]);

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useLayout } from '../layout';
+import { slideTransition, useLayout, useSliding } from '../layout';
 import { FloorGrid } from './FloorGrid';
 import characterFront from '../character-front.png';
 import { R } from '../radius';
@@ -21,7 +21,10 @@ const FROST = 'blur(3px) saturate(0.7)'; // 2026-09-29 흐림 절반(6→3)
  */
 export function CoverFilm({ frosted = false, windowOpen = true }: { frosted?: boolean; windowOpen?: boolean }) {
   const L = useLayout();
+  const sliding = useSliding();
   const { win } = L;
+  // 막은 3D 무대 전체를 늘 덮는다(사이드바 밑까지) — 여닫을 때 창문 구멍만 움직인다
+  const W = L.canvasWidth;
   const band = 'pointer-events-none absolute';
   const look: React.CSSProperties = frosted
     ? { background: FILM, backdropFilter: FROST, WebkitBackdropFilter: FROST }
@@ -39,9 +42,10 @@ export function CoverFilm({ frosted = false, windowOpen = true }: { frosted?: bo
       style={{
         left: 0,
         top: 0,
-        width: L.width,
+        width: W,
         height: L.stageHeight,
-        clipPath: `path(evenodd, 'M0 0 H${L.width} V${L.stageHeight} H0 Z${hole}')`,
+        clipPath: `path(evenodd, 'M0 0 H${W} V${L.stageHeight} H0 Z${hole}')`,
+        transition: sliding ? slideTransition('clip-path') : undefined,
         ...look,
       }}
     />
@@ -92,6 +96,7 @@ export function CharacterLayer({ windowOpen = true }: { windowOpen?: boolean }) 
 /** 창틀 — 뚫린 창의 테두리 */
 export function WindowFrame() {
   const { win, winWidth, winHeight } = useLayout();
+  const sliding = useSliding();
   return (
     <div
       className="pointer-events-none absolute"
@@ -102,6 +107,7 @@ export function WindowFrame() {
         height: winHeight,
         border: '1px solid rgba(255,255,255,0.18)',
         borderRadius: R.panel,
+        transition: sliding ? slideTransition('width') : undefined,
       }}
     />
   );

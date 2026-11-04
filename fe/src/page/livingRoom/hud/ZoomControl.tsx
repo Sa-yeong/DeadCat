@@ -8,7 +8,7 @@ import { C, floatBar, solidBtn } from './style';
 export function ZoomControl({ z, right, top, onZoom, onStep }: { z: number; right: number; top: number; onZoom: (z: number) => void; onStep: (factor: number) => void }) {
   const sq = { ...solidBtn, width: 32, height: 32, padding: 0, justifyContent: 'center', fontSize: 18 } as const;
   return (
-    <div style={{ ...floatBar, position: 'absolute', right, top, height: 42, boxSizing: 'border-box', gap: 6, padding: '4px 6px', zIndex: 5, transition: 'right 0.35s ease' }}>
+    <div style={{ ...floatBar, position: 'absolute', right, top, height: 42, boxSizing: 'border-box', gap: 6, padding: '4px 6px', zIndex: 5, transition: 'right 0.35s ease, top 0.35s ease' }}>
       <button type="button" aria-label="축소" onClick={() => onStep(1 / 1.25)} disabled={z <= 1.001} style={{ ...sq, opacity: z <= 1.001 ? 0.4 : 1 }}>−</button>
       <input
         type="range"

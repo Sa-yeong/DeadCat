@@ -31,7 +31,7 @@ export class HoldingRepository {
                             orderBy: {
                                 record_date: 'desc', // 최신 날짜 정렬
                             },
-                            take: 1, // 가장 최근 주가 1개만
+                            take: 2, // 최근 두 종가 — 시세가 없을 때 현재가 · 오늘 등락을 대신한다
                             select: {
                                 close_price: true,
                             },

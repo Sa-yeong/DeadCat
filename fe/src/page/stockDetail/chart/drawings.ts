@@ -10,6 +10,7 @@ import type {
   SeriesType,
   Time,
 } from 'lightweight-charts';
+import { chartPriceText } from '../format';
 import { indexToTime, timeToIndex } from './time';
 
 /**
@@ -117,6 +118,8 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
   hovered: number | null = null;
   selected: number | null = null;
   private readonly view: IPrimitivePaneView;
+  /** 수평선 가격 태그 글자 — 시장에 따라(ChartPane 이 넣어 준다) */
+  priceText: (p: number) => string = chartPriceText('DOMESTIC');
 
   constructor(list: Drawing[]) {
     this.list = list;
@@ -143,7 +146,7 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
   priceAxisViews(): ISeriesPrimitiveAxisView[] {
     const s = this.series;
     if (!s) return [];
-    const fmt = (p: number) => Math.round(p).toLocaleString('ko-KR');
+    const fmt = this.priceText;
     return [...this.list, ...(this.preview ? [this.preview] : [])]
       .filter((d): d is Extract<Drawing, { kind: 'hline' }> => d.kind === 'hline')
       .map((d) => ({

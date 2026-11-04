@@ -10,6 +10,7 @@ import { OrderConfirmDialog, shouldSkipConfirm, type OrderDraft } from './OrderC
 import { PendingOrderList, usePendingOrders } from './PendingOrders';
 import { useOrderAvailable } from '../useOrderAvailable';
 import { notify } from '../../../common/notifications/store';
+import { announceOrderChange } from '../../../common/orders/orderChanges';
 import { failedNotice, money, orderResultNotice } from '../../../common/notifications/orderNotices';
 
 /**
@@ -134,8 +135,8 @@ export function OrderBlock({
     } finally {
       setSending(false);
       onDone();
-      void reloadPending();
-      void reloadAvailable();
+      // 이 블럭의 대기 · 주문가능도 이 신호로 다시 받는다 — 사이드바(보유 · 주문내역)와 같이
+      void announceOrderChange();
     }
   };
 
@@ -155,10 +156,8 @@ export function OrderBlock({
 
   const availableText = availableLabel(side, available);
 
-  const afterCancel = async () => {
-    void reloadAvailable();
-    await reloadPending();
-  };
+  // 대기 · 주문가능 · 사이드바가 다 다시 받을 때까지 기다린다(취소 버튼이 그동안 눌린 채로)
+  const afterCancel = () => announceOrderChange();
 
   return (
     <>

@@ -36,6 +36,10 @@ const follow = (cur: number, target: number, rate: number, dt: number) => cur + 
  *  · 화면 안에 남아 있으면 → 걸어온다(느긋하게)
  *  · STAY_PX 보다 덜 밀렸으면 → 그 자리
  *
+ * 창문 가운데가 옮겨 가도(moveHome — 글로벌 사이드바를 여닫아 창문이 좁아지고 넓어짐) 같은 규칙이다.
+ * 카메라 · 바닥은 움직이지 않고, 캐릭터만 그 자리에서 걸어(뛰어) 온다.
+ * 사이드바에 가려진 것도 화면 밖으로 본다(setVisibleWidth).
+ *
  * 모션은 StockStageLoop 가 튼다 — 여기서는 시작(onMove)과 도착(onArrive)만 알린다.
  * walk/run 파일이 없으면 지금 모션 그대로 미끄러져 온다.
  */
@@ -52,6 +56,8 @@ export class StageReturn {
   private time = 0;
   /** 제자리(자는 중) — 카메라가 움직여도 걸어오지 않는다 */
   private still = false;
+  /** 무대 중 실제로 보이는 폭(px) — 이보다 오른쪽은 사이드바 밑이라 안 보인다 */
+  private visibleWidth = Infinity;
 
   onMove: ((mode: ReturnMode) => void) | null = null;
   /** 도착(또는 다시 끌려서 멈춤) — 어떻게 오던 중이었는지 */
@@ -73,6 +79,23 @@ export class StageReturn {
     this.pan -= dx / ppm;
     this.lastPanAt = this.time;
     this.scene.setPan(this.pan);
+  }
+
+  /**
+   * 창문 가운데가 x(px)로 옮겨 갔다. 돌아올 자리만 옮기고 캐릭터는 화면에서 그 자리에 남긴다
+   * — 그다음은 끌기와 같다(걸어/뛰어 오기, 자는 중이면 제자리).
+   */
+  moveHome(x: number) {
+    const cur = this.scene.centerX;
+    const ppm = this.scene.pixelsPerMeter;
+    if (cur === null || !ppm) return;
+    this.scene.setCharacterCenter(x);
+    this.x -= (x - cur) / ppm;
+  }
+
+  /** 무대 중 보이는 폭(px) — 무대 왼쪽 끝부터. 이보다 오른쪽으로 나갔으면 화면 밖이다 */
+  setVisibleWidth(w: number) {
+    this.visibleWidth = w;
   }
 
   /** 제자리에 둔다(자는 중). 풀리면 밀려나 있던 만큼 그때 돌아온다 */
@@ -123,14 +146,14 @@ export class StageReturn {
     this.scene.setRoot(this.x, this.yaw);
   }
 
-  /** 캐릭터가 무대 전체(창틀 + 반투명 영역) 밖으로 완전히 나갔나 */
+  /** 캐릭터가 보이는 화면(창틀 + 반투명 영역, 사이드바에 가린 곳 제외) 밖으로 완전히 나갔나 */
   private offScreen(): boolean {
     const home = this.scene.home;
     if (!home) return false;
     const ppm = this.scene.pixelsPerMeter;
     const cx = home.centerX + (this.x - this.pan) * ppm;
     const half = BODY_HALF_W_M * ppm;
-    return cx + half < 0 || cx - half > home.width;
+    return cx + half < 0 || cx - half > Math.min(home.width, this.visibleWidth);
   }
 
   private start(mode: ReturnMode) {

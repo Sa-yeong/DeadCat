@@ -141,7 +141,7 @@ export function ChartToolbar({
       </Menu>
 
       {tool !== 'none' && (
-        <span style={{ marginLeft: 6, color: MUTED, fontSize: 11.5 }}>Esc 로 그만두기</span>
+        <span style={{ marginLeft: 6, color: MUTED, fontSize: 11.5, whiteSpace: 'nowrap', flexShrink: 0 }}>Esc 로 그만두기</span>
       )}
 
       <Legend indicators={indicators} />
@@ -149,7 +149,7 @@ export function ChartToolbar({
   );
 }
 
-/** 켜진 지표의 색 안내 — 툴바 오른쪽 끝 */
+/** 켜진 지표의 색 안내 — 툴바 오른쪽 끝. 자리가 모자라면 넘친 만큼 오른쪽이 잘린다(버튼을 밀어내지 않게) */
 function Legend({ indicators }: { indicators: IndicatorSet }) {
   const items: { label: string; color: string }[] = [];
   if (indicators.MA) MA_LINES.forEach((m) => items.push({ label: String(m.n), color: m.color }));
@@ -158,10 +158,13 @@ function Legend({ indicators }: { indicators: IndicatorSet }) {
   if (indicators.MACD) items.push({ label: 'MACD', color: MACD_COLOR }, { label: '시그널', color: SIGNAL_COLOR });
   if (!items.length) return null;
   return (
-    <div className="flex items-center" style={{ marginLeft: 'auto', gap: 10, fontSize: 11.5, color: MUTED }}>
-      {indicators.MA && <span>이동평균</span>}
+    <div
+      className="flex items-center"
+      style={{ marginLeft: 'auto', paddingLeft: 10, minWidth: 0, overflow: 'hidden', gap: 10, fontSize: 11.5, color: MUTED, whiteSpace: 'nowrap' }}
+    >
+      {indicators.MA && <span style={{ flexShrink: 0 }}>이동평균</span>}
       {items.map((it) => (
-        <span key={it.label} className="inline-flex items-center" style={{ gap: 4 }}>
+        <span key={it.label} className="inline-flex items-center" style={{ gap: 4, flexShrink: 0 }}>
           <span style={{ width: 10, height: 2, borderRadius: 1, background: it.color }} />
           {it.label}
         </span>
@@ -200,7 +203,8 @@ function Menu({
   }, [open, onOpen]);
 
   return (
-    <div ref={box} style={{ position: 'relative' }}>
+    // 창문이 좁을 때(글로벌 사이드바를 연 1366 등) 버튼은 줄지 않는다 — 모자라면 오른쪽 지표 안내가 잘린다
+    <div ref={box} style={{ position: 'relative', flexShrink: 0 }}>
       <div onClick={() => onOpen(!open)}>{button}</div>
       {open && (
         <div
@@ -285,6 +289,7 @@ function ToolButton({ label, active, children }: { label: string; active: boolea
         background: active ? ACTIVE_BG : 'transparent',
         color: active ? TEXT : MUTED,
         fontSize: 12.5,
+        whiteSpace: 'nowrap',
         cursor: 'pointer',
       }}
     >

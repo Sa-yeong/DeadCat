@@ -24,7 +24,7 @@ import { furnitureImgUrl } from '../catalog';
 import { ConfirmDialog, Icon, Picture } from './ui';
 import { useEscape } from './useEscape';
 import { useHistory } from './useHistory';
-import type { PanControl } from '../layout';
+import { bottomBarWidth, type PanControl } from '../layout';
 
 /**
  * 배치 편집 세션 — OWNER 전용, 대상은 **가구만**.
@@ -339,7 +339,7 @@ export function PlacementEditor({
       <BottomBar
         centerX={centerX}
         top={barTop}
-        width={Math.min(760, width - 120)}
+        width={bottomBarWidth(width)}
         title="보관함"
         gap={12}
         tools={

@@ -2,8 +2,8 @@ import { useLayout } from '../layout';
 import { R } from '../radius';
 
 /**
- * 블럭 네 개를 한 번에 반투명 ↔ 불투명.
- * {놓을 자리 미확정} — 지금은 관심종목 레일 위, 오른쪽 끝에 둔다(비어 있는 자리).
+ * 블럭 세 개(호가 · 주문 · 거래량)를 한 번에 반투명 ↔ 불투명.
+ * {놓을 자리 미확정} — 지금은 창문 위, 오른쪽 끝에 둔다(비어 있는 자리. 관심 레일이 있던 때와 같은 자리).
  */
 export function SolidBatchToggle({ allSolid, onSetAll }: { allSolid: boolean; onSetAll: (v: boolean) => void }) {
   const L = useLayout();
@@ -14,8 +14,8 @@ export function SolidBatchToggle({ allSolid, onSetAll }: { allSolid: boolean; on
       aria-pressed={allSolid}
       className="absolute inline-flex items-center gap-1.5"
       style={{
-        right: L.width - (L.rail.left + L.rail.width),
-        top: L.rail.top - 34, // 헤더 줄 아래끝에 맞춘다
+        right: L.width - L.win.right,
+        top: L.win.top - 34, // 헤더 줄 아래끝에 맞춘다
         height: 22,
         padding: '0 8px',
         border: '1px solid rgba(255,255,255,0.18)',

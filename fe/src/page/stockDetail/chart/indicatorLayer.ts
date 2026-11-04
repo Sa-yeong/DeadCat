@@ -9,7 +9,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import type { Candle } from '../types';
-import { down, up } from '../format';
+import { chartPriceFormat, down, up, type PriceMarket } from '../format';
 import { bollinger, macd, rsi, sma, type Series } from './indicators';
 import { stamp } from './time';
 
@@ -45,7 +45,6 @@ const withAlpha = (hex: string, a: number) =>
 const HIST_UP = withAlpha(up, 0.55);
 const HIST_DOWN = withAlpha(down, 0.55);
 
-const PRICE = { type: 'price' as const, precision: 0, minMove: 1 };
 const LINE_BASE = {
   lineWidth: 1 as const,
   priceLineVisible: false,
@@ -75,8 +74,17 @@ export class IndicatorLayer {
   private times: UTCTimestamp[] = [];
   private calc: Computed = { ma: [], bb: null, rsi: null, macd: null };
 
+  /** 가격에 겹쳐 그리는 선(이평 · 볼린저)의 단위 — 시장에 따라 */
+  private priceFormat = chartPriceFormat('DOMESTIC');
+
   constructor(chart: IChartApi) {
     this.chart = chart;
+  }
+
+  /** 시장을 알게 됐다 — 켜 있는 선도 같이 바꾼다 */
+  setMarket(market: PriceMarket) {
+    this.priceFormat = chartPriceFormat(market);
+    for (const s of [...this.ma, ...this.bb]) s.applyOptions({ priceFormat: this.priceFormat });
   }
 
   /** 켜고 끄기. 아래 칸은 RSI 위 · MACD 아래 순서를 지키려고 바뀔 때마다 다시 만든다 */
@@ -196,11 +204,11 @@ export class IndicatorLayer {
   }
 
   private addMa() {
-    this.ma = MA_LINES.map((m) => this.chart.addSeries(LineSeries, { ...LINE_BASE, color: m.color, priceFormat: PRICE }, 0));
+    this.ma = MA_LINES.map((m) => this.chart.addSeries(LineSeries, { ...LINE_BASE, color: m.color, priceFormat: this.priceFormat }, 0));
   }
 
   private addBb() {
-    const opt = { ...LINE_BASE, color: BB_COLOR, priceFormat: PRICE };
+    const opt = { ...LINE_BASE, color: BB_COLOR, priceFormat: this.priceFormat };
     this.bb = [
       this.chart.addSeries(LineSeries, opt, 0),
       this.chart.addSeries(LineSeries, { ...opt, lineStyle: LineStyle.Dotted }, 0),

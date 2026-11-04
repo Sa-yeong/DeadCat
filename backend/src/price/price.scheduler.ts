@@ -8,11 +8,22 @@ import {
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
 import { PriceService } from './price.service';
+import {
+    isFinishedUsBar,
+    isUsAfterHours,
+    isUsRegular,
+    regularVolumeOf,
+    usClock,
+    type UsClock,
+} from './us-session';
 
 //const POLL_CRON = '*/30 * * * * *';
 
 const POLL_CRON = '0 * * * * *'; // 매 1분마다 실행으로 변경
 const PRICE_TTL_SECONDS = 100;
+/** 애프터마켓이 끝나기 전 그날 시간외 거래량을 다시 재는 간격 */
+const EXTENDED_RECHECK_MS = 15 * 60 * 1000;
+const EXTENDED_MEMO_MAX = 200;
 const DEFAULT_USD_KRW = 1350;
 const VOLUME_SUMMARY_TTL_SECONDS = 300;
 /** 국내 일봉을 모으는 기간(년) — 차트 확대·축소에서 주봉으로 넘어가기(약 13개월) 전에 끊기지 않게 */
@@ -40,6 +51,12 @@ export class PriceScheduler implements OnModuleInit {
         private readonly kis: KisProvider,
         private readonly price: PriceService,
     ) {}
+
+    /** 종목 · 날짜별 시간외 거래량 — 분봉을 여러 번 받아야 해서 기억해 둔다 */
+    private readonly extended = new Map<
+        string,
+        { volume: number; amount: number; at: number }
+    >();
 
     // 서버 시작 시 실행되는 초기화 로직
     // 수집은 뒤에서 돈다 — 끝날 때까지 서버가 열리지 않으면 재시작마다 화면이 멈춘다
@@ -174,8 +191,16 @@ export class PriceScheduler implements OnModuleInit {
                 const fromDate =
                     count >= full ? latestDateStr.replace(/-/g, '') : '';
                 let savedCount = 0;
+                const clock = usClock();
                 for (const [cleanDate, item] of uniqueItemsMap.entries()) {
                     if (cleanDate < fromDate) continue;
+                    // 해외 오늘 막대는 장이 끝나야 — 프리 · 장중에 서버가 켜지면 그 값이 일봉으로 남는다
+                    if (
+                        stock.stock_type === 'FOREIGN' &&
+                        !isFinishedUsBar(cleanDate, clock)
+                    ) {
+                        continue;
+                    }
                     const year = Number(cleanDate.substring(0, 4));
                     const month = Number(cleanDate.substring(4, 6)) - 1; // JS 월은 0부터 시작
                     const day = Number(cleanDate.substring(6, 8));
@@ -295,6 +320,141 @@ export class PriceScheduler implements OnModuleInit {
         return d.toISOString().slice(0, 10).replace(/-/g, '');
     }
 
+    /**
+     * 해외 시세 — 정규장 값만(체결 판단도 같은 값을 본다).
+     *  · 장중: 현재가 API
+     *  · 장외: 일봉의 끝난 막대. 현재가 API 는 프리 · 애프터 체결을 주므로 쓰지 않는다
+     *  · 애프터마켓 동안: 이 서버가 오늘 본 마지막 정규장 값이 있으면 그대로(그 시간 일봉 종가는 장담 못 함)
+     */
+    private async readOverseasPrices(
+        overseas: { symbol: string; exchange: string }[],
+    ): Promise<Map<string, StockPrice>> {
+        const clock = usClock();
+        const exchanges = new Map(overseas.map((o) => [o.symbol, o.exchange]));
+        if (isUsRegular(clock)) {
+            const live = await this.kis.getOverseasPrices(overseas);
+            for (const [code, price] of live) {
+                price.regular_et_date = clock.date;
+                const exchange = exchanges.get(code) ?? '';
+                await this.takeOutExtended(
+                    code,
+                    exchange,
+                    price,
+                    clock.date,
+                    'pre',
+                    clock,
+                );
+                // 서버를 장중에 켰으면 어제 끝난 일봉이 아직 없다 — 일봉 차트 마지막 막대에 쓴다
+                if (!this.price.regularBarOf(code)) {
+                    await this.fetchFinishedBar(code, exchange, price, clock);
+                }
+            }
+            return live;
+        }
+        const result = new Map<string, StockPrice>();
+        const rest: typeof overseas = [];
+        for (const item of overseas) {
+            const kept = isUsAfterHours(clock)
+                ? this.price.regularPriceOf(item.symbol, clock.date)
+                : null;
+            if (kept) result.set(item.symbol, kept);
+            else rest.push(item);
+        }
+        const closes = await this.kis.getOverseasRegularCloses(rest, clock);
+        for (const [code, price] of closes) {
+            await this.finishRegularBar(
+                code,
+                exchanges.get(code) ?? '',
+                price,
+                clock,
+            );
+            result.set(code, price);
+        }
+        return result;
+    }
+
+    /** 끝난 일봉의 거래량 · 거래대금에서 그날 시간외를 뺀다 */
+    private async finishRegularBar(
+        code: string,
+        exchange: string,
+        price: StockPrice,
+        clock: UsClock,
+    ): Promise<void> {
+        const bar = price.regular_bar;
+        if (!bar) return;
+        await this.takeOutExtended(
+            code,
+            exchange,
+            price,
+            bar.date,
+            'all',
+            clock,
+        );
+        bar.volume = price.accumulated_volume ?? bar.volume;
+    }
+
+    /** 장중 — 어제 끝난 일봉만 받아 붙인다(현재가 · 등락은 그대로 장중 값) */
+    private async fetchFinishedBar(
+        code: string,
+        exchange: string,
+        price: StockPrice,
+        clock: UsClock,
+    ): Promise<void> {
+        try {
+            const done = await this.kis.getOverseasRegularClose(
+                code,
+                exchange,
+                clock,
+            );
+            await this.finishRegularBar(code, exchange, done, clock);
+            price.regular_bar = done.regular_bar;
+        } catch (e) {
+            this.logger.warn(
+                `해외 일봉 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        }
+    }
+
+    /**
+     * KIS 누적 거래량 · 거래대금에는 프리 · 애프터가 들어 있다 — 분봉으로 시간외를 재서 뺀다.
+     * 못 재면 그대로 두고 경고만(현재가는 맞으므로 이번 주기를 버리지 않는다).
+     * phase: pre — 장중(프리만 끝남, 하루 한 번) · all — 그날 전체(애프터가 끝나기 전에는 15분마다 다시).
+     */
+    private async takeOutExtended(
+        code: string,
+        exchange: string,
+        price: StockPrice,
+        date: string,
+        phase: 'pre' | 'all',
+        clock: UsClock,
+    ): Promise<void> {
+        const key = `${code}:${date}:${phase}`;
+        let ext = this.extended.get(key);
+        const settled =
+            phase === 'pre' || date < clock.date || !isUsAfterHours(clock);
+        if (!ext || (!settled && Date.now() - ext.at > EXTENDED_RECHECK_MS)) {
+            try {
+                ext = {
+                    ...(await this.kis.getOverseasExtendedVolume(
+                        code,
+                        exchange,
+                        date,
+                    )),
+                    at: Date.now(),
+                };
+                if (this.extended.size > EXTENDED_MEMO_MAX)
+                    this.extended.clear();
+                this.extended.set(key, ext);
+            } catch (e) {
+                this.logger.warn(
+                    `해외 시간외 거래량 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
+                );
+                return;
+            }
+        }
+        Object.assign(price, regularVolumeOf(price, ext));
+    }
+
     @Cron(POLL_CRON)
     async pollStocks(): Promise<void> {
         if (this.isPolling) {
@@ -324,7 +484,7 @@ export class PriceScheduler implements OnModuleInit {
                 }));
 
             const domPrices = await this.kis.getDomesticPrices(domesticCodes);
-            const ovsPrices = await this.kis.getOverseasPrices(overseas);
+            const ovsPrices = await this.readOverseasPrices(overseas);
 
             const entries: {
                 code: string;
@@ -402,10 +562,8 @@ export class PriceScheduler implements OnModuleInit {
 
                     // 검증(Fallback): API 호출은 성공했으나 volume_graph가 비어있거나 total_volume이 0인 경우,
                     // 미리 받아둔 ovsPrices 데이터로 거래량/거래대금 메우기
-                    if (
-                        summary.total_volume === 0 &&
-                        ovsPrices.has(item.symbol)
-                    ) {
+                    // 합계는 늘 정규장 값으로 — 분봉 응답의 합계 칸은 믿지 않는다
+                    if (ovsPrices.has(item.symbol)) {
                         const priceInfo = ovsPrices.get(item.symbol)!;
                         const currentPrice = priceInfo.current_price ?? 0;
                         const volume = priceInfo.accumulated_volume ?? 0;

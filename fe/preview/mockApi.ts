@@ -23,6 +23,9 @@ import { PREVIEW_ASSETS } from 'virtual:dc-preview-assets';
 const realFetch = window.fetch.bind(window);
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  // 알림 통로 — 열린 채로 아무것도 오지 않는 스트림(서버가 없어 다시 잇기를 되풀이하지 않게)
+  if (/\/notifications\/stream/.test(url))
+    return Promise.resolve(new Response(new ReadableStream(), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
   const m = /characters\/(.+)$/.exec(url);
   const packed = m ? PREVIEW_ASSETS[decodeURIComponent(m[1])] : undefined;
   if (!packed) return realFetch(input, init);
@@ -257,6 +260,12 @@ function volume(code: string) {
   };
 }
 
+/** 사이드바 한 줄 — 현재가 · 전일 대비 금액(가짜 서버라 등락률에서 만든다) */
+function quoteKrw(code: string) {
+  const live = build(code).live;
+  return { current_price_krw: live, change_price_krw: Math.round(live - live / (1 + rate(code) / 100)) };
+}
+
 function ranking() {
   return STOCKS.map((st, i) => {
     const s = build(st.code);
@@ -266,8 +275,9 @@ function ranking() {
       stock_code: st.code,
       stock_name: st.name,
       change_rate: rate(st.code),
+      ...quoteKrw(st.code),
       character_img_url: null,
-      is_favorite: st.code === '005930' || st.code === '000660',
+      is_favorite: account.favs.has(st.code),
       market: 'DOMESTIC',
       current_price: s.live,
       trading_value: v * s.live,
@@ -386,10 +396,180 @@ function route(url: string, params: Record<string, string> | undefined): unknown
   }
 }
 
+/* ── 내 계좌 · 주문 · 관심 — 사이드바 미리보기용 ───────────────
+ * 백엔드 DTO 모양 그대로(큰 수는 글자). 로그인 토큰이 있을 때만 답하고 없으면 401 — 실제 서버처럼.
+ * 주소 끝에 ?guest 를 붙여 열면 로그인 안 한 상태로 시작한다(main.tsx). 로그인 창은 아무 값이나 받는다.
+ */
+
+const account = {
+  cash: 9_284_000,
+  holdings: [
+    { code: '005930', quantity: 40, mean: 68_500 },
+    { code: '000660', quantity: 6, mean: 191_000 },
+    { code: '035720', quantity: 25, mean: 41_200 },
+  ],
+  pending: [
+    { order_id: '9001', code: '005930', side: 'BUY' as const, quantity: 5, price: 69_800, at: DAY(0.1) },
+    { order_id: '9002', code: '000660', side: 'SELL' as const, quantity: 2, price: 195_000, at: DAY(1.2) },
+  ],
+  trades: [
+    { code: '005930', type: '매수', quantity: 10, price: 70_100, profit: 0, rate: 0, at: DAY(0.3) },
+    { code: '035720', type: '매도', quantity: 5, price: 44_150, profit: 14_750, rate: 7.16, at: DAY(2) },
+    { code: '000660', type: '매도', quantity: 2, price: 184_000, profit: -14_000, rate: -3.66, at: DAY(5) },
+  ],
+  favs: new Set(['005930', '000660']),
+  nextId: 9100,
+};
+
+const signedIn = (config: InternalAxiosRequestConfig) => /^Bearer .+/.test(String(config.headers?.Authorization ?? ''));
+const http = (status: number, message: string) => Object.assign(new Error(message), { response: { status, data: { success: false, message } } });
+
+function holdingsDto() {
+  return account.holdings.map((h, i) => {
+    const price = build(h.code).live;
+    return {
+      stock_id: i + 1,
+      stock_code: h.code,
+      stock_name: info(h.code).name,
+      current_price: String(price),
+      change_rate: rate(h.code),
+      change_price_krw: quoteKrw(h.code).change_price_krw,
+      quantity: h.quantity,
+      return_rate: Math.trunc(((price - h.mean) / h.mean) * 10000) / 100,
+      valuation_profit: String((price - h.mean) * h.quantity),
+      purchase_price: String(h.mean),
+      stock_img: '',
+      market: 'DOMESTIC',
+    };
+  });
+}
+
+function assetsDto() {
+  const invest = account.holdings.reduce((a, h) => a + h.mean * h.quantity, 0);
+  const value = account.holdings.reduce((a, h) => a + build(h.code).live * h.quantity, 0);
+  const reserved = account.pending.filter((o) => o.side === 'BUY').reduce((a, o) => a + o.price * o.quantity, 0);
+  return {
+    available_cash: String(account.cash - reserved),
+    total_investment: String(invest),
+    total_valuation_profit: String(value - invest),
+    valuation_return_rate: invest ? Math.trunc(((value - invest) / invest) * 10000) / 100 : 0,
+    selling_profit: '0',
+  };
+}
+
+const pendingDto = (o: (typeof account.pending)[number]) => ({
+  order_id: o.order_id,
+  stock_code: o.code,
+  stock_name: info(o.code).name,
+  order_side: o.side,
+  order_type: 'LIMIT',
+  trigger: null,
+  quantity: o.quantity,
+  price: o.price,
+  currency: 'KRW',
+  created_at: o.at,
+});
+
+const orderResult = (o: { order_id: string; code: string; side: 'BUY' | 'SELL'; quantity: number; price: number | null }, status: string, fill: number | null) => ({
+  code: 'OK',
+  message: '',
+  order_id: o.order_id,
+  status,
+  stock_code: o.code,
+  stock_name: info(o.code).name,
+  order_side: o.side,
+  order_type: o.price == null ? 'MARKET' : 'LIMIT',
+  quantity: o.quantity,
+  price: o.price,
+  fill_price: fill,
+  currency: 'KRW',
+});
+
+/** 로그인이 필요한 주소 — 내 것이 아니면 undefined(다음 route 로) */
+function accountRoute(method: string, url: string, config: InternalAxiosRequestConfig): unknown {
+  if (method === 'post' && url === '/auth/login') return { access_token: 'preview-token' };
+  const mine = /^\/(holdings|assets|transactions|favorites|orders|notifications)(\/|$)/.test(url);
+  if (!mine) return undefined;
+  if (!signedIn(config)) throw http(401, 'Unauthorized');
+  const params = (config.params ?? {}) as Record<string, string>;
+  if (method === 'get') {
+    if (url === '/holdings') return holdingsDto();
+    if (url === '/assets') return assetsDto();
+    if (url === '/notifications/unread') return [];
+    if (url === '/orders/pending') return account.pending.filter((o) => !params.stock_code || o.code === params.stock_code).map(pendingDto);
+    if (url === '/orders/available') {
+      const h = account.holdings.find((x) => x.code === params.stock_code);
+      const held = (h?.quantity ?? 0) - account.pending.filter((o) => o.side === 'SELL' && o.code === params.stock_code).reduce((a, o) => a + o.quantity, 0);
+      return { available_cash: Number(assetsDto().available_cash), sellable_quantity: params.stock_code ? held : null };
+    }
+    if (url === '/transactions')
+      return account.trades.map((t) => ({
+        stock_name: info(t.code).name,
+        trade_date: t.at.slice(0, 10),
+        type: t.type,
+        quantity: t.quantity,
+        unit_price: String(t.price),
+        profit: String(t.profit),
+        return_rate: t.rate,
+        avg_purchase_price: '0',
+      }));
+    if (url === '/favorites')
+      return [...account.favs].map((code) => ({ stock_code: code, stock_name: info(code).name, character_img_url: null, change_rate: rate(code), ...quoteKrw(code), is_favorite: true }));
+  }
+  const fav = /^\/favorites\/([^/]+)$/.exec(url);
+  if (fav) {
+    const code = decodeURIComponent(fav[1]);
+    if (method === 'post') {
+      if (account.favs.has(code)) throw http(409, '이미 존재하는 데이터입니다.');
+      account.favs.add(code);
+      return { code, message: '관심 종목으로 등록되었습니다.' };
+    }
+    if (method === 'delete') {
+      if (!account.favs.delete(code)) throw http(404, '대상을 찾을 수 없습니다.');
+      return { code, message: '관심 종목에서 해제되었습니다.' };
+    }
+  }
+  const cancel = /^\/orders\/([^/]+)$/.exec(url);
+  if (method === 'delete' && cancel) {
+    const i = account.pending.findIndex((o) => o.order_id === cancel[1]);
+    if (i < 0) throw http(404, '취소할 수 있는 대기 주문이 없습니다.');
+    const [o] = account.pending.splice(i, 1);
+    return orderResult(o, 'CANCELLED', null);
+  }
+  if (method === 'post' && url === '/orders') {
+    // 지정가는 대기로, 시장가는 바로 체결 — 체결은 보유 · 거래내역에 반영한다
+    const b = JSON.parse(String(config.data ?? '{}')) as { stock_code: string; order_side: 'BUY' | 'SELL'; quantity: number; price?: number };
+    const o = { order_id: String(account.nextId++), code: b.stock_code, side: b.order_side, quantity: b.quantity, price: b.price ?? null };
+    if (o.price != null) {
+      account.pending.unshift({ ...o, price: o.price, at: new Date().toISOString() });
+      return orderResult(o, 'PENDING', null);
+    }
+    const fill = build(o.code).live;
+    const h = account.holdings.find((x) => x.code === o.code);
+    if (o.side === 'BUY') {
+      if (h) {
+        h.mean = Math.round((h.mean * h.quantity + fill * o.quantity) / (h.quantity + o.quantity));
+        h.quantity += o.quantity;
+      } else account.holdings.push({ code: o.code, quantity: o.quantity, mean: fill });
+      account.cash -= fill * o.quantity;
+    } else {
+      if (!h || h.quantity < o.quantity) return orderResult(o, 'REJECTED', null);
+      h.quantity -= o.quantity;
+      if (h.quantity === 0) account.holdings.splice(account.holdings.indexOf(h), 1);
+      account.cash += fill * o.quantity;
+    }
+    account.trades.unshift({ code: o.code, type: o.side === 'BUY' ? '매수' : '매도', quantity: o.quantity, price: fill, profit: 0, rate: 0, at: new Date().toISOString() });
+    return orderResult(o, 'COMPLETED', fill);
+  }
+  return undefined;
+}
+
 const adapter: AxiosAdapter = async (config: InternalAxiosRequestConfig) => {
   await new Promise((res) => setTimeout(res, 60 + Math.random() * 80));
-  const url = (config.url ?? '').replace(/^https?:\/\/[^/]+/, '');
-  const data = (config.method ?? 'get').toLowerCase() === 'get' ? route(url, config.params) : undefined;
+  // 팀 코드에는 앞 / 없이 부르는 곳이 있다('stocks/ranking') — axios 는 baseURL 에 붙여 같은 주소로 보낸다
+  const url = (config.url ?? '').replace(/^https?:\/\/[^/]+/, '').replace(/^(?!\/)/, '/');
+  const method = (config.method ?? 'get').toLowerCase();
+  const data = accountRoute(method, url, config) ?? (method === 'get' ? route(url, config.params) : undefined);
   if (data === undefined) {
     // 없는 주소 — 앱 쪽은 404 를 '없는 종목'으로 본다
     throw Object.assign(new Error(`미리보기에 없는 API: ${config.method} ${url}`), { response: { status: 404 }, config });

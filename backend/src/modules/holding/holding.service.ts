@@ -15,17 +15,18 @@ export class HoldingService {
             await this.holdingRepository.findUserHoldingsData(userId);
         if (userHoldings.length === 0) return [];
 
-        // 1~2. 원화 평가 현재가 묶음 — 캐시(Redis) 현재가, 없으면 DB 최신 종가. 해외(달러)는 환율로 원화 환산
+        // 1~2. 원화 시세 묶음 — 캐시(Redis) 현재가, 없으면 DB 최근 종가. 해외(달러)는 환율로 원화 환산
         //      (평단가 mean_price_krw가 원이라 같은 단위로 맞춘다. 응답 current_price도 원)
-        const valuationPrices = await this.priceService.readValuationPricesKrw(
+        const quotes = await this.priceService.readKrwQuotes(
             userHoldings.flatMap((h) =>
                 h.stocks?.code
                     ? [
                           {
                               code: h.stocks.code,
                               stock_type: h.stocks.stock_type,
-                              last_close:
-                                  h.stocks.stock_history?.[0]?.close_price,
+                              closes: h.stocks.stock_history.map(
+                                  (c) => c.close_price,
+                              ),
                           },
                       ]
                     : [],
@@ -38,8 +39,10 @@ export class HoldingService {
             const stockCode = holding.stocks?.code ?? '';
 
             // 3. 현재가가 없으면 평단가(기본 방어선)
-            const currentPriceBigInt =
-                valuationPrices.get(stockCode) ?? meanPriceBigInt;
+            const quote = quotes.get(stockCode);
+            const currentPriceBigInt = quote
+                ? BigInt(quote.current_price_krw)
+                : meanPriceBigInt;
 
             // 4. 평가손익 계산: (현재가 - 평단가) * 수량
             const valuationProfitBigInt =
@@ -64,6 +67,8 @@ export class HoldingService {
                 stock_code: stockCode,
                 stock_name: holding.stocks?.name ?? '',
                 current_price: String(currentPriceBigInt),
+                change_rate: quote?.change_rate ?? 0,
+                change_price_krw: quote?.change_price_krw ?? null,
                 quantity: holding.quantity,
                 return_rate: returnRate,
                 valuation_profit: String(valuationProfitBigInt),

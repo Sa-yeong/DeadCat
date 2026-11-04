@@ -5,7 +5,14 @@ import {
     StockPrice,
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
-import { DEFAULT_USD_KRW, toValuationKrw } from './valuation';
+import type { RegularBar } from './us-session';
+import {
+    DEFAULT_USD_KRW,
+    KrwQuote,
+    quoteFromCloses,
+    toKrwQuote,
+    toValuationKrw,
+} from './valuation';
 import { isForeignStock } from '../modules/orders/order-rules';
 
 // 차트 캔들 데이터 인터페이스
@@ -107,6 +114,8 @@ export class PriceService {
 
             const updated: CachedPrice = {
                 ...base,
+                // 현재가 · 등락은 웹소켓 담당이지만, 체결이 없어(장외 · 재시작 직후) 금액이 아직 없으면 REST 값으로 채운다
+                change_price: base.change_price ?? price.change_price,
                 trading_value: price.trading_value,
                 accumulated_volume: price.accumulated_volume,
                 trading_value_krw: Math.round(rankingScore),
@@ -127,12 +136,24 @@ export class PriceService {
     // 그래서 ① 마지막 값을 메모리에 들고 있어 읽기를 없애고 ② 1초에 한 번 몰아서 쓴다.
     // 종목당 Redis 쓰기 ≤ 1회/초. 화면은 2초마다 읽으므로 체감 지연 없음.
     private readonly latest = new Map<string, CachedPrice>(); // 종목별 최신 시세(메모리)
+    private readonly latestVolume = new Map<string, StockVolumeSummaryData>(); // 종목별 최신 거래량 요약(메모리)
     private readonly dirty = new Set<string>(); // 아직 Redis에 안 쓴 종목
     private flushTimer: NodeJS.Timeout | null = null;
     private static readonly FLUSH_MS = 1000;
     // 장 마감·주말·연휴에도 마지막 체결가가 남아야 한다 — 다음 첫 체결이 덮어쓴다.
     // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
     private static readonly LIVE_TTL_S = 60 * 60 * 24 * 7;
+
+    /** 마지막으로 끝난 정규장 일봉(해외) — 없으면 null. 옛 서버가 Redis 를 덮어도 이 서버 값을 쓰도록 메모리에서 */
+    regularBarOf(code: string): RegularBar | null {
+        return this.latest.get(code)?.regular_bar ?? null;
+    }
+
+    /** 이 서버가 그 뉴욕 날짜에 본 마지막 정규장 값 — 없으면 null */
+    regularPriceOf(code: string, etDate: string): CachedPrice | null {
+        const v = this.latest.get(code);
+        return v?.regular_et_date === etDate ? v : null;
+    }
 
     // 웹소켓 수신 시 단일 종목 실시간 시세 반영 (Redis에는 FLUSH_MS마다 몰아서)
     async writeSinglePrice(
@@ -212,7 +233,13 @@ export class PriceService {
         const values = await this.redis.mget(codes.map(priceKey));
         codes.forEach((code, i) => {
             const raw = values[i];
-            if (raw) result.set(code, JSON.parse(raw) as CachedPrice);
+            if (!raw) return;
+            // 같은 Redis 에 옛 코드 서버가 쓰면 프리 · 애프터 값이 들어오고 금액 칸이 빠진다
+            // — 이 서버가 받은 값이 있으면 그것을 믿는다(현재가 · 체결 판단 모두 여기를 본다)
+            result.set(code, {
+                ...(JSON.parse(raw) as CachedPrice),
+                ...this.latest.get(code),
+            });
         });
         return result;
     }
@@ -282,12 +309,42 @@ export class PriceService {
         return result;
     }
 
+    /**
+     * 종목코드별 원화 시세(현재가 · 등락 금액 · 등락률) — 사이드바 보유 · 관심 줄.
+     * 캐시 현재가 → 없으면 closes(stock_history 최신순 종가, 시장 통화). 둘 다 없는 종목은 결과에 없다.
+     */
+    async readKrwQuotes(
+        stocks: {
+            code: string;
+            stock_type: string | null | undefined;
+            closes: readonly (number | bigint | { toString(): string })[];
+        }[],
+    ): Promise<Map<string, KrwQuote>> {
+        const result = new Map<string, KrwQuote>();
+        if (stocks.length === 0) return result;
+        const cached = await this.readPrices(stocks.map((s) => s.code));
+        const usdKrw = stocks.some((s) => isForeignStock(s.stock_type))
+            ? await this.usdKrwForValuation()
+            : 1;
+        for (const s of stocks) {
+            const live = cached.get(s.code);
+            const price = live?.current_price
+                ? live
+                : quoteFromCloses(s.closes);
+            if (price && price.current_price > 0) {
+                result.set(s.code, toKrwQuote(price, s.stock_type, usdKrw));
+            }
+        }
+        return result;
+    }
+
     // 거래대금 요약 쓰기
     async writeVolumeSummary(
         code: string,
         data: StockVolumeSummaryData,
         ttlSeconds: number,
     ): Promise<void> {
+        this.latestVolume.set(code, data);
         await this.redis.set(
             volumeSummaryKey(code),
             JSON.stringify(data),
@@ -299,6 +356,9 @@ export class PriceService {
     async readVolumeSummary(
         code: string,
     ): Promise<StockVolumeSummaryData | null> {
+        // 같은 Redis 에 옛 코드 서버가 시간외 거래량을 쓴다 — 이 서버가 받은 값을 믿는다(readPrices 와 같음)
+        const mine = this.latestVolume.get(code);
+        if (mine) return mine;
         const raw = await this.redis.get(volumeSummaryKey(code));
         return raw ? (JSON.parse(raw) as StockVolumeSummaryData) : null;
     }

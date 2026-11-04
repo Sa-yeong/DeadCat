@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { useLayout } from '../layout';
+import { slideTransition, useLayout, useSliding } from '../layout';
 import { DAYS_PER_BAR, convertBars, maxVisibleBars, zoomStep, type ChartFocus } from '../chartZoom';
+import type { PriceMarket } from '../format';
 import type { Candle, Timeframe } from '../types';
 import { ChartPane } from './ChartPane';
 import { ChartToolbar } from './ChartToolbar';
@@ -40,6 +41,7 @@ export function WindowHud({
   tab,
   onSwitch,
   stockCode,
+  market,
   timeframe,
   onTimeframe,
   candles,
@@ -53,6 +55,8 @@ export function WindowHud({
   tab: WindowTab;
   onSwitch: (t: WindowTab) => void;
   stockCode: string;
+  /** 아직 모르면 국내 표기 — 시세를 받는 대로 바뀐다 */
+  market?: PriceMarket;
   timeframe: Timeframe;
   onTimeframe: (tf: Timeframe) => void;
   candles: Candle[] | null;
@@ -69,6 +73,10 @@ export function WindowHud({
 }) {
   const L = useLayout();
   const { winWidth, winHeight } = L;
+  const sliding = useSliding();
+  // 차트 크기는 글로벌 사이드바를 여닫는 움직임이 끝난 뒤에 한 번 맞춘다 — 그동안은 창틀만 움직인다
+  const [chartWidth, setChartWidth] = useState(winWidth);
+  if (!sliding && chartWidth !== winWidth) setChartWidth(winWidth);
 
   // 확대·축소로 보이는 기간이 바뀌면 봉 단위를 갈아 끼운다(토스식). 바뀐 뒤 같은 기간이 보이게 focus 를 넘긴다
   const focus = useRef<ChartFocus | null>(null);
@@ -92,7 +100,7 @@ export function WindowHud({
   const bodyH = winHeight - bodyTop;
 
   return (
-    <div className="absolute overflow-hidden" style={{ left: L.win.left, top: L.win.top, width: winWidth, height: winHeight, borderRadius: R.panel }}>
+    <div className="absolute overflow-hidden" style={{ left: L.win.left, top: L.win.top, width: winWidth, height: winHeight, borderRadius: R.panel, transition: sliding ? slideTransition('width') : undefined }}>
       {/* 탭 줄 — 블럭 머리 줄과 같은 모양(칩 + 아래 구분선). 2026-09-29 통일 */}
       <PanelHeader
         right={
@@ -140,9 +148,10 @@ export function WindowHud({
       <div style={{ display: tab === 'CHART' ? 'block' : 'none' }}>
         <ChartPane
           stockCode={stockCode}
+          market={market}
           candles={candles}
           lastCandle={lastCandle}
-          width={winWidth}
+          width={chartWidth}
           height={winHeight - tabRowH - TOOLBAR_H}
           intraday={timeframe === '1M'}
           recent={RECENT_BARS[timeframe]}

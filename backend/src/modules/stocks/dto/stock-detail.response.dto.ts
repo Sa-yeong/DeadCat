@@ -7,6 +7,7 @@ export class StockDetailResponseDto {
     logo_url: string | null;
     current_price: number;
     change_rate: number;
+    change_price: number | null; // 전일 대비 금액(시장 통화). 모르면 null
     market: string;
     is_favorite: boolean;
     is_event: boolean;
@@ -19,6 +20,7 @@ export class StockDetailResponseDto {
         logo_url: string | null;
         current_price: number;
         change_rate: number;
+        change_price: number | null;
         market: string;
         is_favorite: boolean;
         is_event: boolean;
@@ -30,6 +32,7 @@ export class StockDetailResponseDto {
         this.logo_url = data.logo_url;
         this.current_price = data.current_price;
         this.change_rate = data.change_rate;
+        this.change_price = data.change_price;
         this.market = data.market;
         this.is_favorite = data.is_favorite;
         this.is_event = data.is_event;
