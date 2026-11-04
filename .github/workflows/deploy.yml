@@ -15,6 +15,18 @@ jobs:
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
             set -e
+
+            # NVM 환경 설정
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] || exit 1
+            . "$NVM_DIR/nvm.sh"
+            nvm use 20
+
+            # 배포 환경 확인
+            node -v
+            npm -v
+            pm2 -v
+
             cd /home/ubuntu/DeadCat
             git pull origin integration-livingroom
             cd backend
