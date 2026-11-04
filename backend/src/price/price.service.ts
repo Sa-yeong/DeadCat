@@ -5,6 +5,7 @@ import {
     StockPrice,
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
+import type { RegularBar } from './us-session';
 import {
     DEFAULT_USD_KRW,
     KrwQuote,
@@ -135,12 +136,18 @@ export class PriceService {
     // 그래서 ① 마지막 값을 메모리에 들고 있어 읽기를 없애고 ② 1초에 한 번 몰아서 쓴다.
     // 종목당 Redis 쓰기 ≤ 1회/초. 화면은 2초마다 읽으므로 체감 지연 없음.
     private readonly latest = new Map<string, CachedPrice>(); // 종목별 최신 시세(메모리)
+    private readonly latestVolume = new Map<string, StockVolumeSummaryData>(); // 종목별 최신 거래량 요약(메모리)
     private readonly dirty = new Set<string>(); // 아직 Redis에 안 쓴 종목
     private flushTimer: NodeJS.Timeout | null = null;
     private static readonly FLUSH_MS = 1000;
     // 장 마감·주말·연휴에도 마지막 체결가가 남아야 한다 — 다음 첫 체결이 덮어쓴다.
     // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
     private static readonly LIVE_TTL_S = 60 * 60 * 24 * 7;
+
+    /** 마지막으로 끝난 정규장 일봉(해외) — 없으면 null. 옛 서버가 Redis 를 덮어도 이 서버 값을 쓰도록 메모리에서 */
+    regularBarOf(code: string): RegularBar | null {
+        return this.latest.get(code)?.regular_bar ?? null;
+    }
 
     /** 이 서버가 그 뉴욕 날짜에 본 마지막 정규장 값 — 없으면 null */
     regularPriceOf(code: string, etDate: string): CachedPrice | null {
@@ -337,6 +344,7 @@ export class PriceService {
         data: StockVolumeSummaryData,
         ttlSeconds: number,
     ): Promise<void> {
+        this.latestVolume.set(code, data);
         await this.redis.set(
             volumeSummaryKey(code),
             JSON.stringify(data),
@@ -348,6 +356,9 @@ export class PriceService {
     async readVolumeSummary(
         code: string,
     ): Promise<StockVolumeSummaryData | null> {
+        // 같은 Redis 에 옛 코드 서버가 시간외 거래량을 쓴다 — 이 서버가 받은 값을 믿는다(readPrices 와 같음)
+        const mine = this.latestVolume.get(code);
+        if (mine) return mine;
         const raw = await this.redis.get(volumeSummaryKey(code));
         return raw ? (JSON.parse(raw) as StockVolumeSummaryData) : null;
     }

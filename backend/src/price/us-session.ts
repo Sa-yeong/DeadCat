@@ -64,9 +64,141 @@ export function isFinishedUsBar(barDate: string, c: UsClock): boolean {
 
 export interface UsDailyBar {
     xymd?: string;
+    open?: string;
+    high?: string;
+    low?: string;
     clos?: string;
     tvol?: string;
     tamt?: string;
+}
+
+/** 정규장이 끝난 일봉 한 개 — 시장 통화. 거래량은 부르는 쪽이 시간외를 뺀다 */
+export interface RegularBar {
+    date: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+}
+
+export interface UsMinuteRow {
+    xymd?: string;
+    xhms?: string;
+    evol?: string;
+    eamt?: string;
+}
+
+/**
+ * 그 뉴욕 날짜의 시간외(프리 · 애프터) 거래량 · 거래대금 — 분봉의 현지 시각으로 가른다.
+ * KIS 누적 거래량(tvol)과 일봉 거래량에는 시간외가 들어 있어서, 이만큼 빼면 정규장 몫이 된다.
+ * 분봉 합만 쓰지 않는 까닭: 분봉에 없는 체결(개장 · 마감 동시호가 등)이 있어 합이 tvol 보다 훨씬 작다.
+ */
+export function extendedFromMinutes(
+    rows: readonly UsMinuteRow[],
+    date: string,
+): { volume: number; amount: number } {
+    let volume = 0;
+    let amount = 0;
+    for (const r of rows) {
+        if (r.xymd !== date || isUsRegularTick(r.xhms)) continue;
+        volume += Number(r.evol) || 0;
+        amount += Number(r.eamt) || 0;
+    }
+    return { volume, amount };
+}
+
+/** 누적 값에서 시간외를 뺀 정규장 몫. 음수가 되면 0, 거래대금이 없으면 종가 × 거래량 */
+export function regularVolumeOf(
+    price: {
+        current_price: number;
+        trading_value: number;
+        accumulated_volume?: number;
+    },
+    ext: { volume: number; amount: number },
+): { accumulated_volume: number; trading_value: number } {
+    const volume = Math.max(0, (price.accumulated_volume ?? 0) - ext.volume);
+    const amount = price.trading_value - ext.amount;
+    return {
+        accumulated_volume: volume,
+        trading_value:
+            amount > 0 && ext.amount > 0
+                ? amount
+                : ext.amount > 0
+                  ? price.current_price * volume
+                  : price.trading_value,
+    };
+}
+
+/** KIS 일 · 주 · 월봉을 서버 표준 칸으로 바꾼 한 줄 */
+export interface UsPeriodRow {
+    stck_bsop_date: string;
+    stck_oprc: string;
+    stck_clpr: string;
+    stck_hgpr: string;
+    stck_lwpr: string;
+    acml_vol: string;
+}
+
+/** 진행 중인 주 · 월이 시작하는 날(YYYYMMDD) — 주는 그 주 월요일, 월은 1일 */
+export function currentPeriodStart(
+    tf: 'WEEK' | 'MONTH',
+    etDate: string,
+): string {
+    if (tf === 'MONTH') return `${etDate.slice(0, 6)}01`;
+    const d = new Date(
+        Date.UTC(
+            Number(etDate.slice(0, 4)),
+            Number(etDate.slice(4, 6)) - 1,
+            Number(etDate.slice(6, 8)),
+        ),
+    );
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    return d.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
+ * 주 · 월봉의 진행 중 막대를 끝난 일봉으로 다시 만든다 — KIS 진행 중 막대에는 오늘 프리 · 애프터 값이 섞여 있다.
+ * 끝난 일봉이 아직 없으면(월요일 장 전) 진행 중 막대를 뺀다. 지난 막대는 그대로.
+ * 장중 오늘 값은 화면이 현재가로 마지막 막대를 맞춘다.
+ */
+export function replaceFormingBar<T extends UsPeriodRow>(
+    rows: readonly T[],
+    daily: readonly T[],
+    tf: 'WEEK' | 'MONTH',
+    clock: UsClock,
+): T[] {
+    const start = currentPeriodStart(tf, clock.date);
+    const past = rows.filter((r) => r.stck_bsop_date < start);
+    const days = daily
+        .filter(
+            (d) =>
+                d.stck_bsop_date >= start &&
+                Number(d.stck_clpr) > 0 &&
+                isFinishedUsBar(d.stck_bsop_date, clock),
+        )
+        .sort((a, b) => a.stck_bsop_date.localeCompare(b.stck_bsop_date));
+    if (days.length === 0) return past;
+    const last = days[days.length - 1];
+    return [
+        ...past,
+        {
+            ...last,
+            // 주봉 날짜는 그 주 월요일, 월봉 날짜는 마지막 거래일 — KIS 와 같게
+            stck_bsop_date: tf === 'WEEK' ? start : last.stck_bsop_date,
+            stck_oprc: days[0].stck_oprc,
+            stck_clpr: last.stck_clpr,
+            stck_hgpr: String(
+                Math.max(...days.map((d) => Number(d.stck_hgpr))),
+            ),
+            stck_lwpr: String(
+                Math.min(...days.map((d) => Number(d.stck_lwpr))),
+            ),
+            acml_vol: String(
+                days.reduce((sum, d) => sum + Number(d.acml_vol || 0), 0),
+            ),
+        },
+    ];
 }
 
 /** KIS 일봉(최신순) → 마지막 정규장 시세. 끝난 막대가 없으면 null. 금액 · 등락률은 두 종가로 */
@@ -79,6 +211,7 @@ export function regularCloseFromBars(
     change_price: number;
     trading_value: number;
     accumulated_volume: number;
+    regular_bar: RegularBar;
 } | null {
     const done = bars.filter(
         (b) => b.xymd && Number(b.clos) > 0 && isFinishedUsBar(b.xymd, c),
@@ -96,5 +229,13 @@ export function regularCloseFromBars(
         change_price: Number((cur - base).toFixed(4)),
         trading_value: amount > 0 ? amount : cur * volume,
         accumulated_volume: volume,
+        regular_bar: {
+            date: done[0].xymd ?? '',
+            open: Number(done[0].open) || cur,
+            high: Number(done[0].high) || cur,
+            low: Number(done[0].low) || cur,
+            close: cur,
+            volume,
+        },
     };
 }

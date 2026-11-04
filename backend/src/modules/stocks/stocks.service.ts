@@ -18,6 +18,11 @@ import {
 import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
 import { isForeignStock, marketOf, tickRuleOf } from '../orders/order-rules';
 import { quoteFromCloses, toKrwQuote } from '../../price/valuation';
+import {
+    isFinishedUsBar,
+    replaceFormingBar,
+    usClock,
+} from '../../price/us-session';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /** KIS 호가 조회 결과(국내·해외 공통 모양) */
@@ -240,16 +245,16 @@ export class StocksService {
                 timeframe,
             );
 
-            return history.map(
-                (h) =>
-                    new StockChartResponseDto({
-                        write_time: h.record_date.toISOString(), // ISO-8601
-                        open_price: Number(h.open_price),
-                        close_price: Number(h.close_price),
-                        low_price: Number(h.low_price),
-                        high_price: Number(h.high_price),
-                        volume: Number(h.volume ?? 0),
-                    }),
+            const candles = history.map((h) => ({
+                write_time: h.record_date.toISOString(), // ISO-8601
+                open_price: Number(h.open_price),
+                close_price: Number(h.close_price),
+                low_price: Number(h.low_price),
+                high_price: Number(h.high_price),
+                volume: Number(h.volume ?? 0),
+            }));
+            return this.withRegularBar(candles, stockCode).map(
+                (c) => new StockChartResponseDto(c),
             );
         }
 
@@ -269,6 +274,37 @@ export class StocksService {
         );
     }
 
+    /**
+     * 해외 일봉 마지막 막대 — DB 는 수집 시점에 따라 시간외 값이 남아 있거나 아직 없다.
+     * 끝난 정규장 일봉을 알고 있으면 그 날짜 막대를 그것으로 바꾼다(그보다 뒤 막대는 진행 중 값이라 뺀다).
+     */
+    private withRegularBar<T extends StockChartItem>(
+        candles: T[],
+        code: string,
+    ): StockChartItem[] {
+        const bar = this.price.regularBarOf(code);
+        if (!bar) return candles;
+        const d = bar.date;
+        const day = new Date(
+            Date.UTC(
+                Number(d.slice(0, 4)),
+                Number(d.slice(4, 6)) - 1,
+                Number(d.slice(6, 8)),
+            ),
+        ).toISOString();
+        return [
+            ...candles.filter((c) => c.write_time < day),
+            {
+                write_time: day,
+                open_price: bar.open,
+                close_price: bar.close,
+                low_price: bar.low,
+                high_price: bar.high,
+                volume: bar.volume,
+            },
+        ];
+    }
+
     private readonly logger = new Logger(StocksService.name);
     /** 같은 종목·주기를 동시에 여러 명이 열어도 KIS 는 한 번만 부른다 */
     private readonly periodLoads = new Map<string, Promise<StockChartItem[]>>();
@@ -282,7 +318,9 @@ export class StocksService {
         },
         tf: PeriodFrame,
     ): Promise<StockChartItem[]> {
-        const cacheTf = `${tf}.${PERIOD_CACHE_VER}`;
+        const cacheTf = this.isForeign(meta)
+            ? this.foreignPeriodKey(tf)
+            : `${tf}.${PERIOD_CACHE_VER}`;
         const cached = await this.price.readStockChart(meta.code, cacheTf);
         if (cached.length) return cached;
 
@@ -311,6 +349,15 @@ export class StocksService {
             this.periodLoads.set(key, job);
         }
         return job;
+    }
+
+    /**
+     * 해외 주 · 월 · 년봉 보관 칸 — 뉴욕 날짜와 장 마감 전후로 나눈다.
+     * 그래야 정규장이 끝나면(끝난 일봉이 하나 늘면) 보관 시간을 기다리지 않고 다시 만든다.
+     */
+    private foreignPeriodKey(tf: PeriodFrame): string {
+        const c = usClock();
+        return `${tf}.${PERIOD_CACHE_VER}.us.${c.date}.${isFinishedUsBar(c.date, c) ? 'closed' : 'open'}`;
     }
 
     private async loadPeriodChart(
@@ -356,8 +403,25 @@ export class StocksService {
             if (got.length < 100) break;
             end = this.dayBefore(oldest);
         }
-        const candles = this.toCandles(rows);
-        return foreign && tf === 'YEAR' ? this.byYear(candles) : candles;
+        if (foreign) {
+            // 진행 중 막대는 시간외 값이 섞여 있다 — 끝난 일봉으로 다시 만든다(년봉은 월봉에서 나온다)
+            const daily = await this.kisProvider.getOverseasDailyChart(
+                meta.code,
+                meta.exchange_code ?? '',
+                '',
+                today,
+                '0',
+            );
+            const formed = replaceFormingBar(
+                rows,
+                daily,
+                tf === 'WEEK' ? 'WEEK' : 'MONTH',
+                usClock(),
+            );
+            const candles = this.toCandles(formed);
+            return tf === 'YEAR' ? this.byYear(candles) : candles;
+        }
+        return this.toCandles(rows);
     }
 
     /** YYYYMMDD 의 전날 */

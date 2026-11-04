@@ -9,9 +9,13 @@ import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { RedisService } from '../redis/redis.service';
 import {
+    extendedFromMinutes,
+    isUsRegularTick,
     regularCloseFromBars,
+    type RegularBar,
     type UsClock,
     type UsDailyBar,
+    type UsMinuteRow,
 } from '../../price/us-session';
 
 // 모듈 간 공유 시세 타입(knowledge.md 규약): 가격/등락률/거래대금은 number.
@@ -24,6 +28,8 @@ export interface StockPrice {
     accumulated_volume?: number;
     /** 해외 — 이 값이 정규장 값으로 쓰인 뉴욕 날짜(YYYYMMDD). 장 끝난 뒤 애프터마켓 동안 이 값을 지킨다 */
     regular_et_date?: string;
+    /** 해외 — 마지막으로 끝난 정규장의 일봉(DB 일봉보다 정확). 장 끝나고 조회할 때 채운다 */
+    regular_bar?: RegularBar;
 }
 
 /**
@@ -154,6 +160,8 @@ const TOKEN_ERROR_CODES = new Set(['EGW00121', 'EGW00123']);
 let tokenWatchInstalled = false;
 
 const REQUEST_DELAY_MS = 500;
+/** 시간외 거래량을 위해 분봉을 거슬러 받는 최대 횟수 — 한 번에 120줄, 이틀치(프리 ~ 애프터 960분 × 2)면 충분 */
+const EXTENDED_MAX_PAGES = 18;
 const MAX_RETRY = 3;
 const RETRY_BACKOFF_MS = 1000;
 const RATE_LIMIT_CODE = 'EGW00201';
@@ -569,6 +577,56 @@ export class KisProvider {
             }
             return quote;
         });
+    }
+
+    /**
+     * 그 뉴욕 날짜의 시간외 거래량 · 거래대금 — 분봉을 그 날짜 앞까지 거슬러 받아 더한다.
+     * 하루 전체가 약 8번, 부르는 쪽이 날짜별로 기억해 하루 한 번만 다 받는다.
+     */
+    async getOverseasExtendedVolume(
+        symbol: string,
+        exchange: string,
+        date: string,
+    ): Promise<{ volume: number; amount: number }> {
+        const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice`;
+        const rows: UsMinuteRow[] = [];
+        let keyb = '';
+        for (let page = 0; page < EXTENDED_MAX_PAGES; page++) {
+            if (page > 0) await this.sleep(REQUEST_DELAY_MS);
+            const list = await this.withRateLimitRetry(async () => {
+                const headers = await this.authHeaders('HHDFS76950200');
+                const { data } = await firstValueFrom(
+                    this.http.get<{
+                        rt_cd: string;
+                        msg_cd: string;
+                        msg1: string;
+                        output2?: UsMinuteRow[];
+                    }>(url, {
+                        headers,
+                        params: {
+                            AUTH: '',
+                            EXCD: OVERSEAS_EXCD[exchange] ?? exchange,
+                            SYMB: KIS_SYMBOL[symbol] ?? symbol,
+                            NMIN: '1',
+                            PINC: '1',
+                            NEXT: keyb ? '1' : '',
+                            NREC: '120',
+                            KEYB: keyb,
+                            FILL: '',
+                        },
+                    }),
+                );
+                if (data.rt_cd !== '0') {
+                    throw new KisApiError(data.msg_cd, data.msg1);
+                }
+                return data.output2 ?? [];
+            });
+            rows.push(...list);
+            const last = list[list.length - 1];
+            if (!last || list.length < 100 || (last.xymd ?? '') < date) break;
+            keyb = `${last.xymd}${last.xhms}`;
+        }
+        return extendedFromMinutes(rows, date);
     }
 
     // 여러 해외 종목의 마지막 정규장 시세. key = symbol(우리 DB code).
@@ -1020,6 +1078,10 @@ export class KisProvider {
 
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-call
                 const volumeGraph = output2List
+                    // 시간외 분봉은 빼고 정규장 것만
+                    .filter((item: { xhms?: string }) =>
+                        isUsRegularTick(String(item.xhms ?? '')),
+                    )
                     .map((item: any) => {
                         // KIS 해외분봉 시간
                         // 예: "021700"
