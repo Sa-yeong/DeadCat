@@ -172,6 +172,7 @@ export class StocksService {
             logo_url: meta.characters?.img_url ?? null,
             current_price: price?.current_price ?? 0,
             change_rate: price?.change_rate ?? 0,
+            change_price: price?.change_price ?? null,
             market: meta.stock_type,
             is_favorite: isFavorite,
             is_event: meta.is_event,
@@ -594,6 +595,12 @@ export class StocksService {
             meta.stock_type === 'FOREIGN' ||
             meta.stock_type === 'OVERSEAS' ||
             /^[A-Za-z]+$/.test(stockCode);
+
+        // 해외 호가는 정규장 시간에만 — 장외 값은 애프터마켓이 끝날 때의 호가라 현재가(정규장 종가)와 어긋난다.
+        // 판정은 주문 규칙과 같다. 장외에는 KIS 를 부르지 않는다
+        if (isOverseas && !this.marketTime.isOperatingTime('FOREIGN')) {
+            return new OrderbookResponseDto(stockCode, [], []);
+        }
 
         // 화면은 보는 사람마다 2초에 한 번 호가를 부른다. 매번 KIS를 직접 부르면 시청자 수만큼
         // 호출이 늘어 KIS 초당 한도에 걸린다 — 종목별로 1초 동안 같은 결과(진행 중인 요청 포함)를 나눠 쓴다.

@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef } from 'react';
 import { BLOCK_CHROME, useLayout } from '../layout';
 import { Block } from './Block';
-import { down, up, won } from '../format';
+import { money } from '../../../common/notifications/orderNotices';
+import { centerTone, down, marketPrice, up, won, type PriceMarket } from '../format';
 import type { Tick } from '../QuoteSync';
 import { R } from '../radius';
 
@@ -31,10 +32,13 @@ export function OrderBookBlock({
 }) {
   const L = useLayout();
   const b = L.blocks.orderbook;
+  const centerLook = centerTone(tick.basic.change_rate);
 
   // 전부 그린다 — 위에서부터 매도(높은 값 → 현재가 쪽), 아래로 매수(현재가 쪽 → 낮은 값)
-  const asks = [...tick.orderbook.asks].sort((x, y) => y.price - x.price).slice(-MAX_LEVELS);
-  const bids = [...tick.orderbook.bids].sort((x, y) => y.price - x.price).slice(0, MAX_LEVELS);
+  // 해외 장외에는 호가가 없다(서버가 비워서 준다) — 가운데 현재가 줄과 안내만
+  const usClosed = tick.basic.market === 'FOREIGN' && tick.basic.market_open === false;
+  const asks = usClosed ? [] : [...tick.orderbook.asks].sort((x, y) => y.price - x.price).slice(-MAX_LEVELS);
+  const bids = usClosed ? [] : [...tick.orderbook.bids].sort((x, y) => y.price - x.price).slice(0, MAX_LEVELS);
   const maxQty = Math.max(1, ...asks.map((a) => a.quantity), ...bids.map((x) => x.quantity));
 
   // 현재가 줄을 가운데로 — 종목이 바뀌거나 블럭 높이가 바뀔 때만. 매 틱마다 하면 사용자가 스크롤한 걸 되돌린다
@@ -62,10 +66,15 @@ export function OrderBookBlock({
       <div
         ref={scroller}
         className="dc-scroll relative flex flex-col"
-        style={{ height: b.height - BLOCK_CHROME, overflowY: 'auto', overscrollBehavior: 'contain' }}
+        style={{
+          height: b.height - BLOCK_CHROME,
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          justifyContent: usClosed ? 'center' : undefined,
+        }}
       >
         {asks.map((a) => (
-          <Row key={`a${a.price}`} price={a.price} qty={a.quantity} max={maxQty} side="ask" onPick={onPick} />
+          <Row key={`a${a.price}`} price={a.price} market={tick.basic.market} qty={a.quantity} max={maxQty} side="ask" onPick={onPick} />
         ))}
         <button
           ref={center}
@@ -78,7 +87,7 @@ export function OrderBookBlock({
             height: 26,
             padding: 0,
             border: 'none',
-            background: 'rgba(255,122,114,0.15)',
+            background: centerLook.background,
             borderRadius: R.control,
             cursor: 'pointer',
           }}
@@ -90,15 +99,20 @@ export function OrderBookBlock({
               fontFamily: "'Space Grotesk', monospace",
               fontSize: 14,
               fontWeight: 700,
-              color: up,
+              color: centerLook.color,
             }}
           >
-            {won(tick.basic.current_price)}
+            {marketPrice(tick.basic.current_price, tick.basic.market)}
           </div>
           <div />
         </button>
+        {usClosed && (
+          <p className="m-0 text-center" style={{ padding: '14px 0 0', fontSize: 12.5, color: '#8F8F88' }}>
+            정규장 시간에 보여요
+          </p>
+        )}
         {bids.map((x) => (
-          <Row key={`b${x.price}`} price={x.price} qty={x.quantity} max={maxQty} side="bid" onPick={onPick} />
+          <Row key={`b${x.price}`} price={x.price} market={tick.basic.market} qty={x.quantity} max={maxQty} side="bid" onPick={onPick} />
         ))}
       </div>
     </Block>
@@ -110,12 +124,14 @@ const MAX_LEVELS = 10;
 
 function Row({
   price,
+  market,
   qty,
   max,
   side,
   onPick,
 }: {
   price: number;
+  market: PriceMarket;
   qty: number;
   max: number;
   side: 'ask' | 'bid';
@@ -125,7 +141,7 @@ function Row({
     <button
       type="button"
       onClick={() => onPick(price)}
-      title={`${won(price)}원을 주문 가격으로`}
+      title={`${money(price, market === 'FOREIGN' ? 'USD' : 'KRW')}을 주문 가격으로`}
       className="dc-ob-row grid shrink-0 items-center"
       style={{
         gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
@@ -147,7 +163,7 @@ function Row({
           color: '#EDEDEA',
         }}
       >
-        {won(price)}
+        {marketPrice(price, market)}
       </div>
       {side === 'bid' ? <Bar qty={qty} max={max} side="bid" /> : <div />}
     </button>

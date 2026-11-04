@@ -1,3 +1,4 @@
+import { usd } from '../../page/stockDetail/format';
 import { MAX_NOTICES, type NoticeInput } from './store';
 
 /** 주문 알림의 문구 — 지시서 7의 표. 주문 응답과 알림 통로가 같은 문구를 쓴다 */
@@ -36,9 +37,7 @@ export interface OrderResultLike {
 
 /** 시장 통화 그대로 — 국내 71,400원 · 해외 $228.86 */
 export const money = (n: number, currency: Currency) =>
-  currency === 'USD'
-    ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-    : `${n.toLocaleString('ko-KR')}원`;
+  currency === 'USD' ? `$${usd(n)}` : `${n.toLocaleString('ko-KR')}원`;
 
 /** 체결가를 모르면(옛 서버가 체결한 주문) 가격을 빼고 보인다 — 지정가를 체결가처럼 적지 않는다 */
 function filled(o: Pick<OrderResultLike, 'stock_code' | 'stock_name' | 'order_side' | 'quantity' | 'fill_price' | 'currency'>): NoticeInput {

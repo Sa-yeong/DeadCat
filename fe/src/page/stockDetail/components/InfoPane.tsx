@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getCompanySummary, getFinancials, getOverview, getScores } from '../api';
-import { down, pct, short, up, usdShort, won, ymd } from '../format';
+import { down, pct, short, up, usd, usdShort, won, ymd } from '../format';
 import type { CompanyOverview, CompanyScores, CompanySummary, Financial } from '../types';
 import { R } from '../radius';
 
@@ -70,7 +70,7 @@ export function InfoPane({ stockCode }: { stockCode: string }) {
 
   const domestic = isDomestic(stockCode);
   const money = (n: number) => (domestic ? short(n) : usdShort(n));
-  const price = (n: number) => (domestic ? won(n) : `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
+  const price = (n: number) => (domestic ? won(n) : `$${usd(n)}`);
   const s = data.summary;
   const NA = '—';
   const metrics: [string, string][] = [
@@ -175,7 +175,7 @@ export function InfoPane({ stockCode }: { stockCode: string }) {
 /** 배당 한 줄 — 있는 항목만 잇는다 */
 function dividendLine(ov: CompanyOverview | null, domestic: boolean): string {
   if (!ov || !ov.dividend_per || ov.dividend_cycle === '배당없음') return '배당 없음';
-  const parts = [`주당 배당금 ${domestic ? `${won(ov.dividend_per)}원` : `$${ov.dividend_per}`}`];
+  const parts = [`주당 배당금 ${domestic ? `${won(ov.dividend_per)}원` : `$${usd(ov.dividend_per)}`}`];
   if (ov.dividend_cycle) parts.push(ov.dividend_cycle);
   if (ov.ex_dividend_date) parts.push(`배당락 ${ymd(ov.ex_dividend_date)}`);
   if (ov.dividend_pay_date) parts.push(`지급 ${ymd(ov.dividend_pay_date)}`);

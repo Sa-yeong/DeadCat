@@ -142,6 +142,12 @@ export class PriceService {
     // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
     private static readonly LIVE_TTL_S = 60 * 60 * 24 * 7;
 
+    /** 이 서버가 그 뉴욕 날짜에 본 마지막 정규장 값 — 없으면 null */
+    regularPriceOf(code: string, etDate: string): CachedPrice | null {
+        const v = this.latest.get(code);
+        return v?.regular_et_date === etDate ? v : null;
+    }
+
     // 웹소켓 수신 시 단일 종목 실시간 시세 반영 (Redis에는 FLUSH_MS마다 몰아서)
     async writeSinglePrice(
         code: string,
@@ -221,10 +227,12 @@ export class PriceService {
         codes.forEach((code, i) => {
             const raw = values[i];
             if (!raw) return;
-            const cached = JSON.parse(raw) as CachedPrice;
-            // 같은 Redis 에 금액 칸을 모르는 서버(옛 코드)가 쓰면 칸이 빠진다 — 이 서버가 아는 값으로 메운다
-            cached.change_price ??= this.latest.get(code)?.change_price;
-            result.set(code, cached);
+            // 같은 Redis 에 옛 코드 서버가 쓰면 프리 · 애프터 값이 들어오고 금액 칸이 빠진다
+            // — 이 서버가 받은 값이 있으면 그것을 믿는다(현재가 · 체결 판단 모두 여기를 본다)
+            result.set(code, {
+                ...(JSON.parse(raw) as CachedPrice),
+                ...this.latest.get(code),
+            });
         });
         return result;
     }

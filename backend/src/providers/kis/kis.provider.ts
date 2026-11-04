@@ -8,6 +8,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { RedisService } from '../redis/redis.service';
+import {
+    regularCloseFromBars,
+    type UsClock,
+    type UsDailyBar,
+} from '../../price/us-session';
 
 // 모듈 간 공유 시세 타입(knowledge.md 규약): 가격/등락률/거래대금은 number.
 export interface StockPrice {
@@ -17,6 +22,8 @@ export interface StockPrice {
     change_price?: number;
     trading_value: number;
     accumulated_volume?: number;
+    /** 해외 — 이 값이 정규장 값으로 쓰인 뉴욕 날짜(YYYYMMDD). 장 끝난 뒤 애프터마켓 동안 이 값을 지킨다 */
+    regular_et_date?: string;
 }
 
 /**
@@ -518,6 +525,68 @@ export class KisProvider {
                 this.logger.warn(
                     `국내 시세 실패 ${codes[i]}: ${this.errMsg(e)}`,
                 );
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 해외 마지막 정규장 시세 — 장외 전용. 현재가 API 는 NAS 코드로도 프리 · 애프터 체결을 주므로
+     * 일봉에서 정규장이 끝난 막대를 골라 쓴다(us-session). 금액 · 등락률은 두 종가로.
+     */
+    async getOverseasRegularClose(
+        symbol: string,
+        exchange: string,
+        clock: UsClock,
+    ): Promise<StockPrice> {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/dailyprice`;
+            const headers = await this.authHeaders('HHDFS76240000');
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd: string;
+                    msg_cd: string;
+                    msg1: string;
+                    output2?: UsDailyBar[];
+                }>(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: OVERSEAS_EXCD[exchange] ?? exchange,
+                        SYMB: KIS_SYMBOL[symbol] ?? symbol,
+                        GUBN: '0',
+                        BYMD: '',
+                        MODP: '1',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            const quote = regularCloseFromBars(data.output2 ?? [], clock);
+            if (!quote) {
+                throw new Error('정규장이 끝난 일봉이 없습니다');
+            }
+            return quote;
+        });
+    }
+
+    // 여러 해외 종목의 마지막 정규장 시세. key = symbol(우리 DB code).
+    async getOverseasRegularCloses(
+        items: { symbol: string; exchange: string }[],
+        clock: UsClock,
+    ): Promise<Map<string, StockPrice>> {
+        const result = new Map<string, StockPrice>();
+        for (let i = 0; i < items.length; i++) {
+            if (i > 0) await this.sleep(REQUEST_DELAY_MS);
+            const { symbol, exchange } = items[i];
+            try {
+                result.set(
+                    symbol,
+                    await this.getOverseasRegularClose(symbol, exchange, clock),
+                );
+            } catch (e) {
+                this.logger.warn(`해외 종가 실패 ${symbol}: ${this.errMsg(e)}`);
             }
         }
         return result;

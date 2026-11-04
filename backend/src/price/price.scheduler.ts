@@ -8,6 +8,12 @@ import {
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
 import { PriceService } from './price.service';
+import {
+    isFinishedUsBar,
+    isUsAfterHours,
+    isUsRegular,
+    usClock,
+} from './us-session';
 
 //const POLL_CRON = '*/30 * * * * *';
 
@@ -174,8 +180,16 @@ export class PriceScheduler implements OnModuleInit {
                 const fromDate =
                     count >= full ? latestDateStr.replace(/-/g, '') : '';
                 let savedCount = 0;
+                const clock = usClock();
                 for (const [cleanDate, item] of uniqueItemsMap.entries()) {
                     if (cleanDate < fromDate) continue;
+                    // 해외 오늘 막대는 장이 끝나야 — 프리 · 장중에 서버가 켜지면 그 값이 일봉으로 남는다
+                    if (
+                        stock.stock_type === 'FOREIGN' &&
+                        !isFinishedUsBar(cleanDate, clock)
+                    ) {
+                        continue;
+                    }
                     const year = Number(cleanDate.substring(0, 4));
                     const month = Number(cleanDate.substring(4, 6)) - 1; // JS 월은 0부터 시작
                     const day = Number(cleanDate.substring(6, 8));
@@ -295,6 +309,37 @@ export class PriceScheduler implements OnModuleInit {
         return d.toISOString().slice(0, 10).replace(/-/g, '');
     }
 
+    /**
+     * 해외 시세 — 정규장 값만(체결 판단도 같은 값을 본다).
+     *  · 장중: 현재가 API
+     *  · 장외: 일봉의 끝난 막대. 현재가 API 는 프리 · 애프터 체결을 주므로 쓰지 않는다
+     *  · 애프터마켓 동안: 이 서버가 오늘 본 마지막 정규장 값이 있으면 그대로(그 시간 일봉 종가는 장담 못 함)
+     */
+    private async readOverseasPrices(
+        overseas: { symbol: string; exchange: string }[],
+    ): Promise<Map<string, StockPrice>> {
+        const clock = usClock();
+        if (isUsRegular(clock)) {
+            const live = await this.kis.getOverseasPrices(overseas);
+            for (const price of live.values()) {
+                price.regular_et_date = clock.date;
+            }
+            return live;
+        }
+        const result = new Map<string, StockPrice>();
+        const rest: typeof overseas = [];
+        for (const item of overseas) {
+            const kept = isUsAfterHours(clock)
+                ? this.price.regularPriceOf(item.symbol, clock.date)
+                : null;
+            if (kept) result.set(item.symbol, kept);
+            else rest.push(item);
+        }
+        const closes = await this.kis.getOverseasRegularCloses(rest, clock);
+        for (const [code, price] of closes) result.set(code, price);
+        return result;
+    }
+
     @Cron(POLL_CRON)
     async pollStocks(): Promise<void> {
         if (this.isPolling) {
@@ -324,7 +369,7 @@ export class PriceScheduler implements OnModuleInit {
                 }));
 
             const domPrices = await this.kis.getDomesticPrices(domesticCodes);
-            const ovsPrices = await this.kis.getOverseasPrices(overseas);
+            const ovsPrices = await this.readOverseasPrices(overseas);
 
             const entries: {
                 code: string;

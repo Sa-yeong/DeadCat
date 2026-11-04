@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { slideTransition, useLayout, useSliding } from '../layout';
 import { DAYS_PER_BAR, convertBars, maxVisibleBars, zoomStep, type ChartFocus } from '../chartZoom';
+import type { PriceMarket } from '../format';
 import type { Candle, Timeframe } from '../types';
 import { ChartPane } from './ChartPane';
 import { ChartToolbar } from './ChartToolbar';
@@ -40,6 +41,7 @@ export function WindowHud({
   tab,
   onSwitch,
   stockCode,
+  market,
   timeframe,
   onTimeframe,
   candles,
@@ -53,6 +55,8 @@ export function WindowHud({
   tab: WindowTab;
   onSwitch: (t: WindowTab) => void;
   stockCode: string;
+  /** 아직 모르면 국내 표기 — 시세를 받는 대로 바뀐다 */
+  market?: PriceMarket;
   timeframe: Timeframe;
   onTimeframe: (tf: Timeframe) => void;
   candles: Candle[] | null;
@@ -144,6 +148,7 @@ export function WindowHud({
       <div style={{ display: tab === 'CHART' ? 'block' : 'none' }}>
         <ChartPane
           stockCode={stockCode}
+          market={market}
           candles={candles}
           lastCandle={lastCandle}
           width={chartWidth}

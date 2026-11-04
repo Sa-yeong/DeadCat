@@ -2,6 +2,24 @@
 
 export const won = (n: number) => n.toLocaleString('ko-KR');
 
+/** 달러 숫자 — 늘 소수 2자리, 천 단위 쉼표(398.50 · 1,234.50). 끝의 0 을 지우지 않는다 */
+export const usd = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export type PriceMarket = 'DOMESTIC' | 'FOREIGN';
+
+/** 시장 통화 가격 숫자 — 국내 원(그대로) · 해외 달러 소수 2자리. 기호 · 단위는 붙이지 않는다 */
+export const marketPrice = (n: number, market: PriceMarket) => (market === 'FOREIGN' ? usd(n) : won(n));
+
+/** 차트 축 · 십자선 · 그림 태그 글자 — 국내 원 정수 · 해외 달러 소수 2자리 */
+export const chartPriceText = (market: PriceMarket) => (p: number) =>
+  market === 'FOREIGN' ? usd(p) : Math.round(p).toLocaleString('ko-KR');
+
+/** 차트 계열의 가격 단위 — 눈금과 마지막 값 표시가 이 단위를 따른다 */
+export const chartPriceFormat = (market: PriceMarket) =>
+  market === 'FOREIGN'
+    ? { type: 'price' as const, precision: 2, minMove: 0.01 }
+    : { type: 'price' as const, precision: 0, minMove: 1 };
+
 export const signed = (n: number) => (n > 0 ? `+${won(n)}` : won(n));
 
 /** 주문 블럭의 쓸 수 있는 양 — 매수는 주문가능 금액(늘 원), 매도는 매도가능 수량. 모르면 null(표시 안 함) */
@@ -47,6 +65,13 @@ export const upSoft = '#FF7A70';
 export const downSoft = '#6FA0FF';
 export const tone = (n: number) => (n >= 0 ? up : down);
 export const toneSoft = (n: number) => (n >= 0 ? upSoft : downSoft);
+
+/** 호가 가운데 현재가 줄 — 글자색 · 배경. 상승 빨강 · 하락 파랑 · 0 회색 */
+export function centerTone(rate: number): { color: string; background: string } {
+  if (rate > 0) return { color: up, background: 'rgba(255,122,114,0.15)' };
+  if (rate < 0) return { color: down, background: 'rgba(111,160,255,0.15)' };
+  return { color: '#A5A59C', background: 'rgba(165,165,156,0.12)' };
+}
 
 /**
  * 봉 시각 → 짧은 라벨. 주기마다 읽는 단위가 다르다.

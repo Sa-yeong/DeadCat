@@ -9,7 +9,7 @@ import {
   type ISeriesApi,
 } from 'lightweight-charts';
 import type { Candle } from '../types';
-import { down, up } from '../format';
+import { chartPriceFormat, chartPriceText, down, up, type PriceMarket } from '../format';
 import type { ChartFocus } from '../chartZoom';
 import { stamp } from '../chart/time';
 import { IndicatorLayer, NO_INDICATORS, type IndicatorSet } from '../chart/indicatorLayer';
@@ -21,8 +21,7 @@ type Main = ISeriesApi<'Line'> | ISeriesApi<'Candlestick'>;
 
 /** 크기를 맞춘 뒤 이만큼(ms)은 보이는 범위가 바뀌어도 크기 맞춤 때문으로 본다 */
 const RESIZE_SETTLE_MS = 200;
-const PRICE = { type: 'price' as const, precision: 0, minMove: 1 };
-const fmt = (p: number) => Math.round(p).toLocaleString('ko-KR');
+const PRICE = chartPriceFormat('DOMESTIC');
 
 /**
  * 차트 — **라이브러리를 이 컴포넌트 안에 가둔다.** 바깥은 종목·캔들·마지막 봉만 안다.
@@ -50,6 +49,7 @@ const fmt = (p: number) => Math.round(p).toLocaleString('ko-KR');
  */
 export function ChartPane({
   stockCode,
+  market = 'DOMESTIC',
   candles,
   lastCandle,
   kind = 'line',
@@ -69,6 +69,8 @@ export function ChartPane({
   clearKey = 0,
 }: {
   stockCode: string;
+  /** 가격 표기 — 국내 원 정수 · 해외 달러 소수 2자리 */
+  market?: PriceMarket;
   candles: Candle[] | null;
   lastCandle: Candle | null;
   kind?: 'line' | 'candle';
@@ -151,7 +153,7 @@ export function ChartPane({
         // 보조지표 아래 칸과의 경계 — 높이는 끌어서 바꾸지 않는다
         panes: { separatorColor: 'rgba(255,255,255,0.12)', separatorHoverColor: 'rgba(255,255,255,0.12)', enableResize: false },
       },
-      localization: { priceFormatter: fmt, locale: 'ko-KR' },
+      localization: { priceFormatter: chartPriceText('DOMESTIC'), locale: 'ko-KR' },
       grid: {
         vertLines: { color: 'rgba(255,255,255,0.05)' },
         horzLines: { color: 'rgba(255,255,255,0.05)' },
@@ -293,6 +295,20 @@ export function ChartPane({
       drawing.current = null;
     };
   }, [stockCode, kind]);
+
+  // 축 · 십자선 · 마지막 값 표기 — 시장을 알게 됐을 때와 차트를 새로 만들었을 때
+  useEffect(() => {
+    const text = chartPriceText(market);
+    const format = chartPriceFormat(market);
+    chart.current?.applyOptions({ localization: { priceFormatter: text } });
+    main.current?.applyOptions({ priceFormat: format });
+    mirror.current?.applyOptions({ priceFormat: format });
+    layer.current?.setMarket(market);
+    if (drawing.current) {
+      drawing.current.priceText = text;
+      drawing.current.refresh();
+    }
+  }, [market, stockCode, kind]);
 
   // 보조지표 켜고 끄기 — 차트를 새로 만들면(종목·표현 변경) 빈 상태에서 다시 건다
   useEffect(() => {

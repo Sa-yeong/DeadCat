@@ -278,6 +278,7 @@ export function StockDetailPage() {
           tab={tab}
           onSwitch={setTab}
           stockCode={stockCode}
+          market={basic?.stock_code === stockCode ? basic.market : undefined}
           timeframe={timeframe}
           onTimeframe={setTimeframe}
           candles={baseCandles}
