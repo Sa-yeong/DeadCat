@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import './ListTab.css'
 
 export function ListTab({list=[]}:{list:[ReactNode, string][]}){

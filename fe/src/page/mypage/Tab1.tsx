@@ -79,7 +79,7 @@ function Represent({mydata, setMydata}:any){
                 {headers: {Authorization: `Bearer ${token}`}}
             )
 
-            setMydata(prev => prev ? {...prev, share_option:newState} : prev);
+            setMydata((prev: Me | null) => prev ? {...prev, share_option:newState} : prev);
         }catch(e){console.error('공유 여부 변경 실패: ', e);}
     }
 
@@ -172,7 +172,7 @@ function AssetInfo(){
                     평가 손익
                 </span>
                 <span style={{color: (myAsset?.valuation_return_rate===0||(typeof myAsset?.valuation_return_rate =='string'))?
-                    '#566072':((myAsset?.valuation_return_rate>0) ?'#f04452':'#5c96f5')}}>
+                    '#566072':(((myAsset?.valuation_return_rate ?? 0)>0) ?'#f04452':'#5c96f5')}}>
                     {Number(myAsset?.total_valuation_profit).toLocaleString()}
                 </span>
             </div>
@@ -181,7 +181,7 @@ function AssetInfo(){
                     손익률
                 </span>
                 <span style={{color: (myAsset?.valuation_return_rate===0||(typeof myAsset?.valuation_return_rate =='string'))?
-                    '#566072':((myAsset?.valuation_return_rate>0) ?'#f04452':'#5c96f5')}}>
+                    '#566072':(((myAsset?.valuation_return_rate ?? 0)>0) ?'#f04452':'#5c96f5')}}>
                     {myAsset?.valuation_return_rate}
                 </span>
             </div>

@@ -38,7 +38,7 @@ export function SearchedRooms(){
                 rooms.length === 0 ?
                 <div className='no-room'>해당 조건에 부합하는 거실이 없습니다.</div> :
                 <div className='searchedRooms'>
-                {rooms.map((room) => {
+                {rooms.map((room: any) => {
                     return <Room 
                         key={room.user_id}
                         img={room.room_img_url} 

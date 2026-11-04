@@ -24,7 +24,7 @@ export function SignUp(){
             const response = await api.post('/auth/signup', {login_id: id, login_pw:pw, nickname:name});
 
             console.log(response);
-        } catch(e){
+        } catch(e: any){
             console.error('회원가입 실패: ', e);
 
             if(e.response){

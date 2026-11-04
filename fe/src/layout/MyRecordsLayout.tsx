@@ -1,7 +1,7 @@
 import './MyRecordsLayout.css'
 import { Link } from "react-router-dom";
 import { GrPrevious } from "react-icons/gr";
-import { ActivityListLayout } from './ActivityListLayout';
+import { LikedPostLayout } from './ActivityListLayout';
 
 interface Post{
     post_id: string,
@@ -38,8 +38,8 @@ export function MyRecordsLayout_P({title, posts}:{title:string, posts:Post[]}){
                      <div className='none-noti'>존재하는 게시글이 없습니다.</div>
                 ):(
                     posts.map((post) => 
-                    <ActivityListLayout key={post.post_id}
-                    title={post.title} comments={post.comment_count}
+                    <LikedPostLayout key={post.post_id}
+                    content={post.title} comments={post.comment_count}
                     likes={post.like_count} writer={post.author_nickname}
                     date={post.created_at} />
                     )
@@ -64,8 +64,8 @@ export function MyRecordsLayout_C({title, comments}:{title:string, comments:Comm
                      <div className='none-noti'>존재하는 게시글이 없습니다.</div>
                 ):(
                     comments.map((comment) => 
-                    <ActivityListLayout key={comment.post_id}
-                    title={comment.post_title} comments={comment.post_comment_count}
+                    <LikedPostLayout key={comment.post_id}
+                    content={comment.post_title} comments={comment.post_comment_count}
                     likes={comment.post_like_count} writer={comment.post_author_nickname}
                     date={comment.post_created_at} />
                     )

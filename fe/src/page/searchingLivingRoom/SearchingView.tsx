@@ -249,9 +249,9 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
     const content = (
         <div style={{display: 'flex', gap: '8px'}}>
             {
-                tags.map((tag) => {
+                tags.map((tag: { tag_id: number, name: string }) => {
                     return <p onClick={() => {if(!findTag(tag.name))
-                        setSelectedTags(prev => [...prev, tag.name])
+                        setSelectedTags((prev: string[]) => [...prev, tag.name])
                         setClickOpp(false); setClickSim(false);
                     }}
                     key={tag.tag_id}>{tag.name}</p>
@@ -298,7 +298,7 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
         <span className='left-side'>
             <SearchBar onAdd={(keyword: string) => { 
                 if(!findKeyword(keyword))
-                    setKeywords(prev => [...prev, keyword])
+                    setKeywords((prev: string[]) => [...prev, keyword])
                 setClickOpp(false); setClickSim(false);}} />
             <Popover content={content} trigger={"click"} arrow={false} placement='bottomLeft'
             title='태그 목록'>

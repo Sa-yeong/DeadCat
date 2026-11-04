@@ -30,7 +30,7 @@ export function RoomList(){
                 <div className='no-room'>현재 급등 중인 거실이 없습니다</div> :
                 <Carousel arrows dotPlacement='top' slidesToShow={4} slidesToScroll={4} className='rooms-carousel'>
                     {
-                        riseRooms.map((room)=>{
+                        riseRooms.map((room: any)=>{
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
                             onClick={()=>navigate(`/room/${room.user_id}`)} />
@@ -49,7 +49,7 @@ export function RoomList(){
                 <div className='no-room'>현재 급락 중인 거실이 없습니다</div> :
                 <Carousel arrows dotPlacement='top' slidesToShow={4} slidesToScroll={4} className='rooms-carousel'>
                     {
-                        fallRooms.map((room)=>{
+                        fallRooms.map((room: any)=>{
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
                             onClick={()=>navigate(`/room/${room.user_id}`)} />
@@ -65,7 +65,7 @@ export function RoomList(){
             </div>
             <div className='content'>
                 {
-                    rooms.map((room)=>{
+                    rooms.map((room: any)=>{
                         return <Room img={room.room_img_url} nickname={room.nickname}
                         profit={room.profit_rate} tags={room.tags}
                         onClick={()=>navigate(`/room/${room.user_id}`)}  />

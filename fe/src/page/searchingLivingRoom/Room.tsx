@@ -12,7 +12,7 @@ export function Room({img, nickname, profit, tags, onClick}: any){
             </div>
             <div className='tag-list'>
                 {
-                    tags?.map((tag)=>{
+                    tags?.map((tag: string)=>{
                         return <span>{tag}</span>
                     })
                 }
