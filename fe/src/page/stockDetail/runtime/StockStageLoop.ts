@@ -204,7 +204,6 @@ export class StockStageLoop {
 
   /** 화면을 새로 다 맞춘다(창 크기가 바뀜) — 캐릭터도 바로 새 자리에 선다 */
   setFraming(f: Framing) {
-    this.back.cancelHome();
     this.scene.setFraming(f);
   }
 

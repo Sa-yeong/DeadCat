@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { LayoutContext, MIN_STAGE, MIN_WIDTH, useLayout, useViewportLayout } from './layout';
+import { LayoutContext, MIN_STAGE, MIN_WIDTH, SlidingContext, slideTransition, useLayout, useViewportLayout } from './layout';
 import { QuoteSync, fetchCandles, type Tick } from './QuoteSync';
 import { isNotFound } from './api';
 import type { Candle, Timeframe, VolumeSummary } from './types';
@@ -48,7 +48,7 @@ const TAP_MAX_MS = 500;
 export function StockDetailPage() {
   const { stockCode = '000000' } = useParams();
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const L = useViewportLayout(rootRef);
+  const { layout: L, sliding } = useViewportLayout(rootRef);
   const layoutRef = useRef(L);
   layoutRef.current = L;
 
@@ -241,6 +241,7 @@ export function StockDetailPage() {
 
   return (
     <LayoutContext.Provider value={L}>
+    <SlidingContext.Provider value={sliding}>
     <div
       ref={rootRef}
       className="dc-screen relative overflow-hidden"
@@ -255,7 +256,8 @@ export function StockDetailPage() {
       }}
     >
       {/* 네비는 그리지 않는다 — 앱에서는 팀의 GlobalNavBar(Root)가 위에 있다 */}
-      <main className="relative" style={{ width: L.width, height: L.stageHeight }}>
+      {/* 폭도 창틀과 같이 움직인다 — 오른쪽에 붙은 「전부 불투명」 버튼이 창문 오른쪽 끝을 따라가게 */}
+      <main className="relative" style={{ width: L.width, height: L.stageHeight, transition: sliding ? slideTransition('width') : undefined }}>
         <StageView
           live={stage === 'ready'}
           windowOpen={tab === 'CHART'}
@@ -326,6 +328,7 @@ export function StockDetailPage() {
         {emotionTestOn() && <EmotionTestPanel getLoop={getStageLoop} onActive={setEmotionTesting} />}
       </main>
     </div>
+    </SlidingContext.Provider>
     </LayoutContext.Provider>
   );
 }

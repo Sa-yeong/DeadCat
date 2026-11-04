@@ -1,6 +1,6 @@
-import { createContext, useContext, useLayoutEffect, useState, type RefObject } from 'react';
-import { collapsedHostWidth, hostWidth, observeHost } from '../../layout/hostArea';
-import { SIDEBAR, useSidebar } from '../../common/sidebar/sidebarState';
+import { createContext, useContext, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { collapsedHostWidth, hostWidth, hostWidthWithSidebar, observeHost } from '../../layout/hostArea';
+import { SIDEBAR, sidebarWidth, useSidebar } from '../../common/sidebar/sidebarState';
 
 /**
  * 시안(Claude Design 아트보드) 기준값 — 1440 × 1036 캔버스.
@@ -80,7 +80,7 @@ export interface Layout {
   /**
    * 3D 무대(캔버스) 폭 — 글로벌 사이드바를 접었을 때의 폭이라 여닫아도 변하지 않는다.
    * 열면 오른쪽이 사이드바 밑에 깔린다(화면 칸 밖이라 잘려 안 보인다). 캔버스 크기를 바꾸면
-   * 3D 를 다시 맞춰야 하고 캐릭터가 움찔하므로, 여닫을 때는 블럭 · 창문만 움직인다.
+   * 3D 를 다시 맞춰야 하고 캐릭터가 움찔하므로, 여닫을 때는 창문만 움직인다.
    */
   canvasWidth: number;
   stageHeight: number;
@@ -211,29 +211,50 @@ export function computeLayout(availW: number, availH: number, canvasW = availW):
  * 미리보기에서는 대용 네비가 위에 있다. 그래서 화면 맨 위가 문서의 어디에서
  * 시작하는지 재서, 창 높이에서 그만큼 뺀 높이를 쓴다 — 네비 높이가 바뀌어도 맞는다.
  * 폭은 창이 아니라 화면을 담은 칸 — 오른쪽 글로벌 사이드바 밑이 잘리지 않게(hostArea).
- * 그 칸의 크기를 듣고 있어서 사이드바를 여닫으면 여닫는 동안 매 프레임 블럭 · 창문이 따라 움직인다.
+ *
+ * 사이드바를 여닫을 때는 칸 폭을 매 프레임 따라가지 않는다 — 시작할 때 **최종 레이아웃을 한 번** 계산하고,
+ * 창틀만 CSS 전환으로 그 자리까지 움직인다(sliding · slideTransition). 다시 그리는 건 시작과 끝 두 번뿐이다.
  * 3D 무대 폭은 사이드바를 접었을 때의 칸 폭이라 그동안 그대로다(Layout.canvasWidth).
  */
-export function useViewportLayout(root: RefObject<HTMLElement | null>): Layout {
+export function useViewportLayout(root: RefObject<HTMLElement | null>): { layout: Layout; sliding: boolean } {
+  const sidebar = useSidebar();
+  const open = sidebar?.open ?? false;
   // 사이드바가 없으면(미리보기) 무대 폭 = 칸 폭. 있으면 접혀도 남는 아이콘 줄만큼 뺀 폭
-  const keep = useSidebar() ? SIDEBAR.railWidth : 0;
+  const keep = sidebar ? SIDEBAR.railWidth : 0;
+  const openNow = useRef(open);
+  const slidingNow = useRef(false);
   const read = () => {
     const el = root.current;
     const top = el ? el.getBoundingClientRect().top + window.scrollY : 0;
-    const w = hostWidth(el);
+    // 여닫는 중에는 칸이 아직 움직이는 중이다 — 도착할 폭으로 계산한다
+    const w = slidingNow.current ? hostWidthWithSidebar(el, sidebarWidth(openNow.current)) : hostWidth(el);
     return computeLayout(w, window.innerHeight - top, Math.max(w, collapsedHostWidth(el, keep)));
   };
   const [layout, setLayout] = useState<Layout>(() => computeLayout(window.innerWidth, window.innerHeight));
+  const [sliding, setSliding] = useState(false);
+  // 크기가 같으면 그대로 둔다 — 화면을 쓸데없이 다시 그리지 않게
+  const update = () => {
+    const next = read();
+    setLayout((prev) =>
+      next.viewWidth === prev.viewWidth && next.stageHeight === prev.stageHeight && next.canvasWidth === prev.canvasWidth
+        ? prev
+        : next,
+    );
+  };
   useLayoutEffect(() => {
-    setLayout(read());
+    update();
     let raf = 0;
     const onResize = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => setLayout(read()));
+      raf = requestAnimationFrame(update);
+    };
+    // 여닫는 중 칸 크기 변화는 듣지 않는다 — 끝날 때 한 번 다시 잰다
+    const onHostResize = () => {
+      if (!slidingNow.current) onResize();
     };
     window.addEventListener('resize', onResize);
-    // 창은 그대로인데 화면 칸만 바뀌는 경우(글로벌 사이드바 여닫기)
-    const unobserve = observeHost(root.current, onResize);
+    // 창은 그대로인데 화면 칸만 바뀌는 경우(스크롤바가 생기고 없어짐)
+    const unobserve = observeHost(root.current, onHostResize);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
@@ -241,8 +262,33 @@ export function useViewportLayout(root: RefObject<HTMLElement | null>): Layout {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return layout;
+  // 글로벌 사이드바 여닫기 — 도중에 또 여닫으면 마지막 상태 기준으로 다시 잰다
+  useLayoutEffect(() => {
+    if (openNow.current === open) return;
+    openNow.current = open;
+    slidingNow.current = true;
+    setSliding(true);
+    update();
+    const done = window.setTimeout(() => {
+      slidingNow.current = false;
+      setSliding(false);
+      update();
+    }, SIDEBAR.slideMs + SLIDE_MARGIN_MS);
+    return () => window.clearTimeout(done);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  return { layout, sliding };
 }
+
+/** 전환이 다 끝난 뒤에 끝났다고 치도록 두는 여유(ms) — 전환은 다음 프레임부터 시작한다 */
+const SLIDE_MARGIN_MS = 60;
+
+/** 글로벌 사이드바 패널과 같은 시간 · 같은 곡선(Sidebar.css)의 CSS 전환 */
+export const slideTransition = (property: string) => `${property} ${SIDEBAR.slideMs}ms ease`;
 
 export const LayoutContext = createContext<Layout>(computeLayout(L.width, L.stageHeight));
 export const useLayout = () => useContext(LayoutContext);
+
+/** 글로벌 사이드바를 여닫는 중 — 창틀은 CSS 전환으로 움직이고, 차트 크기 맞춤 · 캐릭터 이동은 끝난 뒤로 미룬다 */
+export const SlidingContext = createContext(false);
+export const useSliding = () => useContext(SlidingContext);

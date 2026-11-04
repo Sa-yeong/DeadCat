@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLayout, type Layout } from '../layout';
+import { useLayout, useSliding, type Layout } from '../layout';
 import { StockScene, onlyCenterMoved, type Framing } from '../runtime/StockScene';
 import { StockStageLoop } from '../runtime/StockStageLoop';
 import { CHARACTER_ASSETS } from '../runtime/assets';
@@ -45,6 +45,7 @@ export function CharacterStage({
   onStatus: (s: StageStatus) => void;
 }) {
   const L = useLayout();
+  const sliding = useSliding();
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const loop = useRef<StockStageLoop | null>(null);
   const layout = useRef(L);
@@ -102,9 +103,8 @@ export function CharacterStage({
   /**
    * 레이아웃이 바뀌면 —
    *  · 창 크기가 바뀜(캔버스 크기 · 높이 쪽이 달라짐) → 카메라만 바로 다시 맞춘다. 씬은 다시 만들지 않는다
-   *  · 창문 가운데만 옮겨 감(글로벌 사이드바 여닫기) → 그동안 3D 는 그대로 둔다. 캐릭터는 제자리에 있고
-   *    블럭 · 창문만 움직인다. 움직임이 멎고 HOME_SETTLE_MS 뒤에 캐릭터가 새 가운데로 걸어(뛰어) 온다.
-   *    여닫는 동안은 매 프레임 레이아웃이 바뀌므로 마지막 변화부터 센다
+   *  · 창문 가운데만 옮겨 감(글로벌 사이드바 여닫기) → 캔버스 · 카메라 · 바닥은 건드리지 않는다.
+   *    창문만 움직이고, 움직임이 끝나고(sliding) HOME_SETTLE_MS 뒤에 캐릭터만 새 가운데로 걸어(뛰어) 온다.
    */
   useEffect(() => {
     const lp = loop.current;
@@ -114,7 +114,7 @@ export function CharacterStage({
     const prev = applied.current;
     if (prev && onlyCenterMoved(prev, f)) {
       window.clearTimeout(settle.current);
-      if (prev.centerX === f.centerX) return; // 원래 자리로 돌아왔다 — 갈 데가 없다
+      if (sliding || prev.centerX === f.centerX) return; // 아직 움직이는 중 · 원래 자리로 돌아옴
       settle.current = window.setTimeout(() => {
         applied.current = f;
         lp.moveHome(f.centerX);
@@ -124,7 +124,7 @@ export function CharacterStage({
     window.clearTimeout(settle.current);
     applied.current = f;
     lp.setFraming(f);
-  }, [L]);
+  }, [L, sliding]);
 
   return (
     <canvas

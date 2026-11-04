@@ -24,7 +24,7 @@ export default function Root(){
             {/* minWidth 0 — 화면이 넓어도 왼쪽 영역이 사이드바를 밀어내지 않고 안에서 스크롤한다 */}
             <div style={{display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0}}>
                 <GlobalNavBar />
-                <div style={{flex: 1, minHeight: 0, overflowY: 'scroll', padding: 0, margin: 0,
+                <div style={{flex: 1, minHeight: 0, overflowY: 'auto', padding: 0, margin: 0,
                     background: '#0b0d12', color: 'white'}}>
                     <Outlet />
                 </div>

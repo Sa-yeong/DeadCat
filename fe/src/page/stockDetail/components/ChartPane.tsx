@@ -19,6 +19,8 @@ import { DrawingToolbar } from './DrawingToolbar';
 
 type Main = ISeriesApi<'Line'> | ISeriesApi<'Candlestick'>;
 
+/** 크기를 맞춘 뒤 이만큼(ms)은 보이는 범위가 바뀌어도 크기 맞춤 때문으로 본다 */
+const RESIZE_SETTLE_MS = 200;
 const PRICE = { type: 'price' as const, precision: 0, minMove: 1 };
 const fmt = (p: number) => Math.round(p).toLocaleString('ko-KR');
 
@@ -102,6 +104,8 @@ export function ChartPane({
   const main = useRef<Main | null>(null);
   const mirror = useRef<ISeriesApi<'Line'> | null>(null);
   const size = useRef({ width, height });
+  /** 마지막으로 크기를 맞춘 시각 */
+  const resizedAt = useRef(-Infinity);
   size.current = { width, height };
   const panCb = useRef(onPan);
   panCb.current = onPan;
@@ -259,7 +263,8 @@ export function ChartPane({
           return;
         }
       }
-      spanCb.current?.(r.to - r.from);
+      // 창문 크기가 바뀌어 보이는 봉 수가 달라진 것은 사용자가 기간을 바꾼 게 아니다 — 카메라를 움직이지 않는다
+      if (performance.now() - resizedAt.current > RESIZE_SETTLE_MS) spanCb.current?.(r.to - r.from);
       const prev = lastFrom;
       lastFrom = r.from;
       const byUser = pressed || performance.now() - releasedAt < 700;
@@ -312,6 +317,7 @@ export function ChartPane({
 
   // 창 크기 변경 — 크기만 맞춘다. 파기하면 창을 끌 때마다 차트가 깜빡인다
   useEffect(() => {
+    resizedAt.current = performance.now();
     chart.current?.resize(width, height);
     applyZoomOutLimit();
   }, [width, height]); // eslint-disable-line react-hooks/exhaustive-deps
