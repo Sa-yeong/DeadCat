@@ -75,8 +75,18 @@ export function Tab3(){
 
     return <div className="tab3">
         <div className='header'>
-            <ListTab list={[[`작성 글 ${writtenPosts.length}`, '/mypage/community/myPosts'],
-            ['작성 댓글', '/mypage/community/myComments'], ['좋아요 한 글', '/mypage/community/likes']]}/>
+            <ListTab list={[[<div>
+                작성 글
+                <span>{writtenPosts.length}</span>
+            </div>, '/mypage/community/myPosts'],
+            [<div>
+                작성 댓글
+                <span>{writtenComments.length}</span>
+            </div>, '/mypage/community/myComments'], 
+            [<div>
+                좋아요 한 글
+                <span>{likedPosts.length}</span>
+            </div>, '/mypage/community/likes']]}/>
             <SearchBar placeholder='내 글에서 검색' />
         </div>
         <Outlet context={{writtenPosts, writtenComments, likedPosts}} />

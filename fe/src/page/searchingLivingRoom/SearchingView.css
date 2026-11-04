@@ -104,13 +104,13 @@
 .rooms-container .rooms-header .right-side span.ant-dropdown-trigger div.ant-space-item{
     font-size: small;
 }
-ul.ant-dropdown-menu.ant-dropdown-menu-root.ant-dropdown-menu-vertical.ant-dropdown-menu-light.css-dev-only-do-not-override-xsuzon.css-var-root.ant-dropdown-css-var.css-var-root.ant-dropdown-menu-css-var{
-    background: #141417;
+ul.ant-dropdown-menu{
+    background: #141417 !important;
     border: 1px solid #9a9a93;
 }
-li.ant-dropdown-menu-item.ant-dropdown-menu-item-only-child span{
+li.ant-dropdown-menu-item span{
     color: white;
 }
-li.ant-dropdown-menu-item.ant-dropdown-menu-item-only-child svg{
+li.ant-dropdown-menu-item svg{
     color: lightblue;
 }

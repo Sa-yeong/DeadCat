@@ -1,0 +1,28 @@
+name: Deploy to AWS Lightsail
+on:
+  push:
+    branches:
+      - integration-livingroom
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote SSH Commands
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USERNAME }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/DeadCat
+            git pull origin integration-livingroom
+            cd backend
+            npm install
+            npx prisma db pull
+            npx prisma generate
+            npm run build
+            cd ../fe
+            npm install
+            npm run build
+            cd ../
+            pm2 restart all

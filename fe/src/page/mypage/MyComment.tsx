@@ -1,5 +1,5 @@
 // import { MyRecordsLayout_C } from "../../layout/MyRecordsLayout";
-import { ActivityCommentLayout } from "../../layout/ActivityListLayout";
+import { WrittenCommentLayout } from "../../layout/ActivityListLayout";
 import { useOutletContext } from "react-router-dom";
 
 interface Comment{
@@ -17,7 +17,7 @@ export function MyComments(){
         <div className='rows'>
             {
                 writtenComments.map((comment: Comment) => 
-                    <ActivityCommentLayout key={`comment-${comment.comment_id}`}
+                    <WrittenCommentLayout key={`comment-${comment.comment_id}`}
                     type={comment.source_type}
                     content={comment.content}
                     date={comment.created_at} />

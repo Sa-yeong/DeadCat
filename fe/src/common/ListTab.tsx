@@ -1,7 +1,8 @@
 import { Link, useLocation } from 'react-router-dom';
+import { ReactNode } from 'react';
 import './ListTab.css'
 
-export function ListTab({list=[]}:{list:[string, string][]}){
+export function ListTab({list=[]}:{list:[ReactNode, string][]}){
     const location = useLocation();
     const path = location.pathname;
 
