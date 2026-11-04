@@ -28,7 +28,8 @@ jobs:
             pm2 -v
 
             cd /home/ubuntu/DeadCat
-            git pull origin integration-livingroom
+            git fetch origin integration-livingroom
+            git reset --hard FETCH_HEAD
             cd backend
             npm install
             npx prisma generate
