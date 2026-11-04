@@ -26,6 +26,13 @@ export interface HoldingRow {
   profit: number;
   /** 수익률(%) */
   rate: number;
+  /** 썸네일 — 없으면 null */
+  img: string | null;
+  /** 현재가(원) */
+  price: number;
+  /** 오늘 전일 대비 금액(원, 모르면 null) · 등락률(%) */
+  changePrice: number | null;
+  changeRate: number;
 }
 
 /** 보유 목록 — 평가금액 큰 순으로 고정(같으면 이름순 — 다시 받을 때 줄이 뒤바뀌며 깜빡이지 않게) */
@@ -38,6 +45,10 @@ export function holdingRows(list: HoldingItem[]): HoldingRow[] {
       valuation: num(h.current_price) * h.quantity,
       profit: num(h.valuation_profit),
       rate: h.return_rate,
+      img: h.stock_img || null,
+      price: num(h.current_price),
+      changePrice: h.change_price_krw ?? null,
+      changeRate: h.change_rate ?? 0,
     }))
     .sort((a, b) => b.valuation - a.valuation || a.name.localeCompare(b.name, 'ko'));
 }

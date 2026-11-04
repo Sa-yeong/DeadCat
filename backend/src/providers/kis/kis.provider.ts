@@ -13,8 +13,28 @@ import { RedisService } from '../redis/redis.service';
 export interface StockPrice {
     current_price: number;
     change_rate: number;
+    /** 전일 대비 금액(시장 통화, 하락은 음수) — KIS 값 그대로. 등락률에서 거꾸로 계산하지 않는다 */
+    change_price?: number;
     trading_value: number;
     accumulated_volume?: number;
+}
+
+/**
+ * KIS 전일 대비 금액 + 부호 칸 → 부호 있는 금액. 부호 칸: 1 상한 · 2 상승 · 3 보합 · 4 하한 · 5 하락.
+ * 경로마다 금액 칸에 부호가 있기도 없기도 해서 부호 칸을 기준으로 한다. 모르는 값이면 없음(undefined).
+ */
+export function signedChange(
+    sign: string | undefined,
+    value: string | undefined,
+): number | undefined {
+    const n = Number(value);
+    if (value === undefined || value === '' || !Number.isFinite(n)) {
+        return undefined;
+    }
+    if (sign === '1' || sign === '2') return Math.abs(n);
+    if (sign === '4' || sign === '5') return -Math.abs(n);
+    if (sign === '3') return 0;
+    return undefined;
 }
 
 // 지수 그래프 1점(OHLC).
@@ -143,6 +163,8 @@ interface KisDomesticResponse {
     msg1: string;
     output: {
         stck_prpr: string;
+        prdy_vrss: string;
+        prdy_vrss_sign: string;
         prdy_ctrt: string;
         acml_tr_pbmn: string;
     };
@@ -407,6 +429,7 @@ export class KisProvider {
             const price = {
                 current_price: Number(o.stck_prpr),
                 change_rate: Number(o.prdy_ctrt),
+                change_price: signedChange(o.prdy_vrss_sign, o.prdy_vrss),
                 trading_value: Number(o.acml_tr_pbmn),
             };
             // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우(주로 종목코드 오타/장전/거래정지).
@@ -464,6 +487,10 @@ export class KisProvider {
             const price = {
                 current_price,
                 change_rate: Number(o.rate),
+                change_price: signedChange(
+                    o.sign as string | undefined,
+                    o.diff as string | undefined,
+                ),
                 accumulated_volume: volume,
                 trading_value,
             };

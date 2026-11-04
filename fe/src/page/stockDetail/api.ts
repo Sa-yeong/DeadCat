@@ -219,6 +219,10 @@ export interface HoldingItem {
   stock_name: string;
   /** 현재가(원) — 시세가 없으면 평단가 */
   current_price: string;
+  /** 오늘 등락률(%) */
+  change_rate: number;
+  /** 오늘 전일 대비 금액(원). 모르면 null */
+  change_price_krw: number | null;
   quantity: number;
   /** 수익률(%) */
   return_rate: number;

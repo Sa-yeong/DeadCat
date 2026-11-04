@@ -16,7 +16,8 @@ import {
     KisProvider,
 } from 'src/providers/kis/kis.provider';
 import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
-import { marketOf, tickRuleOf } from '../orders/order-rules';
+import { isForeignStock, marketOf, tickRuleOf } from '../orders/order-rules';
+import { quoteFromCloses, toKrwQuote } from '../../price/valuation';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /** KIS 호가 조회 결과(국내·해외 공통 모양) */
@@ -90,6 +91,10 @@ export class StocksService {
             ? await this.favorites.findFavoriteStockCodes(userId)
             : new Set<string>();
 
+        const usdKrw = metas.some((m) => isForeignStock(m.stock_type))
+            ? await this.price.usdKrwForValuation()
+            : 1;
+
         const rows: StockRankingResponseDto[] = [];
         for (const code of codes) {
             const meta = metaByCode.get(code);
@@ -98,6 +103,7 @@ export class StocksService {
             if (!price && meta)
                 price = (await this.fallbackPrice(meta.id)) ?? undefined;
             if (!meta || !price) continue; // 메타/시세 둘 다 없는 종목만 제외
+            const quote = toKrwQuote(price, meta.stock_type, usdKrw);
             rows.push({
                 rank: rows.length + 1,
                 stock_code: code,
@@ -106,6 +112,9 @@ export class StocksService {
                 character_img_url: meta.character_img_url,
                 current_price: price.current_price,
                 change_rate: price.change_rate,
+                change_price: price.change_price ?? null,
+                current_price_krw: quote.current_price_krw,
+                change_price_krw: quote.change_price_krw,
                 trading_value: price.trading_value,
                 trading_value_krw: price.trading_value_krw,
                 is_favorite: favoriteSet.has(code),
@@ -124,18 +133,14 @@ export class StocksService {
         return result;
     }
 
-    // 캐시에 현재가가 없을 때 — DB 마지막 종가와 그 전날 대비 등락률.
+    // 캐시에 현재가가 없을 때 — DB 마지막 종가와 그 전날 대비 등락률 · 금액.
     // 0원으로 응답하면 화면·주문·감정 계산이 실제 가격으로 오해한다.
     private async fallbackPrice(stockId: bigint) {
-        const [last, prev] = await this.repo.findLastTwoCloses(stockId);
-        if (!last) return null;
-        const cur = Number(last.close_price);
-        const base = prev ? Number(prev.close_price) : cur;
+        const closes = await this.repo.findLastTwoCloses(stockId);
+        const quote = quoteFromCloses(closes.map((c) => c.close_price));
+        if (!quote) return null;
         return {
-            current_price: cur,
-            change_rate: base
-                ? Number((((cur - base) / base) * 100).toFixed(2))
-                : 0,
+            ...quote,
             trading_value: 0,
             accumulated_volume: 0,
             trading_value_krw: 0,

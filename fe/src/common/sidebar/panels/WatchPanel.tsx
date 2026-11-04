@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { SLOW_MS } from '../../../page/stockDetail/QuoteSync';
 import { reloadFavorites, toggleFavorite, useFavorites } from '../../favorites/favorites';
 import { useCurrentStockCode, useOpenStock, usePoll } from './hooks';
-import { LoginGate, StockLine } from './parts';
+import { HeartStockLine, LoginGate, ScrollArea } from './parts';
 
 /**
  * 관심 탭 — 내 관심 종목(GET /favorites). 목록은 앱 전체가 함께 쓰는 관심 상태(common/favorites)라
@@ -27,17 +27,19 @@ export function WatchPanel() {
     return <p className='dc-sb-empty'>{text}</p>;
   }
   return (
-    <ul className='dc-sb-list'>
-      {fav.items.map((it) => (
-        <StockLine
-          key={it.stock_code}
-          item={it}
-          favorite
-          current={it.stock_code === current}
-          onHeart={() => void toggleFavorite(it, true)}
-          onOpen={() => open(it.stock_code)}
-        />
-      ))}
-    </ul>
+    <ScrollArea>
+      <ul className='dc-sb-list'>
+        {fav.items.map((it) => (
+          <HeartStockLine
+            key={it.stock_code}
+            item={it}
+            favorite
+            current={it.stock_code === current}
+            onHeart={() => void toggleFavorite(it, true)}
+            onOpen={() => open(it.stock_code)}
+          />
+        ))}
+      </ul>
+    </ScrollArea>
   );
 }

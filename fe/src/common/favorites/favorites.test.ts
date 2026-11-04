@@ -42,7 +42,7 @@ describe('관심 상태 — 로그인을 따라간다', () => {
     expect(api.get).toHaveBeenCalledWith('/favorites', expect.objectContaining({ params: undefined }));
     expect(getFavoritesState()).toMatchObject({ status: 'ready', failed: false });
     expect([...getFavoritesState().codes]).toEqual(['005930']);
-    expect(getFavoritesState().items[0]).toEqual(item('005930', '삼성전자'));
+    expect(getFavoritesState().items[0]).toMatchObject(item('005930', '삼성전자'));
 
     setFavoritesToken(null);
     expect(getFavoritesState()).toMatchObject({ status: 'guest', items: [] });

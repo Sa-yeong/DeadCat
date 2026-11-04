@@ -48,10 +48,13 @@
     line-height: 22px;
 }
 
+/* 스크롤은 안쪽 리스트(ScrollArea)만 — 탭 고정 영역 · 주문내역 바는 잘리지 않고 제자리 */
 .dc-sb-body {
+    display: flex;
     flex: 1;
+    flex-direction: column;
     min-height: 0;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .dc-sb-empty {
@@ -113,14 +116,15 @@
     outline-offset: -2px;
 }
 
-/* 펼치기 · 접기 — 아이콘 줄 맨 아래 */
+/* 펼치기 · 접기 — 아이콘 줄 맨 위, 글자 없이 화살표만 */
 .dc-sb-toggle {
-    margin-top: auto;
+    height: 40px;
 }
 
 /* 움직임 줄이기 — 바로 열고 닫는다. 0 이 아닌 값이라 transitionend 는 그대로 온다 */
 @media (prefers-reduced-motion: reduce) {
-    .dc-sb-panel {
+    .dc-sb-panel,
+    .dc-sb-hist {
         transition-duration: 1ms;
     }
 }

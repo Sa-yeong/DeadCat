@@ -260,6 +260,12 @@ function volume(code: string) {
   };
 }
 
+/** 사이드바 한 줄 — 현재가 · 전일 대비 금액(가짜 서버라 등락률에서 만든다) */
+function quoteKrw(code: string) {
+  const live = build(code).live;
+  return { current_price_krw: live, change_price_krw: Math.round(live - live / (1 + rate(code) / 100)) };
+}
+
 function ranking() {
   return STOCKS.map((st, i) => {
     const s = build(st.code);
@@ -269,6 +275,7 @@ function ranking() {
       stock_code: st.code,
       stock_name: st.name,
       change_rate: rate(st.code),
+      ...quoteKrw(st.code),
       character_img_url: null,
       is_favorite: account.favs.has(st.code),
       market: 'DOMESTIC',
@@ -425,6 +432,8 @@ function holdingsDto() {
       stock_code: h.code,
       stock_name: info(h.code).name,
       current_price: String(price),
+      change_rate: rate(h.code),
+      change_price_krw: quoteKrw(h.code).change_price_krw,
       quantity: h.quantity,
       return_rate: Math.trunc(((price - h.mean) / h.mean) * 10000) / 100,
       valuation_profit: String((price - h.mean) * h.quantity),
@@ -505,7 +514,7 @@ function accountRoute(method: string, url: string, config: InternalAxiosRequestC
         avg_purchase_price: '0',
       }));
     if (url === '/favorites')
-      return [...account.favs].map((code) => ({ stock_code: code, stock_name: info(code).name, character_img_url: null, change_rate: rate(code), is_favorite: true }));
+      return [...account.favs].map((code) => ({ stock_code: code, stock_name: info(code).name, character_img_url: null, change_rate: rate(code), ...quoteKrw(code), is_favorite: true }));
   }
   const fav = /^\/favorites\/([^/]+)$/.exec(url);
   if (fav) {

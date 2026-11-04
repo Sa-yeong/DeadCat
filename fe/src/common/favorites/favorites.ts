@@ -21,6 +21,9 @@ export interface WatchItem {
   stock_name: string;
   change_rate: number;
   character_img_url: string | null;
+  /** 현재가 · 전일 대비 금액(원) — 종목리스트 하트처럼 모르는 채 등록하면 비어 있다가 다시 받을 때 채워진다 */
+  current_price_krw?: number | null;
+  change_price_krw?: number | null;
 }
 
 export interface FavoritesState {
@@ -66,6 +69,8 @@ const pick = (i: WatchItem): WatchItem => ({
   stock_name: i.stock_name,
   change_rate: i.change_rate,
   character_img_url: i.character_img_url ?? null,
+  current_price_krw: i.current_price_krw ?? null,
+  change_price_krw: i.change_price_krw ?? null,
 });
 
 /** 목록에 한 종목을 넣거나 뺀다 — 넣을 때 이미 있으면 그대로 */
@@ -127,6 +132,8 @@ export async function toggleFavorite(item: WatchItem, shown: boolean): Promise<'
   set(make(state.status, apply(state.items, item, want), state.failed));
   try {
     await (want ? addFavorite(code) : removeFavorite(code));
+    // 새로 등록한 줄의 가격 · 썸네일은 서버 목록에 있다 — 종목리스트 하트는 모르는 채 넣었으므로 바로 다시 받는다
+    if (want && gen === generation) void reloadFavorites();
     return 'done';
   } catch (e) {
     const s = statusOf(e);

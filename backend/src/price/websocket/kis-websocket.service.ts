@@ -7,6 +7,7 @@ import {
 import WebSocket from 'ws';
 
 import { PriceService } from '../price.service';
+import { signedChange } from 'src/providers/kis/kis.provider';
 import { PrismaService } from 'src/providers/database/prisma.service';
 
 @Injectable()
@@ -345,6 +346,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         const stockCode = fields[0];
         const currentPrice = Number(fields[2]);
         const changeRate = Number(fields[5]);
+        const changePrice = signedChange(fields[3], fields[4]);
 
         if (
             !stockCode ||
@@ -358,6 +360,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         await this.priceService.writeSinglePrice(stockCode, {
             current_price: currentPrice,
             change_rate: changeRate,
+            ...(changePrice === undefined ? {} : { change_price: changePrice }),
         });
     }
 
@@ -371,6 +374,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         const stockCode = fields[1];
         const currentPrice = Number(fields[11]);
         const changeRate = Number(fields[14]);
+        const changePrice = signedChange(fields[12], fields[13]);
 
         if (
             !stockCode ||
@@ -383,6 +387,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         await this.priceService.writeSinglePrice(stockCode, {
             current_price: currentPrice,
             change_rate: changeRate,
+            ...(changePrice === undefined ? {} : { change_price: changePrice }),
         });
     }
 

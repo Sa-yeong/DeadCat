@@ -10,6 +10,8 @@ const holding = (over: Partial<HoldingItem>): HoldingItem => ({
   stock_code: '005930',
   stock_name: '삼성전자',
   current_price: '71400',
+  change_rate: -1.23,
+  change_price_krw: -890,
   quantity: 10,
   return_rate: 2.5,
   valuation_profit: '17400',
@@ -62,6 +64,13 @@ describe('보유 목록', () => {
     expect(rows.map((r) => r.code)).toEqual(['B', 'C', 'A']);
     expect(rows[0].valuation).toBe(620000);
     expect(rows[2]).toMatchObject({ valuation: 5000, profit: -500, rate: -9.09, quantity: 5 });
+  });
+
+  it('현재가 보기 값 — 현재가 · 오늘 등락 금액 · 등락률, 이미지는 없으면 null', () => {
+    const [row] = holdingRows([holding({})]);
+    expect(row).toMatchObject({ price: 71400, changePrice: -890, changeRate: -1.23, img: null });
+    const [unknown] = holdingRows([holding({ change_price_krw: null, stock_img: 'a.png' })]);
+    expect(unknown).toMatchObject({ changePrice: null, img: 'a.png' });
   });
 
   it('평가금액이 같으면 이름순 — 다시 받을 때 줄이 뒤바뀌지 않게', () => {

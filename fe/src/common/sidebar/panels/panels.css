@@ -32,30 +32,82 @@
     min-width: 0;
 }
 
-/* 목록 — 관심 · 전체는 패널 끝까지, 보유 탭 안의 목록은 섹션 여백 안에서 */
+/* 스크롤 영역 — 남은 높이를 다 차지하고 여기만 스크롤. 넘친 쪽 끝만 흐려진다 */
+.dc-sb-scroll {
+    --dc-fade-top: 0px;
+    --dc-fade-bottom: 0px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* 막대가 있든 없든 줄 폭이 같게 — 세 탭의 줄이 같은 자리에 온다 */
+    scrollbar-gutter: stable;
+    /* 앱 전체의 scrollbar-color 를 물려받으면 아래 모양이 무시돼 화살표 달린 기본 막대가 된다 */
+    scrollbar-color: auto;
+    scrollbar-width: auto;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--dc-fade-top), #000 calc(100% - var(--dc-fade-bottom)), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--dc-fade-top), #000 calc(100% - var(--dc-fade-bottom)), transparent 100%);
+}
+.dc-sb-scroll[data-fade-top] {
+    --dc-fade-top: 22px;
+}
+.dc-sb-scroll[data-fade-bottom] {
+    --dc-fade-bottom: 22px;
+}
+.dc-sb-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+.dc-sb-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.dc-sb-scroll::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.2);
+}
+.dc-sb-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.34);
+}
+.dc-sb-scroll::-webkit-scrollbar-button {
+    display: none;
+}
+/* ::-webkit-scrollbar 를 모르는 브라우저(파이어폭스) */
+@supports not selector(::-webkit-scrollbar) {
+    .dc-sb-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    }
+}
+
+/* 종목 목록 — 세 탭 공통 */
 .dc-sb-list {
     display: flex;
     flex-direction: column;
     gap: 2px;
     margin: 0;
-    padding: 8px 12px 12px;
+    padding: 4px 2px 8px 8px;
     list-style: none;
 }
 
-/* 관심 · 전체 한 줄 — [하트][로고 · 이름 … 등락률] */
+/* 종목 한 줄 — [하트][썸네일][이름 / 10주] … [가격 / 등락]. 세 탭이 같은 모양 */
 .dc-sb-line {
     display: flex;
     align-items: center;
-    gap: 6px;
+}
+.dc-sb-line:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+/* 지금 보고 있는 종목 */
+.dc-sb-line[data-current] {
+    background: rgba(255, 255, 255, 0.07);
 }
 .dc-sb-heart {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    padding: 0;
+    width: 26px;
+    height: 48px;
+    padding: 0 0 0 4px;
     border: none;
     background: transparent;
     color: rgba(255, 255, 255, 0.3);
@@ -71,34 +123,67 @@
     display: flex;
     flex: 1;
     align-items: center;
-    justify-content: space-between;
-    gap: 6px;
+    gap: 10px;
     min-width: 0;
-    height: 32px;
-    padding: 0 8px;
+    min-height: 52px;
+    padding: 8px;
     border: none;
     background: transparent;
     font: inherit;
-    font-size: 12.5px;
     color: #ededea;
     text-align: left;
     cursor: pointer;
 }
-.dc-sb-open:hover,
-.dc-sb-row:hover {
-    background: rgba(255, 255, 255, 0.04);
-}
-/* 지금 보고 있는 종목 */
-.dc-sb-open[data-current],
-.dc-sb-row[data-current] {
-    background: rgba(255, 255, 255, 0.07);
-}
+/* 썸네일 — 원. 이미지가 없으면 회색 원 그대로 */
 .dc-sb-logo {
+    display: block;
     flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: #3a3a42;
+    object-fit: cover;
+    object-position: top;
+}
+.dc-sb-line-left {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+/* 이름 — 두 줄까지 줄바꿈, 넘으면 말줄임 */
+.dc-sb-line-name {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow-wrap: anywhere;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 19px;
+}
+.dc-sb-line-right {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    white-space: nowrap;
+}
+.dc-sb-line-top {
+    font-family: 'Space Grotesk', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 19px;
+    color: #ededea;
+}
+.dc-sb-line-sub {
+    font-family: 'Space Grotesk', monospace;
+    font-size: 12px;
+    line-height: 16px;
+    color: #8f8f88;
 }
 
 /* 로그인 안내 — 본문 자리 전체가 버튼 */
@@ -133,8 +218,17 @@
     padding: 14px 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
-.dc-sb-sec .dc-sb-list {
-    margin: 4px -8px 0;
+/* 탭 고정 영역은 줄어들지 않는다 — 리스트만 줄어든다 */
+.dc-sb-sec,
+.dc-sb-listhead {
+    flex-shrink: 0;
+}
+/* 「보유 종목 10」 + [현재가 | 평가금] */
+.dc-sb-listhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px 6px;
 }
 .dc-sb-h3 {
     margin: 0 0 6px;
@@ -161,26 +255,58 @@
 }
 .dc-sb-note {
     margin: 0;
-    padding: 12px 0;
+    padding: 12px 20px;
     font-size: 12.5px;
     color: #6e6e68;
     text-align: center;
 }
 
-/* 보유 한 줄 — [이름 / 수량 … 평가금액 / 손익] */
-.dc-sb-row {
+/* 주문내역 — 패널 맨 아래 바. 펼치면 패널 높이의 약 55% */
+.dc-sb-hist {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    height: 44px;
+    overflow: hidden;
+    background: #19191c;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    box-sizing: border-box;
+    transition: height 220ms ease;
+}
+.dc-sb-hist[data-open] {
+    height: 55%;
+}
+.dc-sb-hist-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    flex-shrink: 0;
     width: 100%;
-    padding: 7px 8px;
+    height: 43px;
+    padding: 0 20px;
     border: none;
     background: transparent;
     font: inherit;
+    font-size: 14px;
+    font-weight: 700;
     color: #ededea;
-    text-align: left;
     cursor: pointer;
+}
+.dc-sb-hist-bar:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+.dc-sb-hist-tabs {
+    display: flex;
+    flex-shrink: 0;
+    padding: 2px 20px 8px;
+}
+.dc-sb-orders {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0 6px 8px 12px;
+    list-style: none;
 }
 
 /* 주문내역 한 줄 — 대기 · 완료 */
@@ -231,14 +357,15 @@
     font-weight: 700;
     cursor: pointer;
 }
-.dc-sb-seg button[aria-selected='true'] {
+.dc-sb-seg button[aria-selected='true'],
+.dc-sb-seg button[aria-checked='true'] {
     background: #34343c;
     color: #ededea;
 }
 
 .dc-sb-heart:focus-visible,
 .dc-sb-open:focus-visible,
-.dc-sb-row:focus-visible,
+.dc-sb-hist-bar:focus-visible,
 .dc-sb-cancel:focus-visible,
 .dc-sb-seg button:focus-visible,
 .dc-sb-gate:focus-visible {

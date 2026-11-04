@@ -2,6 +2,7 @@ import './Sidebar.css';
 import { useState } from 'react';
 import { R } from '../../page/stockDetail/radius';
 import { Chevrons } from './icons';
+import { OrderHistory } from './panels/OrderHistory';
 import { TABS } from './tabs';
 import { SIDEBAR_TABS, useSidebar } from './sidebarState';
 
@@ -36,10 +37,23 @@ export function Sidebar() {
             <h2>{cur.title}</h2>
           </header>
           <div className='dc-sb-body'>{mounted && <cur.Panel key={tab} />}</div>
+          {/* 탭 밖에 둔다 — 탭을 바꿔도 펼침 · 대기 | 완료가 그대로다 */}
+          <OrderHistory active={mounted} />
         </div>
       </div>
 
       <nav className='dc-sb-rail' aria-label='사이드바'>
+        <button
+          type='button'
+          className='dc-sb-icon dc-sb-toggle'
+          aria-expanded={open}
+          aria-label={open ? '접기' : '펼치기'}
+          title={open ? '접기' : '펼치기'}
+          style={{ borderRadius: R.card }}
+          onClick={sb.toggle}
+        >
+          <Chevrons open={open} />
+        </button>
         {SIDEBAR_TABS.map((t) => {
           const on = open && t === tab;
           const { Icon, label } = TABS[t];
@@ -58,16 +72,6 @@ export function Sidebar() {
             </button>
           );
         })}
-        <button
-          type='button'
-          className='dc-sb-icon dc-sb-toggle'
-          aria-expanded={open}
-          style={{ borderRadius: R.card }}
-          onClick={sb.toggle}
-        >
-          <Chevrons open={open} />
-          <span>{open ? '접기' : '펼치기'}</span>
-        </button>
       </nav>
     </aside>
   );

@@ -3,7 +3,7 @@ import { getRanking } from '../../../page/stockDetail/api';
 import { SLOW_MS } from '../../../page/stockDetail/QuoteSync';
 import { favoriteOf, toggleFavorite, useFavorites } from '../../favorites/favorites';
 import { useCurrentStockCode, useOpenStock, usePoll, useRemote } from './hooks';
-import { SidebarLogin, StockLine } from './parts';
+import { HeartStockLine, ScrollArea, SidebarLogin } from './parts';
 
 /**
  * 전체 탭 — 거래대금 상위(GET /stocks/ranking). 지워진 관심종목 레일의 「전체」를 옮긴 것.
@@ -30,25 +30,27 @@ export function AllStocksPanel() {
   return (
     <>
       {list && list.length > 0 ? (
-        <ul className='dc-sb-list'>
-          {list.map((it) => {
-            const on = favoriteOf(fav, it.stock_code, it.is_favorite);
-            return (
-              <StockLine
-                key={it.stock_code}
-                item={it}
-                favorite={on}
-                current={it.stock_code === current}
-                onHeart={() =>
-                  void toggleFavorite(it, on).then((r) => {
-                    if (r === 'login') setLogin(true);
-                  })
-                }
-                onOpen={() => open(it.stock_code)}
-              />
-            );
-          })}
-        </ul>
+        <ScrollArea>
+          <ul className='dc-sb-list'>
+            {list.map((it) => {
+              const on = favoriteOf(fav, it.stock_code, it.is_favorite);
+              return (
+                <HeartStockLine
+                  key={it.stock_code}
+                  item={it}
+                  favorite={on}
+                  current={it.stock_code === current}
+                  onHeart={() =>
+                    void toggleFavorite(it, on).then((r) => {
+                      if (r === 'login') setLogin(true);
+                    })
+                  }
+                  onOpen={() => open(it.stock_code)}
+                />
+              );
+            })}
+          </ul>
+        </ScrollArea>
       ) : (
         <p className='dc-sb-empty'>{ranking.failed ? '종목 순위를 불러오지 못했어요' : list ? '종목이 없어요' : '불러오는 중이에요'}</p>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SIDEBAR, loadSidebar, pickTab, saveSidebar, SIDEBAR_KEY, sidebarWidth } from './sidebarState';
+import { DEFAULT_SIDEBAR, HOLDINGS_VIEW_KEY, loadHoldingsView, loadSidebar, pickTab, saveHoldingsView, saveSidebar, SIDEBAR_KEY, sidebarWidth } from './sidebarState';
 
 /** 메모리 저장소 — localStorage 흉내 */
 function memory(init: Record<string, string> = {}) {
@@ -64,4 +64,36 @@ describe('아이콘 누르기', () => {
 it('사이드바 폭 — 아이콘 줄은 접혀도 남는다', () => {
   expect(sidebarWidth(false)).toBe(56);
   expect(sidebarWidth(true)).toBe(376);
+});
+
+describe('보유 탭 [현재가 | 평가금] 기억', () => {
+  const store = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+  };
+
+  it('기본은 평가금, 고른 값을 기억한다', () => {
+    const s = store();
+    expect(loadHoldingsView(s)).toBe('valuation');
+    saveHoldingsView('price', s);
+    expect(s.getItem(HOLDINGS_VIEW_KEY)).toBe('price');
+    expect(loadHoldingsView(s)).toBe('price');
+  });
+
+  it('저장소가 막히거나 모양이 틀리면 평가금', () => {
+    const blocked = {
+      getItem: () => {
+        throw new Error('막힘');
+      },
+      setItem: () => {
+        throw new Error('막힘');
+      },
+    };
+    expect(loadHoldingsView(blocked)).toBe('valuation');
+    expect(() => saveHoldingsView('price', blocked)).not.toThrow();
+    expect(loadHoldingsView(null)).toBe('valuation');
+    const s = store();
+    s.setItem(HOLDINGS_VIEW_KEY, '이상한값');
+    expect(loadHoldingsView(s)).toBe('valuation');
+  });
 });

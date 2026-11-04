@@ -67,6 +67,27 @@ export function saveSidebar(s: SidebarState, store: KeyValueStore | null = stora
   }
 }
 
+/** 보유 줄 오른쪽에 보이는 값 — 평가금(평가금액 · 수익) | 현재가(현재가 · 오늘 등락) */
+export type HoldingsView = 'valuation' | 'price';
+export const HOLDINGS_VIEW_KEY = 'dc.sidebar.holdingsView';
+
+/** 못 읽으면 평가금 */
+export function loadHoldingsView(store: KeyValueStore | null = storage()): HoldingsView {
+  try {
+    return store?.getItem(HOLDINGS_VIEW_KEY) === 'price' ? 'price' : 'valuation';
+  } catch {
+    return 'valuation';
+  }
+}
+
+export function saveHoldingsView(v: HoldingsView, store: KeyValueStore | null = storage()): void {
+  try {
+    store?.setItem(HOLDINGS_VIEW_KEY, v);
+  } catch {
+    /* 무시 */
+  }
+}
+
 /**
  * 아이콘을 눌렀을 때 — 접혀 있거나 다른 탭이면 그 탭으로 연다.
  * 열려 있는 탭을 한 번 더 누르면 접는다(토스증권과 같음).

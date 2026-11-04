@@ -55,6 +55,10 @@ export interface FavoriteItem {
   stock_code: string;
   stock_name: string;
   change_rate: number;
+  /** 현재가(원) — 해외는 평가용 환율로 환산. 시세도 종가도 없으면 null */
+  current_price_krw: number | null;
+  /** 전일 대비 금액(원). 모르면 null */
+  change_price_krw: number | null;
   character_img_url: string | null;
   is_favorite: boolean;
 }

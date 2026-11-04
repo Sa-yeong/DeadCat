@@ -5,7 +5,13 @@ import {
     StockPrice,
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
-import { DEFAULT_USD_KRW, toValuationKrw } from './valuation';
+import {
+    DEFAULT_USD_KRW,
+    KrwQuote,
+    quoteFromCloses,
+    toKrwQuote,
+    toValuationKrw,
+} from './valuation';
 import { isForeignStock } from '../modules/orders/order-rules';
 
 // 차트 캔들 데이터 인터페이스
@@ -107,6 +113,8 @@ export class PriceService {
 
             const updated: CachedPrice = {
                 ...base,
+                // 현재가 · 등락은 웹소켓 담당이지만, 체결이 없어(장외 · 재시작 직후) 금액이 아직 없으면 REST 값으로 채운다
+                change_price: base.change_price ?? price.change_price,
                 trading_value: price.trading_value,
                 accumulated_volume: price.accumulated_volume,
                 trading_value_krw: Math.round(rankingScore),
@@ -212,7 +220,11 @@ export class PriceService {
         const values = await this.redis.mget(codes.map(priceKey));
         codes.forEach((code, i) => {
             const raw = values[i];
-            if (raw) result.set(code, JSON.parse(raw) as CachedPrice);
+            if (!raw) return;
+            const cached = JSON.parse(raw) as CachedPrice;
+            // 같은 Redis 에 금액 칸을 모르는 서버(옛 코드)가 쓰면 칸이 빠진다 — 이 서버가 아는 값으로 메운다
+            cached.change_price ??= this.latest.get(code)?.change_price;
+            result.set(code, cached);
         });
         return result;
     }
@@ -278,6 +290,35 @@ export class PriceService {
             const price = live ? live : Number(s.last_close ?? 0);
             if (price > 0)
                 result.set(s.code, toValuationKrw(price, s.stock_type, rate));
+        }
+        return result;
+    }
+
+    /**
+     * 종목코드별 원화 시세(현재가 · 등락 금액 · 등락률) — 사이드바 보유 · 관심 줄.
+     * 캐시 현재가 → 없으면 closes(stock_history 최신순 종가, 시장 통화). 둘 다 없는 종목은 결과에 없다.
+     */
+    async readKrwQuotes(
+        stocks: {
+            code: string;
+            stock_type: string | null | undefined;
+            closes: readonly (number | bigint | { toString(): string })[];
+        }[],
+    ): Promise<Map<string, KrwQuote>> {
+        const result = new Map<string, KrwQuote>();
+        if (stocks.length === 0) return result;
+        const cached = await this.readPrices(stocks.map((s) => s.code));
+        const usdKrw = stocks.some((s) => isForeignStock(s.stock_type))
+            ? await this.usdKrwForValuation()
+            : 1;
+        for (const s of stocks) {
+            const live = cached.get(s.code);
+            const price = live?.current_price
+                ? live
+                : quoteFromCloses(s.closes);
+            if (price && price.current_price > 0) {
+                result.set(s.code, toKrwQuote(price, s.stock_type, usdKrw));
+            }
         }
         return result;
     }
