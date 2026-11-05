@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { UserRepository } from './user.repository';
 import { UserProfileResponseDto } from './dto/user-profile.response.dto';
 import {
@@ -50,7 +54,7 @@ export class UserService {
         };
     }
 
-    async getUserRelations(
+    /*async getUserRelations(
         userId: string,
         type: 'FOLLOWER' | 'FOLLOWING',
     ): Promise<UserRelationResponseDto[]> {
@@ -74,5 +78,62 @@ export class UserService {
                 profile_img_url: targetUser.profile_img_url ?? null,
             };
         });
+    }*/
+    // 18. 나의 팔로워 및 팔로잉 유저 목록 조회
+    async getUserRelations(userId: string, type: string) {
+        // 1. 조회 유형 검증
+        const upperType = type?.toUpperCase();
+
+        if (upperType !== 'FOLLOWER' && upperType !== 'FOLLOWING') {
+            throw new BadRequestException(
+                'type은 FOLLOWER 또는 FOLLOWING 이어야 합니다.',
+            );
+        }
+
+        // 문자열 사용자 ID를 BigInt로 변환
+        const currentUserId = BigInt(userId);
+
+        // 2. 팔로워 수, 팔로잉 수, 목록 병렬 조회
+        const [counts, followList] = await Promise.all([
+            this.userRepository.getRelationCounts(currentUserId),
+
+            upperType === 'FOLLOWER'
+                ? this.userRepository.findFollowers(currentUserId)
+                : this.userRepository.findFollowings(currentUserId),
+        ]);
+
+        // 3. 조회 유형에 맞는 상대방 사용자 정보 추출
+        const users = followList
+            .map((item: any) => {
+                // FOLLOWER: 나를 팔로우하는 사용자
+                // FOLLOWING: 내가 팔로우하는 사용자
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return upperType === 'FOLLOWER'
+                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      item?.users_follow_follower_idTousers
+                    : item?.users_follow_followee_idTousers;
+            })
+            // 연결된 사용자 정보가 없는 데이터 제외
+            .filter((user: any) => user?.id != null)
+            // API 응답 DTO 형태로 변환
+            .map((user: any) => ({
+                target_user_id: Number(user.id),
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                nickname: user.nickname,
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                profile_img_url: user.profile_img_url ?? null,
+            }));
+
+        // 4. 응답 반환
+        return {
+            is_success: true,
+            code: 'COMMON200',
+            message: '성공입니다.',
+            data: {
+                follower_count: counts.follower_count,
+                following_count: counts.following_count,
+                users,
+            },
+        };
     }
 }
