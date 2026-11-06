@@ -54,31 +54,7 @@ export class UserService {
         };
     }
 
-    /*async getUserRelations(
-        userId: string,
-        type: 'FOLLOWER' | 'FOLLOWING',
-    ): Promise<UserRelationResponseDto[]> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const relations = await this.userRepository.findRelations(userId, type);
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-        return relations.map((rel) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const targetUser =
-                type === 'FOLLOWER'
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      rel.users_follows_follower_idTousers
-                    : rel.users_follows_followee_idTousers;
-
-            return {
-                target_user_id: Number(targetUser.id),
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                nickname: targetUser.nickname,
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                profile_img_url: targetUser.profile_img_url ?? null,
-            };
-        });
-    }*/
+    // 18. 나의 팔로워 및 팔로잉 유저 목록 조회
     // 18. 나의 팔로워 및 팔로잉 유저 목록 조회
     async getUserRelations(userId: string, type: string) {
         // 1. 조회 유형 검증
@@ -90,50 +66,40 @@ export class UserService {
             );
         }
 
-        // 문자열 사용자 ID를 BigInt로 변환
         const currentUserId = BigInt(userId);
 
         // 2. 팔로워 수, 팔로잉 수, 목록 병렬 조회
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const [counts, followList] = await Promise.all([
             this.userRepository.getRelationCounts(currentUserId),
-
             upperType === 'FOLLOWER'
                 ? this.userRepository.findFollowers(currentUserId)
                 : this.userRepository.findFollowings(currentUserId),
         ]);
 
-        // 3. 조회 유형에 맞는 상대방 사용자 정보 추출
+        // 3. 사용자 정보 추출 및 DTO 형태로 변환
         const users = followList
-            .map((item: any) => {
-                // FOLLOWER: 나를 팔로우하는 사용자
-                // FOLLOWING: 내가 팔로우하는 사용자
+            .map((item: any) =>
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-                return upperType === 'FOLLOWER'
+                upperType === 'FOLLOWER'
                     ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                       item?.users_follow_follower_idTousers
-                    : item?.users_follow_followee_idTousers;
-            })
-            // 연결된 사용자 정보가 없는 데이터 제외
+                    : // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      item?.users_follow_followee_idTousers,
+            )
             .filter((user: any) => user?.id != null)
-            // API 응답 DTO 형태로 변환
             .map((user: any) => ({
                 target_user_id: Number(user.id),
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 nickname: user.nickname,
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 profile_img_url: user.profile_img_url ?? null,
             }));
 
-        // 4. 응답 반환
+        // 4. 반환 (글로벌 TransformInterceptor가 { success: true, data: ... } 형태로 감싸줍니다)
         return {
-            is_success: true,
-            code: 'COMMON200',
-            message: '성공입니다.',
-            data: {
-                follower_count: counts.follower_count,
-                following_count: counts.following_count,
-                users,
-            },
+            follower_count: counts.follower_count,
+            following_count: counts.following_count,
+            users,
         };
     }
 }
