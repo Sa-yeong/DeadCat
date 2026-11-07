@@ -45,6 +45,24 @@ export interface MotionDef {
   speed?: number;
 }
 
+/** 모션 표 — 파일 이름은 폴더(base) 기준 */
+export type MotionTable = Partial<Record<MotionName, MotionDef>>;
+
+/** 주소까지 정해진 모션 — 캐릭터 하나가 실제로 쓰는 모션 */
+export interface ResolvedMotion extends MotionDef {
+  url: string;
+}
+
+/** 캐릭터 하나의 모션 표(공용 + 그 캐릭터의 덮어쓰기). 씬 · 루프는 전역 MOTIONS 대신 이것을 본다 */
+export type MotionSet = Partial<Record<MotionName, ResolvedMotion>>;
+
+/** 표의 파일 이름을 base 폴더 주소로 푼다 */
+export function resolveMotions(base: string, table: MotionTable): MotionSet {
+  const out: MotionSet = {};
+  for (const [name, def] of Object.entries(table) as [MotionName, MotionDef][]) out[name] = { ...def, url: base + def.file };
+  return out;
+}
+
 /** 매칭표의 프레임 → 초. 30fps, 1프레임 = 0초 */
 const f = (frame: number) => (frame - 1) / 30;
 

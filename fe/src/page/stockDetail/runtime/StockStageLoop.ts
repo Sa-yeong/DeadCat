@@ -1,5 +1,5 @@
 import { StockScene, type Framing } from './StockScene';
-import { CROSSFADE_S, IDLE_FACE, MOTIONS, type Emotion, type MotionName } from './motionTable';
+import { CROSSFADE_S, IDLE_FACE, type Emotion, type MotionName, type MotionSet } from './motionTable';
 import { SPAM_TAPS, TAP_WINDOW_MS, clickReaction, spamReaction } from './reactions';
 import { StageReturn, type ReturnMode } from './StageReturn';
 import { StageZoom } from './StageZoom';
@@ -19,7 +19,7 @@ const ONCE_QUEUE_MAX = 3;
 /** 반복 모션(idle)으로 온 단발 = 표정만 잠깐 — 그 길이(초). 다른 단발 모션(약 2초)과 비슷하게 */
 const FACE_ONCE_S = 2;
 
-/** 표정을 감정 이름으로 얹는 모션 — 나머지 모션은 표정이 모션에 붙어 있다(MOTIONS.face) */
+/** 표정을 감정 이름으로 얹는 모션 — 나머지 모션은 표정이 모션에 붙어 있다(모션 표의 face) */
 const FACE_BY_EMOTION: MotionName[] = ['idle', 'madness'];
 
 /** 마지막으로 바뀐 것 — 감정 테스트 패널이 보여 준다 */
@@ -75,6 +75,8 @@ export class StockStageLoop {
   private once = false;
   private readonly queue: Emotion[] = [];
   private faceTimer = 0;
+  /** 이 캐릭터의 모션 표(공용 + 덮어쓰기, assets.characterOf) — load 때 받는다 */
+  private motions: MotionSet = {};
 
   constructor(scene: StockScene) {
     this.scene = scene;
@@ -90,12 +92,14 @@ export class StockStageLoop {
     };
   }
 
-  async load(modelUrl: string, motionBase: string): Promise<void> {
-    await this.scene.load(modelUrl, motionBase, 'idle');
+  /** 캐릭터 하나(모델 + 그 캐릭터의 모션 표)를 띄운다 — assets.characterOf */
+  async load(character: { model: string; motions: MotionSet }): Promise<void> {
+    this.motions = character.motions;
+    await this.scene.load(character.model, character.motions, 'idle');
     this.ready = true;
     this.applyHold();
     // 나머지는 뒤에서 — 첫 화면을 모션 아홉 개 받을 때까지 붙잡지 않는다
-    this.scene.preload(Object.keys(MOTIONS).filter((m) => m !== 'idle') as MotionName[]);
+    this.scene.preload(Object.keys(this.motions).filter((m) => m !== 'idle') as MotionName[]);
   }
 
   /**
@@ -131,7 +135,7 @@ export class StockStageLoop {
 
     if (this.waking || this.once) return true; // 깨는 중·단발 중 — 끝까지 본다(클릭은 무시)
     // 자는 중이면 깨운다 — 놀라며 깨고(surprise), 그 뒤로는 보고 있는 동안 깨어 있다
-    if (this.asleep && MOTIONS.surprise) {
+    if (this.asleep && this.motions.surprise) {
       this.awake = true;
       this.waking = true;
       this.back.setStill(true);
@@ -257,7 +261,7 @@ export class StockStageLoop {
     }
     if (this.moving || this.settling) return;
     if (this.once) this.next(); // 단발 끝 — 다음 단발 또는 유지 감정
-    else if (!MOTIONS[name as keyof typeof MOTIONS]?.loop) this.applyHold(true);
+    else if (!this.motions[name]?.loop) this.applyHold(true);
   }
 
   /**
@@ -277,7 +281,7 @@ export class StockStageLoop {
     }
     this.once = true;
     this.updateStill();
-    const def = MOTIONS[e.motion as keyof typeof MOTIONS];
+    const def = this.motions[e.motion];
     if (def && !def.loop) {
       this.note('once', e.emotion, e.motion);
       void this.scene.play(e.motion).then((ok) => {
@@ -292,7 +296,7 @@ export class StockStageLoop {
     }
     // 앞 단발 모션의 마지막 자세에 멈춰 있지 않게 — 유지 모션으로 돌려 놓고 그 위에 표정
     const playing = this.scene.playing;
-    if (playing && !MOTIONS[playing as keyof typeof MOTIONS]?.loop) this.applyHold(true);
+    if (playing && !this.motions[playing]?.loop) this.applyHold(true);
     this.note('once', e.emotion, this.scene.playing ?? 'idle');
     this.scene.flashFace(expr, e.weight, FACE_ONCE_S);
     this.faceTimer = window.setTimeout(() => this.once && this.next(), FACE_ONCE_S * 1000);
@@ -313,7 +317,7 @@ export class StockStageLoop {
   private onMove(mode: ReturnMode) {
     this.moving = mode;
     this.settling = false; // 숨 고르다 다시 밀려났다
-    if (this.ready && MOTIONS[mode]) void this.scene.play(mode);
+    if (this.ready && this.motions[mode]) void this.scene.play(mode);
   }
 
   /**
@@ -323,10 +327,10 @@ export class StockStageLoop {
   private onArrive(mode: ReturnMode) {
     this.moving = null;
     if (!this.ready) return;
-    if (mode === 'run' && MOTIONS.stoprun) {
+    if (mode === 'run' && this.motions.stoprun) {
       this.settling = true;
       void this.scene.play('stoprun');
-    } else if (MOTIONS[mode]) {
+    } else if (this.motions[mode]) {
       this.afterBusy();
     }
   }
@@ -348,7 +352,7 @@ export class StockStageLoop {
   private note(kind: StageChange['kind'], emotion: Emotion['emotion'], to: MotionName) {
     const from = this.scene.playing;
     const fade =
-      from === to ? CROSSFADE_S : (MOTIONS[from ?? 'idle']?.fadeOut ?? MOTIONS[to]?.fadeIn ?? CROSSFADE_S);
+      from === to ? CROSSFADE_S : (this.motions[from ?? 'idle']?.fadeOut ?? this.motions[to]?.fadeIn ?? CROSSFADE_S);
     this.lastChange = { kind, emotion, from, to, fade, at: performance.now() };
   }
 }

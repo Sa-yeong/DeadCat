@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLayout, useSliding, type Layout } from '../layout';
 import { StockScene, onlyCenterMoved, type Framing } from '../runtime/StockScene';
 import { StockStageLoop } from '../runtime/StockStageLoop';
-import { CHARACTER_ASSETS } from '../runtime/assets';
+import { characterOf, type CharacterInfo } from '../runtime/assets';
 
 export type StageStatus = 'loading' | 'ready' | 'failed';
 
@@ -29,6 +29,21 @@ export function framingFor(L: Layout): Framing {
   };
 }
 
+interface StageProps {
+  onLoop: (loop: StockStageLoop | null) => void;
+  onStatus: (s: StageStatus) => void;
+}
+
+/**
+ * 종목의 캐릭터 무대. 종목 코드 → 캐릭터(assets.characterOf)를 정하고 그 캐릭터로 캔버스를 띄운다.
+ * 다른 캐릭터를 쓰는 종목으로 옮겨 가면(NVDA ↔ 다른 종목) 캔버스째 새로 띄운다 — 옛 모델 · 옛 모션이 남지 않게.
+ * 같은 캐릭터를 쓰는 종목끼리는 그대로 둔다(다시 받지 않는다).
+ */
+export function CharacterStage({ stockCode, ...props }: StageProps & { stockCode: string }) {
+  const character = characterOf(stockCode);
+  return <StageCanvas key={character.key} character={character} {...props} />;
+}
+
 /**
  * 3D 캐릭터 캔버스 — 무대 전체 크기, 막(CoverFilm) **아래**에 깐다.
  * 폭은 글로벌 사이드바를 접었을 때 기준(layout.canvasWidth)이라 여닫아도 그대로다.
@@ -37,13 +52,7 @@ export function framingFor(L: Layout): Framing {
  * 모델과 첫 모션이 다 붙기 전에는 보이지 않는다(T자 자세 방지).
  * 그동안과 실패했을 때는 페이지가 PNG 캐릭터를 대신 보인다.
  */
-export function CharacterStage({
-  onLoop,
-  onStatus,
-}: {
-  onLoop: (loop: StockStageLoop | null) => void;
-  onStatus: (s: StageStatus) => void;
-}) {
+function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: CharacterInfo }) {
   const L = useLayout();
   const sliding = useSliding();
   const canvas = useRef<HTMLCanvasElement | null>(null);
@@ -54,9 +63,10 @@ export function CharacterStage({
   /** 3D 에 마지막으로 맞춰 둔 화면 좌표 · 캐릭터가 따라갈 때를 기다리는 타이머 */
   const applied = useRef<Framing | null>(null);
   const settle = useRef(0);
-  // 콜백은 마운트 때 한 번만 건다 — 바뀔 때마다 씬을 다시 만들지 않게
+  // 콜백은 마운트 때 한 번만 건다 — 바뀔 때마다 씬을 다시 만들지 않게. 캐릭터는 바뀌면 key 로 새로 뜬다
   const cb = useRef({ onLoop, onStatus });
   cb.current = { onLoop, onStatus };
+  const first = useRef(character);
 
   useEffect(() => {
     if (!canvas.current) return;
@@ -79,7 +89,7 @@ export function CharacterStage({
     const w = window as unknown as { __DC_PREVIEW__?: boolean; __dcStage?: StockStageLoop | null };
     if (w.__DC_PREVIEW__) w.__dcStage = lp;
 
-    lp.load(CHARACTER_ASSETS.model, CHARACTER_ASSETS.motionBase)
+    lp.load(first.current)
       .then(() => {
         if (!alive) return;
         setReady(true);

@@ -10,10 +10,10 @@ import {
 import {
   CROSSFADE_S,
   FACE_RISE_S,
-  MOTIONS,
   faceValue,
   type FaceTrack,
   type MotionName,
+  type MotionSet,
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
 
@@ -100,7 +100,8 @@ export class StockScene {
   private framing: Framing | null = null;
   /** 캐릭터 뒤 3D 공간(격자 바닥·지평선 안개) */
   private readonly env = new StageEnvironment();
-  private motionBase = '';
+  /** 이 캐릭터의 모션 표(공용 + 덮어쓰기, assets.characterOf) — load 때 받는다 */
+  private motions: MotionSet = {};
   private disposed = false;
 
   /** 카메라 가로 이동(m) — 차트를 좌우로 밀면 창틀(카메라)이 같이 간다. 캐릭터는 제자리 */
@@ -154,8 +155,8 @@ export class StockScene {
    * 모델과 첫 모션(유지 모션)을 불러온다. 첫 모션이 붙기 전에는 그리지 않는다 —
    * 불러온 직후의 두 팔 벌린 기본 자세(T자)가 보이지 않게.
    */
-  async load(modelUrl: string, motionBase: string, first: MotionName): Promise<void> {
-    this.motionBase = motionBase;
+  async load(modelUrl: string, motions: MotionSet, first: MotionName): Promise<void> {
+    this.motions = motions;
     const gltf = await this.loader.loadAsync(modelUrl);
     const vrm = gltf.userData.vrm as VRM | undefined;
     if (!vrm) throw new Error('VRM 확장이 없는 파일');
@@ -204,7 +205,7 @@ export class StockScene {
    */
   /** 모션을 튼다. 틀었으면(또는 이미 그 반복 모션이면) true — 표에 없거나 파일을 못 받으면 false */
   async play(name: MotionName): Promise<boolean> {
-    const def = MOTIONS[name as keyof typeof MOTIONS];
+    const def = this.motions[name];
     if (!def || !this.mixer) return false;
     if (name === this.currentName && def.loop) return true;
 
@@ -218,7 +219,7 @@ export class StockScene {
     action.clampWhenFinished = !def.loop;
     action.play();
     action.timeScale = def.speed ?? 1;
-    const prevDef = this.currentName ? MOTIONS[this.currentName] : undefined;
+    const prevDef = this.currentName ? this.motions[this.currentName] : undefined;
     const fade = prevDef?.fadeOut ?? def.fadeIn ?? CROSSFADE_S;
     if (prev && prev !== action) prev.crossFadeTo(action, fade, false);
 
@@ -362,10 +363,10 @@ export class StockScene {
     if (have) return Promise.resolve(have);
     const busy = this.pending.get(name);
     if (busy) return busy;
-    const def = MOTIONS[name as keyof typeof MOTIONS];
+    const def = this.motions[name];
     if (!def) return Promise.resolve(null);
     const job = this.loader
-      .loadAsync(this.motionBase + def.file)
+      .loadAsync(def.url)
       .then((g) => {
         const anim = (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0];
         if (!anim || !this.vrm) return null;
@@ -374,7 +375,7 @@ export class StockScene {
         return clip;
       })
       .catch((err) => {
-        console.warn(`[StockScene] 모션 불러오기 실패: ${def.file}`, err);
+        console.warn(`[StockScene] 모션 불러오기 실패: ${def.url}`, err);
         return null;
       })
       .finally(() => this.pending.delete(name));

@@ -263,6 +263,7 @@ export function StockDetailPage() {
           windowOpen={tab === 'CHART'}
           scene={
             <CharacterStage
+              stockCode={stockCode}
               onLoop={(lp) => {
                 stageLoop.current = lp;
               }}

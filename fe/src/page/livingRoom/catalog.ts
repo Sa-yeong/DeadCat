@@ -14,12 +14,15 @@ const BASE = import.meta.env.BASE_URL;
 /**
  * 지금 모습의 3D 모델 후보 — 앞에서부터 찾고 없으면 다음(3-⑩ 4). 옷 모델은 몸 + 옷이 든 VRM 한 벌(통째 교체, S6+ 도휘 결정).
  *   1. characters/chibi/clothes/{stock_id}/{base|max}_{ragged|normal|fancy}.vrm   캐릭터 전용 — 나중에
- *   2. characters/chibi/clothes/common/{base|max}_{ragged|normal|fancy}.vrm       공통 — 지금
- * 둘 다 없으면 렌더러가 기본 치비 모델(char_chibi_2.vrm)로 대신한다. 옛 종목별 모델 {stock_id}.vrm 은 1번이 맡는다(S6+ 에서 지움)
+ *   2. characters/chibi/clothes/{stock_id}/default.vrm                           캐릭터 전용 기본 모습 — 옷 6벌을 다 만들 때까지(2026-11-07, NVDA = 13)
+ *   3. characters/chibi/clothes/common/{base|max}_{ragged|normal|fancy}.vrm       공통 — 지금
+ * 다 없으면 렌더러가 기본 치비 모델(char_chibi_2.vrm)로 대신한다. 옛 종목별 모델 {stock_id}.vrm 은 1번이 맡는다(S6+ 에서 지움)
+ * 2번은 같은 파일을 6개 이름으로 복사하지 않으려고 둔 한 칸(치비 한 벌이 약 11MB)
  */
 export function modelUrlsOf(stockId: number, look: Look): string[] {
   const file = `${look.clothes}_${look.state}.vrm`;
-  return [`${BASE}characters/chibi/clothes/${stockId}/${file}`, `${BASE}characters/chibi/clothes/common/${file}`];
+  const own = `${BASE}characters/chibi/clothes/${stockId}/`;
+  return [`${own}${file}`, `${own}default.vrm`, `${BASE}characters/chibi/clothes/common/${file}`];
 }
 
 /**
