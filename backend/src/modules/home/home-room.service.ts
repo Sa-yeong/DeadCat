@@ -137,12 +137,17 @@ export class HomeRoomsService {
     }
 
     // 10.2 메인 피드 조회 (급등 / 급락 거실)
-    async getExploreRooms(): Promise<GetExploreRoomsResponseDto> {
+    // 거실 탐색 메인 피드 조회
+    async getExploreRooms(
+        currentUserId?: string,
+    ): Promise<GetExploreRoomsResponseDto> {
+        // 공개 거실 사용자 목록 조회
         const users = await this.repository.findPublicUsersWithDetails();
 
+        // 사용자별 거실 카드 데이터 생성
         const roomCards: RoomCardDto[] = await Promise.all(
             users.map(async (u) => ({
-                user_id: u.id.toString(),
+                user_id: String(u.id), // BigInt를 API 응답용 문자열로 변환
                 nickname: u.nickname,
                 room_img_url: this.getPresetRoomImgUrl(u.id, u.profile_img_url),
                 profit_rate: await this.calculateUserProfitRate(u.holdings),
@@ -150,19 +155,22 @@ export class HomeRoomsService {
             })),
         );
 
-        // 기준 등락률 필터링 (+5% 이상 급등, -5% 이하 급락)
+        // 수익률 5% 이상인 급등 거실
         const soaringRooms = roomCards
-            .filter((r) => r.profit_rate >= 5.0)
+            .filter((room) => room.profit_rate >= 5)
             .sort((a, b) => b.profit_rate - a.profit_rate);
 
+        // 수익률 -5% 이하인 급락 거실
         const plummetingRooms = roomCards
-            .filter((r) => r.profit_rate <= -5.0)
+            .filter((room) => room.profit_rate <= -5)
             .sort((a, b) => a.profit_rate - b.profit_rate);
 
+        // API 명세에 정의된 응답 형태로 반환
         return {
             is_success: true,
             code: 'COMMON200',
             message: '성공입니다.',
+            user_id: currentUserId ? Number(currentUserId) : null,
             data: {
                 soaring_rooms: soaringRooms,
                 plummeting_rooms: plummetingRooms,

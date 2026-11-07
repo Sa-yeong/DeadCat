@@ -1,4 +1,11 @@
-import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Query,
+    UseGuards,
+    Request,
+    Req,
+} from '@nestjs/common';
 import { HomeRoomsService } from './home-room.service';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 import {
@@ -20,10 +27,10 @@ export class HomeRoomsController {
     }
 
     // 10.2 거실 탐색 메인 피드 조회 (비인증 허용)
-    @UseGuards(OptionalJwtAuthGuard)
     @Get('explore')
-    async getExploreRooms() {
-        return await this.homeRoomsService.getExploreRooms();
+    async getExploreRooms(@Req() req: any) {
+        const userId = req.user?.id ? String(req.user.id) : undefined;
+        return this.homeRoomsService.getExploreRooms(userId);
     }
 
     // 10.3 거실 검색 및 시스템 태그 필터링 조회 (비인증 허용, 전체 거실 목록 페이징 포함)
