@@ -323,7 +323,10 @@ export class RoomScene implements RoomRenderer {
     // VRM(MToon) 캐릭터용 조명 — 개별종목 화면과 같은 값. 면색 재질(방·가구)에는 영향이 없다
     const sun = new THREE.DirectionalLight('#FFFFFF', 1.5);
     sun.position.set(1.2, 1.6, 1.0);
-    this.scene.add(new THREE.AmbientLight('#FFFFFF', 0.55), sun);
+    const ambient = new THREE.AmbientLight('#FFFFFF', 0.55);
+    // 카펫 모델은 바닥 층(GROUND_LAYER)에서 그려지므로 조명도 그 층을 비춘다(면색 재질인 방 껍데기에는 영향 없음)
+    for (const l of [ambient, sun]) l.layers.enable(GROUND_LAYER);
+    this.scene.add(ambient, sun);
     this.buildShell();
     // 미리보기·테스트가 화면 상태를 읽는 손잡이 — 앱 동작에는 쓰지 않는다
     (canvas as HTMLCanvasElement & { roomScene?: RoomScene }).roomScene = this;
@@ -623,18 +626,21 @@ export class RoomScene implements RoomRenderer {
   /**
    * 가구 모델(glb)을 상자와 바꿔 끼운다 — 못 받으면 상자 그대로.
    * 키(h 칸)에 맞춰 고르게 늘리고 설치 영역 가운데에 세운다. 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y) — 등이 뒷벽 쪽(shapeOf 와 같은 규칙)
+   * 카펫(kind 'rug')은 키가 0이라 가로 폭(w 칸)에 맞추고, 상자 카펫처럼 바닥 층(GROUND_LAYER)에 그린다 — 위에 놓인 가구·캐릭터가 항상 덮는다(2026-11-07)
    */
   private async attachFurnitureModel(placementId: number, f: FurnNode, url: string, height: number, build: number): Promise<void> {
     const src = await this.furnitureModel(url);
     if (!src || this.disposed || this.furn.get(placementId) !== f || f.build !== build) return;
     const box = new THREE.Box3().setFromObject(src);
-    const scale = height / Math.max(box.max.y - box.min.y, 1e-3);
+    const def = this.furniture.def(f.furnitureId)!;
+    const isRug = def.kind === 'rug';
+    const scale = isRug ? def.w / Math.max(box.max.x - box.min.x, 1e-3) : height / Math.max(box.max.y - box.min.y, 1e-3);
     const obj = src.clone(true);
     obj.scale.setScalar(scale);
     obj.position.set(-((box.min.x + box.max.x) / 2) * scale, -box.min.y * scale, -((box.min.z + box.max.z) / 2) * scale);
     const holder = new THREE.Group();
     holder.add(obj);
-    const area = footprint(this.furniture.def(f.furnitureId)!, f.pos, f.rotation);
+    const area = footprint(def, f.pos, f.rotation);
     holder.position.copy(v3((area.x0 + area.x1) / 2, (area.y0 + area.y1) / 2, 0));
     holder.rotation.y = -(f.rotation * Math.PI) / 180;
     this.clearGroup(f.group);
@@ -644,10 +650,11 @@ export class RoomScene implements RoomRenderer {
       const m = o as THREE.Mesh;
       if (!m.isMesh) return;
       m.userData.placementId = placementId;
-      m.userData.rug = false;
+      m.userData.rug = isRug;
       m.renderOrder = BODY_ORDER; // 외곽선(RIM_ORDER)이 깊이를 안 남기니 모델이 뒤에 그려 안쪽을 덮는다
       f.meshes.push(m);
     });
+    if (isRug) holder.traverse((o) => o.layers.set(GROUND_LAYER));
     f.group.add(holder);
     f.model = { scale };
     if (this.highlighted === placementId) this.highlightFurniture(placementId);

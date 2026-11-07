@@ -42,7 +42,7 @@ export const FURNITURE_CATALOG: FurnitureDef[] = [
   // 레어 스킨
   box(7, '책상 (레어)', 4, 4, 1.0, RARE, DESK),
   box(8, '소파 (레어)', 4, 2, 1.0, RARE, SOFA),
-  box(9, '화분 (레어)', 2, 2, 1.2, RARE),
+  box(9, '화분 (레어)', 2, 2, 2.4, RARE), // 큰 화분(2026-11-07 도휘) — 키만 다르다
   box(10, '스탠드 조명 (레어)', 2, 2, 2.2, RARE),
   box(11, '책장 (레어)', 4, 2, 2.4, RARE),
   rug(12, '카펫 (레어)', carpet('#2A3040', 'rgba(143,179,255,0.25)')),
