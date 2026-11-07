@@ -1,8 +1,10 @@
 import './Tab1.css'
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../../api/axios';
 import { MyStockList } from './MyStockList';
+import { ChangeNickModal } from '../../modal/ChangeNickModal';
+import { FollowModal } from '../../modal/Follow';
 
 interface Me{
     nickname:string;
@@ -15,7 +17,7 @@ interface Me{
 interface Assets{
     available_cash: number,
     total_investment: number,
-    total_evaluation_amount: number,
+    selling_profit: number,
     total_valuation_profit: number,
     valuation_return_rate: number
 }
@@ -26,6 +28,7 @@ export function Tab1(){
     
     useEffect(() => {
         const fetchMyData = async () => {
+            // TODO: 토큰의 유효기간이 지났을 경우도 로그인 페이지로 이동하도록 수정
             try{
                 const token = localStorage.getItem('token');
                 
@@ -60,9 +63,26 @@ export function Tab1(){
     </div>;
 }
 
-// 대표 캐릭터 이미지
+// 사용자 정보
 function Represent({mydata, setMydata}:any){
     const navigate = useNavigate();
+    const [isOpenNick, setIsOpenNick] = useState<boolean>(false);
+    const [isOpenFollow, setIsOpenFollow] = useState<boolean>(false);
+    const [imgUrl, setImgUrl] = useState<string>(mydata?.profile_img_url);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleImageClick = () => {
+        fileInputRef.current?.click();
+    }
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if(file){
+            setImgUrl(URL.createObjectURL(file));
+            // be에게 전송하는 코드 구현 (api)
+        }
+    }
 
     const fetchSharedOption = async (newState: boolean) => {
         try{
@@ -87,13 +107,17 @@ function Represent({mydata, setMydata}:any){
     return<>
         <div>
             <div className='left-side'>
-                <img alt='프로필 사진' />
+                <img alt='프로필 사진' src={imgUrl} onClick={handleImageClick} />
+                <input type='file' accept='image/*' style={{display: 'none'}}
+                ref={fileInputRef} onChange={handleFileChange} />
+
                 <div className='detail'>
                     <div className='nickname'>
                         <span>{mydata?.nickname}</span>
-                        <button>닉네임 설정</button>
+                        <button onClick={()=>setIsOpenNick(true)}>닉네임 설정</button>
                     </div>
-                    <div className='follow'>
+                    <ChangeNickModal isOpen={isOpenNick} onClose={()=>setIsOpenNick(false)} c_nickname={mydata?.nickname} />
+                    <div className='follow' onClick={() => setIsOpenFollow(true)}>
                         <span>
                             <span>팔로워</span>
                             <span className='amount'>{mydata?.follower_num}</span>
@@ -103,6 +127,7 @@ function Represent({mydata, setMydata}:any){
                             <span className='amount'>{mydata?.followee_num}</span>
                         </span>
                     </div>
+                    <FollowModal isOpen={isOpenFollow} onClose={() => {setIsOpenFollow(false); navigate('../')}} />
                 </div>
             </div>
             <div className='checkbox'>
@@ -147,14 +172,14 @@ function AssetInfo(){
                 <span className='data-label'>
                     총 자산
                 </span>
-                <span>{Number(myAsset?.total_investment).toLocaleString()}</span>
+                <span>{Number(myAsset?.available_cash).toLocaleString()}</span>
             </div>
-            <div className='asset-row'>
+            {/* <div className='asset-row'>
                 <span className='data-label'>
                     총 주문 가능 금액
                 </span>
                 <span>{Number(myAsset?.available_cash).toLocaleString()}</span>
-            </div>
+            </div> */}
             <div className='asset-row'>
                 <span className='data-label'>
                     총 투자 금액
@@ -163,9 +188,9 @@ function AssetInfo(){
             </div>
             <div className='asset-row'>
                 <span className='data-label'>
-                    평가 금액
+                    판매 수익
                 </span>
-                <span>{Number(myAsset?.total_evaluation_amount).toLocaleString()}</span>
+                <span>{Number(myAsset?.selling_profit).toLocaleString()}</span>
             </div>
             <div className='asset-row'>
                 <span className='data-label'>
@@ -182,7 +207,7 @@ function AssetInfo(){
                 </span>
                 <span style={{color: (myAsset?.valuation_return_rate===0||(typeof myAsset?.valuation_return_rate =='string'))?
                     '#566072':(((myAsset?.valuation_return_rate ?? 0)>0) ?'#f04452':'#5c96f5')}}>
-                    {myAsset?.valuation_return_rate}
+                    {myAsset?.valuation_return_rate}%
                 </span>
             </div>
         </div>

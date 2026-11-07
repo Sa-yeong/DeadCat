@@ -46,6 +46,7 @@ export function SearchedRooms(){
                         profit={room.profit_rate} 
                         tags={room.tags}
                         onClick={() => navigate(`/room/${room.user_id}`)} 
+                        isMine={false}
                     />
                 })}
             </div>

@@ -42,7 +42,7 @@ export function MyStockList() {
         </div>
         <div className='stock-list-body'>
             {
-                myHoldings.map((myStock) =>
+                myHoldings?.map((myStock) =>
                     <MyStock key={myStock.stock_code}
                         s_name={myStock.stock_name} 
                         s_img={myStock.stock_img}

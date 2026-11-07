@@ -1,6 +1,6 @@
 import './SearchingView.css'
 import { SearchBar } from '../../common/SearchBar';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Dropdown, Space, Popover, type MenuProps } from 'antd';
 import { FaAngleDown, FaPlus, FaCheck } from 'react-icons/fa6';
@@ -17,10 +17,18 @@ interface RoomDetail{
     tags: string[];
 }
 
+interface StockInfo{
+    stock_id: number;
+    stock_code: string;
+    stock_name: string;
+}
+
 export function SearchingView(){
     const navigate = useNavigate();
+    const token = localStorage.getItem('token');
 
     const [tags, setTags] = useState<{ tag_id: number, name: string }[]>([]);
+    const [searchedKeyword, setSearchedKeyword] = useState<StockInfo[]>([]);
     const [order, setOrder] = useState<string>('DEFAULT');
     const [selectedTags, setSeletedTags] = useState<string[]>([]);
     const [keywords, setKeywords] = useState<string[]>([]);
@@ -73,11 +81,37 @@ export function SearchingView(){
             setKeywords(prev => prev.filter(keyword => keyword !== current));
     }
 
+    // 종목 검색
+    const searchStock = async(input: string) => {
+        if(!input.trim()){
+            setSearchedKeyword([]);
+            return;
+        }
+
+        try{
+            let response;
+
+            if(token){
+                response = await api.get('/home/stocks/search',{
+                    headers: {Authorization: `Bearer ${token}`},
+                    params: {keyword: input}
+                })
+            }else{
+                response = await api.get('/home/stocks/search',{
+                    params: {keywords: input}
+                })
+            }
+            
+            setSearchedKeyword(response.data.data.stocks);
+            console.log('종목 검색 성공: ', response.data.data.stocks);
+        }catch(e){console.error('종목 검색 실패: ', e)}
+    }
+
     // 처음 렌더링 시
     useEffect(() => {
         const fetchTags = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
                 let response;
                 if(token){
                     response = await api.get('/home/rooms/tags',
@@ -93,7 +127,7 @@ export function SearchingView(){
         
         const fetchRooms = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 let response;
                 if(token){
@@ -116,7 +150,7 @@ export function SearchingView(){
     useEffect(() => {
         const fetchSim = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 if(!token) {
                     // 로그인 모달 창 띄우기
@@ -135,7 +169,7 @@ export function SearchingView(){
 
         const fetchOpp = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 if(!token) {
                     // 로그인 모달 창 띄우기
@@ -170,7 +204,7 @@ export function SearchingView(){
 
         const fetchRoomsList = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 let response;
                 if(token){
@@ -234,7 +268,9 @@ export function SearchingView(){
         <div className='rooms-content'>
             <Header tags={tags} order={order} setOrder={setOrder} setSelectedTags={setSeletedTags}
             setKeywords={setKeywords} setClickSim={setClickSim} setClickOpp={setClickOpp}
-            findTag={findTag} findKeyword={findKeyword} />
+            findTag={findTag} findKeyword={findKeyword}
+            searchedKeyword={searchedKeyword}
+            setSearchedKeyword={setSearchedKeyword} searchStock={searchStock} />
             <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, 
                 setClickOpp, setClickSim,
                 riseRooms, fallRooms, rooms}} />
@@ -244,7 +280,11 @@ export function SearchingView(){
 }
 
 function Header({tags, order, setOrder, setSelectedTags, setKeywords,
-    setClickSim, setClickOpp, findTag, findKeyword}:any){  
+    setClickSim, setClickOpp, findTag, findKeyword, searchedKeyword,
+    setSearchedKeyword, searchStock}:any){  
+    
+    const [searchText, setSearchText] = useState<string>("");
+
     // 태그 종류
     const content = (
         <div style={{display: 'flex', gap: '8px'}}>
@@ -299,7 +339,34 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             <SearchBar onAdd={(keyword: string) => { 
                 if(!findKeyword(keyword))
                     setKeywords((prev: string[]) => [...prev, keyword])
-                setClickOpp(false); setClickSim(false);}} />
+                setClickOpp(false); setClickSim(false);
+                setSearchedKeyword([])}}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {searchStock(e.target.value);
+                    setSearchText(e.target.value);
+                }} value={searchText} />
+            {
+                searchedKeyword.length === 0 ?
+                null :
+                <div className='result-stocks'>
+                    {
+                        searchedKeyword?.map((keyword, index, arr) => {
+                            const isLast = index === arr.length - 1;
+                            return (
+                                <div className={isLast? 'last-row' : 'row'}
+                                onClick={() => {
+                                    if(!findKeyword(keyword))
+                                        setKeywords((prev: string[]) => [...prev, keyword.stock_name])
+                                    setSearchedKeyword([]);
+                                    setSearchText("");
+                                }}>
+                                    {keyword.stock_name}</div>
+                            )
+                        }
+                        )
+                    }
+                </div>
+            }
+
             <Popover content={content} trigger={"click"} arrow={false} placement='bottomLeft'
             title='태그 목록'>
                 <button>

@@ -223,12 +223,10 @@ async function main() {
     for (const s of stocks) {
         await prisma.characters.upsert({
             where: { stock_id: s.id },
-            update: {
-                img_url: `/images/${s.code}.svg`,
-            },
+            update: {},
             create: {
                 stock_id: s.id,
-                img_url: `/images/${s.code}.svg`,
+                img_url: `https://placehold.co/300x400?text=${s.code}`,
             },
         });
     }

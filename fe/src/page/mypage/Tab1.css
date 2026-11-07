@@ -26,7 +26,7 @@
 .tab1 .assetInfo .asset-body{
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 10px;
 }
 .tab1 .assetInfo .asset-body>div{
@@ -84,6 +84,7 @@
     border: 1px solid rgb(35 41 54);
     border-radius: 5px;
     padding: 0 7px;
+    cursor: pointer;
 }
 .tab1 .charac .left-side .detail .follow{
     display: flex;
@@ -91,6 +92,7 @@
     font-size: small;
     font-weight: lighter;
     color: #566072;
+    cursor: pointer;
 }
 .tab1 .charac .left-side .detail .follow>span{
     display: flex;

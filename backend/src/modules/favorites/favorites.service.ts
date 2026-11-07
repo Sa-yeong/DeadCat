@@ -34,26 +34,19 @@ export class FavoritesService {
             return [];
         }
 
-        // 실시간 시세(원화) 조회 — 캐시에 없으면 마지막 두 종가로
-        const quotes = await this.priceService.readKrwQuotes(
-            interests.map(({ stocks }) => ({
-                code: stocks.code,
-                stock_type: stocks.stock_type,
-                closes: stocks.stock_history.map((h) => h.close_price),
-            })),
-        );
+        // 종목 코드 리스트 추출 후 실시간 시세 조회
+        const stockCodes = interests.map((item) => item.stocks.code);
+        const priceMap = await this.priceService.readPrices(stockCodes);
 
         return interests.map((item) => {
             const stock = item.stocks;
-            const quote = quotes.get(stock.code);
+            const priceInfo = priceMap.get(stock.code);
 
             return new FavoriteItemResponseDto({
                 stock_code: stock.code,
                 stock_name: stock.name,
                 character_img_url: stock.characters?.img_url ?? null,
-                change_rate: quote?.change_rate ?? 0,
-                current_price_krw: quote?.current_price_krw ?? null,
-                change_price_krw: quote?.change_price_krw ?? null,
+                change_rate: priceInfo?.change_rate ?? 0,
                 is_favorite: true,
             });
         });

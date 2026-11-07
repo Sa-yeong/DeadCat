@@ -2,14 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { AssetRepository } from './asset.repository';
 import { AssetInfoResponseDto } from './dto/asset-info-response.dto';
 import { PriceService } from '../../price/price.service';
-import { OrderFundsService } from '../orders/order-funds.service';
 
 @Injectable()
 export class AssetService {
     constructor(
         private readonly assetRepository: AssetRepository,
         private readonly priceService: PriceService,
-        private readonly funds: OrderFundsService,
     ) {}
 
     async getMyAssetInfo(userId: string): Promise<AssetInfoResponseDto> {
@@ -25,29 +23,13 @@ export class AssetService {
             );
         }
 
-        // 주문가능 금액 — 대기 매수만큼 뺀 값. 주문 접수 검사와 같은 계산
-        const availableCash = await this.funds.availableCash(
-            BigInt(userId),
-            await this.funds.usdKrw(),
-        );
-
         const holdings = userData.holdings || [];
 
-        // 1. 원화 평가 현재가 조회 — 캐시 현재가, 없으면 DB 최신 종가. 해외(달러)는 환율로 원화 환산
-        const valuationPrices = await this.priceService.readValuationPricesKrw(
-            holdings.flatMap((h) =>
-                h.stocks?.code
-                    ? [
-                          {
-                              code: h.stocks.code,
-                              stock_type: h.stocks.stock_type,
-                              last_close:
-                                  h.stocks.stock_history?.[0]?.close_price,
-                          },
-                      ]
-                    : [],
-            ),
+        // 1. 보유 주식 코드 추출 및 현재 시세 조회
+        const codes: string[] = holdings.flatMap((h) =>
+            h.stocks?.code ? [h.stocks.code] : [],
         );
+        const cachedPrices = await this.priceService.readPrices(codes);
 
         // 2. 총 투자금액 (매입금액) 계산
         const totalInvestmentBigInt = holdings.reduce((sum, holding) => {
@@ -57,8 +39,18 @@ export class AssetService {
         // 3. 총 평가금액 계산
         const totalEvaluationBigInt = holdings.reduce((sum, holding) => {
             const stockCode = holding.stocks?.code ?? '';
-            const currentPrice =
-                valuationPrices.get(stockCode) ?? holding.mean_price_krw;
+            const cachedStock = cachedPrices.get(stockCode);
+
+            let currentPrice = holding.mean_price_krw;
+
+            if (cachedStock && cachedStock.current_price) {
+                currentPrice = BigInt(cachedStock.current_price);
+            } else {
+                const latestHistory = holding.stocks?.stock_history?.[0];
+                if (latestHistory?.close_price) {
+                    currentPrice = BigInt(latestHistory.close_price);
+                }
+            }
 
             return sum + BigInt(holding.quantity) * currentPrice;
         }, BigInt(0));
@@ -77,7 +69,7 @@ export class AssetService {
         }
 
         return new AssetInfoResponseDto({
-            available_cash: String(availableCash ?? 0),
+            available_cash: String(userData.balance ?? 0),
             total_investment: String(totalInvestmentBigInt),
             total_valuation_profit: String(totalValuationProfitBigInt),
             valuation_return_rate: valuationReturnRate,

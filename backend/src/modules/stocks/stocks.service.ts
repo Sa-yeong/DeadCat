@@ -16,14 +16,6 @@ import {
     KisProvider,
 } from 'src/providers/kis/kis.provider';
 import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
-import { isForeignStock, marketOf, tickRuleOf } from '../orders/order-rules';
-import { quoteFromCloses, toKrwQuote } from '../../price/valuation';
-import {
-    isFinishedUsBar,
-    replaceFormingBar,
-    usClock,
-} from '../../price/us-session';
-import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /** KIS 호가 조회 결과(국내·해외 공통 모양) */
 type OrderbookData = {
@@ -64,7 +56,6 @@ export class StocksService {
         private readonly favorites: FavoritesService,
         private readonly repo: StocksRepository,
         private readonly kisProvider: KisProvider,
-        private readonly marketTime: MarketTimeService,
     ) {}
 
     // GET /stocks/ranking: 거래대금 상위 종목. market 지정 시 해당 시장만(rank 재부여).
@@ -96,10 +87,6 @@ export class StocksService {
             ? await this.favorites.findFavoriteStockCodes(userId)
             : new Set<string>();
 
-        const usdKrw = metas.some((m) => isForeignStock(m.stock_type))
-            ? await this.price.usdKrwForValuation()
-            : 1;
-
         const rows: StockRankingResponseDto[] = [];
         for (const code of codes) {
             const meta = metaByCode.get(code);
@@ -108,7 +95,6 @@ export class StocksService {
             if (!price && meta)
                 price = (await this.fallbackPrice(meta.id)) ?? undefined;
             if (!meta || !price) continue; // 메타/시세 둘 다 없는 종목만 제외
-            const quote = toKrwQuote(price, meta.stock_type, usdKrw);
             rows.push({
                 rank: rows.length + 1,
                 stock_code: code,
@@ -117,9 +103,6 @@ export class StocksService {
                 character_img_url: meta.character_img_url,
                 current_price: price.current_price,
                 change_rate: price.change_rate,
-                change_price: price.change_price ?? null,
-                current_price_krw: quote.current_price_krw,
-                change_price_krw: quote.change_price_krw,
                 trading_value: price.trading_value,
                 trading_value_krw: price.trading_value_krw,
                 is_favorite: favoriteSet.has(code),
@@ -138,14 +121,18 @@ export class StocksService {
         return result;
     }
 
-    // 캐시에 현재가가 없을 때 — DB 마지막 종가와 그 전날 대비 등락률 · 금액.
+    // 캐시에 현재가가 없을 때 — DB 마지막 종가와 그 전날 대비 등락률.
     // 0원으로 응답하면 화면·주문·감정 계산이 실제 가격으로 오해한다.
     private async fallbackPrice(stockId: bigint) {
-        const closes = await this.repo.findLastTwoCloses(stockId);
-        const quote = quoteFromCloses(closes.map((c) => c.close_price));
-        if (!quote) return null;
+        const [last, prev] = await this.repo.findLastTwoCloses(stockId);
+        if (!last) return null;
+        const cur = Number(last.close_price);
+        const base = prev ? Number(prev.close_price) : cur;
         return {
-            ...quote,
+            current_price: cur,
+            change_rate: base
+                ? Number((((cur - base) / base) * 100).toFixed(2))
+                : 0,
             trading_value: 0,
             accumulated_volume: 0,
             trading_value_krw: 0,
@@ -169,7 +156,6 @@ export class StocksService {
                   stockCode,
               )
             : false;
-        const foreign = this.isForeign(meta);
 
         return new StockDetailResponseDto({
             stock_code: meta.code,
@@ -177,12 +163,9 @@ export class StocksService {
             logo_url: meta.characters?.img_url ?? null,
             current_price: price?.current_price ?? 0,
             change_rate: price?.change_rate ?? 0,
-            change_price: price?.change_price ?? null,
             market: meta.stock_type,
             is_favorite: isFavorite,
             is_event: meta.is_event,
-            tick_rule: tickRuleOf(foreign, meta.categories?.name),
-            market_open: this.marketTime.isOperatingTime(marketOf(foreign)),
         });
     }
 
@@ -245,16 +228,16 @@ export class StocksService {
                 timeframe,
             );
 
-            const candles = history.map((h) => ({
-                write_time: h.record_date.toISOString(), // ISO-8601
-                open_price: Number(h.open_price),
-                close_price: Number(h.close_price),
-                low_price: Number(h.low_price),
-                high_price: Number(h.high_price),
-                volume: Number(h.volume ?? 0),
-            }));
-            return this.withRegularBar(candles, stockCode).map(
-                (c) => new StockChartResponseDto(c),
+            return history.map(
+                (h) =>
+                    new StockChartResponseDto({
+                        write_time: h.record_date.toISOString(), // ISO-8601
+                        open_price: Number(h.open_price),
+                        close_price: Number(h.close_price),
+                        low_price: Number(h.low_price),
+                        high_price: Number(h.high_price),
+                        volume: Number(h.volume ?? 0),
+                    }),
             );
         }
 
@@ -274,37 +257,6 @@ export class StocksService {
         );
     }
 
-    /**
-     * 해외 일봉 마지막 막대 — DB 는 수집 시점에 따라 시간외 값이 남아 있거나 아직 없다.
-     * 끝난 정규장 일봉을 알고 있으면 그 날짜 막대를 그것으로 바꾼다(그보다 뒤 막대는 진행 중 값이라 뺀다).
-     */
-    private withRegularBar<T extends StockChartItem>(
-        candles: T[],
-        code: string,
-    ): StockChartItem[] {
-        const bar = this.price.regularBarOf(code);
-        if (!bar) return candles;
-        const d = bar.date;
-        const day = new Date(
-            Date.UTC(
-                Number(d.slice(0, 4)),
-                Number(d.slice(4, 6)) - 1,
-                Number(d.slice(6, 8)),
-            ),
-        ).toISOString();
-        return [
-            ...candles.filter((c) => c.write_time < day),
-            {
-                write_time: day,
-                open_price: bar.open,
-                close_price: bar.close,
-                low_price: bar.low,
-                high_price: bar.high,
-                volume: bar.volume,
-            },
-        ];
-    }
-
     private readonly logger = new Logger(StocksService.name);
     /** 같은 종목·주기를 동시에 여러 명이 열어도 KIS 는 한 번만 부른다 */
     private readonly periodLoads = new Map<string, Promise<StockChartItem[]>>();
@@ -318,9 +270,7 @@ export class StocksService {
         },
         tf: PeriodFrame,
     ): Promise<StockChartItem[]> {
-        const cacheTf = this.isForeign(meta)
-            ? this.foreignPeriodKey(tf)
-            : `${tf}.${PERIOD_CACHE_VER}`;
+        const cacheTf = `${tf}.${PERIOD_CACHE_VER}`;
         const cached = await this.price.readStockChart(meta.code, cacheTf);
         if (cached.length) return cached;
 
@@ -349,15 +299,6 @@ export class StocksService {
             this.periodLoads.set(key, job);
         }
         return job;
-    }
-
-    /**
-     * 해외 주 · 월 · 년봉 보관 칸 — 뉴욕 날짜와 장 마감 전후로 나눈다.
-     * 그래야 정규장이 끝나면(끝난 일봉이 하나 늘면) 보관 시간을 기다리지 않고 다시 만든다.
-     */
-    private foreignPeriodKey(tf: PeriodFrame): string {
-        const c = usClock();
-        return `${tf}.${PERIOD_CACHE_VER}.us.${c.date}.${isFinishedUsBar(c.date, c) ? 'closed' : 'open'}`;
     }
 
     private async loadPeriodChart(
@@ -403,25 +344,8 @@ export class StocksService {
             if (got.length < 100) break;
             end = this.dayBefore(oldest);
         }
-        if (foreign) {
-            // 진행 중 막대는 시간외 값이 섞여 있다 — 끝난 일봉으로 다시 만든다(년봉은 월봉에서 나온다)
-            const daily = await this.kisProvider.getOverseasDailyChart(
-                meta.code,
-                meta.exchange_code ?? '',
-                '',
-                today,
-                '0',
-            );
-            const formed = replaceFormingBar(
-                rows,
-                daily,
-                tf === 'WEEK' ? 'WEEK' : 'MONTH',
-                usClock(),
-            );
-            const candles = this.toCandles(formed);
-            return tf === 'YEAR' ? this.byYear(candles) : candles;
-        }
-        return this.toCandles(rows);
+        const candles = this.toCandles(rows);
+        return foreign && tf === 'YEAR' ? this.byYear(candles) : candles;
     }
 
     /** YYYYMMDD 의 전날 */
@@ -659,12 +583,6 @@ export class StocksService {
             meta.stock_type === 'FOREIGN' ||
             meta.stock_type === 'OVERSEAS' ||
             /^[A-Za-z]+$/.test(stockCode);
-
-        // 해외 호가는 정규장 시간에만 — 장외 값은 애프터마켓이 끝날 때의 호가라 현재가(정규장 종가)와 어긋난다.
-        // 판정은 주문 규칙과 같다. 장외에는 KIS 를 부르지 않는다
-        if (isOverseas && !this.marketTime.isOperatingTime('FOREIGN')) {
-            return new OrderbookResponseDto(stockCode, [], []);
-        }
 
         // 화면은 보는 사람마다 2초에 한 번 호가를 부른다. 매번 KIS를 직접 부르면 시청자 수만큼
         // 호출이 늘어 KIS 초당 한도에 걸린다 — 종목별로 1초 동안 같은 결과(진행 중인 요청 포함)를 나눠 쓴다.

@@ -33,7 +33,8 @@ export function RoomList(){
                         riseRooms.map((room: any)=>{
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
-                            onClick={()=>navigate(`/room/${room.user_id}`)} />
+                            onClick={()=>navigate(`/room/${room.user_id}`)}
+                            isMine={false} />
                         })
                     }
                 </Carousel>
@@ -52,7 +53,8 @@ export function RoomList(){
                         fallRooms.map((room: any)=>{
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
-                            onClick={()=>navigate(`/room/${room.user_id}`)} />
+                            onClick={()=>navigate(`/room/${room.user_id}`)}
+                            isMine={false} />
                         })
                     }
                 </Carousel>
@@ -68,7 +70,8 @@ export function RoomList(){
                     rooms.map((room: any)=>{
                         return <Room img={room.room_img_url} nickname={room.nickname}
                         profit={room.profit_rate} tags={room.tags}
-                        onClick={()=>navigate(`/room/${room.user_id}`)}  />
+                        onClick={()=>navigate(`/room/${room.user_id}`)}
+                        isMine={false}  />
                     })
                 }
             </div>

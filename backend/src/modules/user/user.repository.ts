@@ -89,4 +89,57 @@ export class UserRepository {
             });
         }
     }
+
+    // 1. 나를 팔로우하는 사용자 목록 조회
+    async findFollowers(userId: bigint) {
+        return this.prisma.follow.findMany({
+            where: {
+                followee_id: userId, // 내가 팔로우를 받는 대상인 관계
+            },
+            select: {
+                users_follow_follower_idTousers: {
+                    select: {
+                        id: true,
+                        nickname: true,
+                        profile_img_url: true,
+                    },
+                },
+            },
+        });
+    }
+
+    // 2. 내가 팔로우하는 사용자 목록 조회
+    async findFollowings(userId: bigint) {
+        return this.prisma.follow.findMany({
+            where: {
+                follower_id: userId, // 내가 팔로우하는 주체인 관계
+            },
+            select: {
+                users_follow_followee_idTousers: {
+                    select: {
+                        id: true,
+                        nickname: true,
+                        profile_img_url: true,
+                    },
+                },
+            },
+        });
+    }
+
+    // 3. 내 팔로워 수와 팔로잉 수 조회
+    async getRelationCounts(userId: bigint) {
+        const [follower_count, following_count] = await Promise.all([
+            this.prisma.follow.count({
+                where: { followee_id: userId },
+            }),
+            this.prisma.follow.count({
+                where: { follower_id: userId },
+            }),
+        ]);
+
+        return {
+            follower_count,
+            following_count,
+        };
+    }
 }

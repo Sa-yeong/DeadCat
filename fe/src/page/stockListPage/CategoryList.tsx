@@ -113,7 +113,7 @@ function CategoryRow({order, c_name, rate, amount, open, mouseOver}:any){
     return <div className="cate-rows" onClick={open} onMouseOver={mouseOver}>
         <span>{order}</span>
         <span>{c_name}</span>
-        <span style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}> 
+        <span style={{color: (rate===0||(typeof rate =='string'))?'white':((rate>0) ?'#f04452':'#5c96f5')}}> 
             {(typeof rate =='string')?rate:rate + '%'}
         </span>
         <span>

@@ -44,17 +44,20 @@ export class UserController {
     async getUserRelations(
         @Request() req: AuthenticatedRequest,
         @Query('type') type: 'FOLLOWER' | 'FOLLOWING',
-    ): Promise<UserRelationResponseDto[]> {
+    ): Promise<UserRelationResponseDto> {
+        // JWT에서 사용자 ID 추출
         const userId = String(req.user.id);
-        return await this.userService.getUserRelations(userId, type);
+
+        return this.userService.getUserRelations(userId, type);
     }
+
     //19. 거실 공유여부 설정
     @UseGuards(JwtAuthGuard)
     @Patch('users/me/share-option')
     async updateShareOption(
-        @User() userId: bigint,
+        @User() userId: string,
         @Body() dto: UpdateShareOptionDto,
     ): Promise<ShareOptionResponseDto> {
-        return await this.userService.updateShareOption(String(userId), dto);
+        return await this.userService.updateShareOption(userId, dto);
     }
 }

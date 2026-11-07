@@ -59,7 +59,6 @@ export class StocksRepository {
                 characters: {
                     select: { img_url: true },
                 },
-                categories: { select: { name: true } },
             },
         });
     }

@@ -7,9 +7,6 @@ export class StockRankingResponseDto {
     character_img_url: string | null; // 캐릭터 썸네일(호버용). 없으면 null
     current_price: number; //현재가
     change_rate: number; // 등락률(%)
-    change_price: number | null; // 전일 대비 금액(현지 통화). 모르면 null
-    current_price_krw: number; // 현재가 원화(해외는 평가용 환율로 환산)
-    change_price_krw: number | null; // 전일 대비 금액 원화. 모르면 null
     trading_value: number; // 누적 거래대금(현지 통화: 국내=원, 해외=달러)
     trading_value_krw: number; // 거래대금 원화 환산값 (전부 원 기준)
     is_favorite: boolean; // 비로그인 시 항상 false

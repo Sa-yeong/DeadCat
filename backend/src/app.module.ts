@@ -25,19 +25,18 @@ import { PostModule } from './modules/post/post.module';
 import { CommentModule } from './modules/comment/comment-module';
 import { NicknameModule } from './modules/nickname/nickname.module';
 import { LikePostModule } from './modules/like-post/like-post.module';
-import { RelationModule } from './modules/relation/relation.module';
 import { OrdersModule } from './modules/orders/orders.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
 import { CompanyInfoModule } from './modules/company-info/company-info.module';
 import { EmotionModule } from './modules/character-engine/emotion.module';
 import { ItemsModule } from './modules/items/items.module';
 
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { CharactersModule } from './modules/characters/characters.module';
+import { WardrobesModule } from './modules/wardrobes/wardrobes.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
-import { GuestbooksModule } from './modules/guestbooks/guestbooks.module';
 import { HomeRoomsModule } from './modules/home/home-room.module';
 import { TagModule } from './modules/tags/tag.module';
+import { HomeModule } from './modules/home-stock/home-stock.module';
 
 // 루트 모듈: 인프라(@Global) + 공통 전역(응답 래퍼, 예외 필터, JWT) + 도메인 모듈.
 @Module({
@@ -61,7 +60,6 @@ import { TagModule } from './modules/tags/tag.module';
         IndicesModule,
         AuthModule,
         OrdersModule,
-        NotificationsModule,
 
         // 마이페이지
         UserModule,
@@ -72,17 +70,17 @@ import { TagModule } from './modules/tags/tag.module';
         CommentModule,
         NicknameModule,
         LikePostModule,
-        RelationModule,
         CompanyInfoModule,
 
         EmotionModule,
         ItemsModule,
         RoomsModule,
+        WardrobesModule,
         AttendanceModule,
         CharactersModule,
-        GuestbooksModule,
         HomeRoomsModule,
         TagModule,
+        HomeModule,
     ],
     providers: [
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },

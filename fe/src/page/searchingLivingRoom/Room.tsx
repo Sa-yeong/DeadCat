@@ -1,9 +1,14 @@
 import './Room.css'
 
-export function Room({img, nickname, profit, tags, onClick}: any){
+export function Room({img, nickname, profit, tags, onClick, isMine}: any){
     return <div className="room-container" onClick={onClick}>
         <div className='img'>
             <img alt='거실 사진' src={img}/>
+            {
+                isMine ?
+                <span>MY</span>:
+                null
+            }
         </div>
         <div className="room-footer">
             <div className='first-line'>

@@ -53,16 +53,18 @@ export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
 
     if(!isOpen) {return null;}
 
-    return <div className='modal-overlay' onClick={onClose}>
+    return <div className='modal-overlay' onClick={() => {onClose(); setIsNameChecked(false)}}>
         <div className='nick-change-modal' onClick={(e) => e.stopPropagation()}>
             <div className='header'>
-                닉네임을 입력해주세요!
-                <button className="modal-close" onClick={onClose}>
+                <div className='label'>
+                    닉네임 설정
+                </div>
+                <button className="modal-close" onClick={() => {onClose(); setIsNameChecked(false)}}>
                     <IoClose />
                 </button>
             </div>
             <div className='middle'>
-                <input type="text" placeholder={nickname} onChange={(e) => {
+                <input type="text" placeholder={nickname || "새로운 닉네임을 설정하세요."} onChange={(e) => {
                     setNewName(e.target.value)
                     setIsNameChecked(false);
                     }}  />
