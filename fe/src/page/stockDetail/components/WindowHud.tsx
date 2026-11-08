@@ -151,6 +151,7 @@ export function WindowHud({
           market={market}
           candles={candles}
           lastCandle={lastCandle}
+          kind="candle"
           width={chartWidth}
           height={winHeight - tabRowH - TOOLBAR_H}
           intraday={timeframe === '1M'}

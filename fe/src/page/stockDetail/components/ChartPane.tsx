@@ -22,6 +22,7 @@ type Main = ISeriesApi<'Line'> | ISeriesApi<'Candlestick'>;
 /** 크기를 맞춘 뒤 이만큼(ms)은 보이는 범위가 바뀌어도 크기 맞춤 때문으로 본다 */
 const RESIZE_SETTLE_MS = 200;
 const PRICE = chartPriceFormat('DOMESTIC');
+const CLEAR = 'rgba(0,0,0,0)';
 
 /**
  * 차트 — **라이브러리를 이 컴포넌트 안에 가둔다.** 바깥은 종목·캔들·마지막 봉만 안다.
@@ -35,7 +36,8 @@ const PRICE = chartPriceFormat('DOMESTIC');
  *   · 콤마 · 정수 (71,400)
  *   · 화면을 가로지르는 현재가 점선은 두지 않는다 — 축의 현재가 태그만 남긴다
  *
- * {표현 방식 미확정} — 선/캔들은 `kind` 하나로 바꾼다. 시안의 그래프도 임시안이다.
+ * 표현은 2026-11-08 캔들로 확정(WindowHud 가 `kind="candle"` 을 넘긴다) — 선은 뒤의 캐릭터와 겹치면 안 보인다.
+ * 선/캔들은 `kind` 하나로 바꾼다. 선 분기는 되돌릴 수 있게 남겨 둔다.
  * 탭을 떠나도 파기하지 않고 숨긴다(부모가 display로 감춘다). 종목이 바뀔 때만 파기.
  *
  * 좌우로 끌어 지난 구간을 볼 수 있다(2026-10-05). 사용자가 끈 만큼을 onPan 으로 알린다 —
@@ -104,7 +106,7 @@ export function ChartPane({
   const host = useRef<HTMLDivElement | null>(null);
   const chart = useRef<IChartApi | null>(null);
   const main = useRef<Main | null>(null);
-  const mirror = useRef<ISeriesApi<'Line'> | null>(null);
+  const mirror = useRef<Main | null>(null);
   const size = useRef({ width, height });
   /** 마지막으로 크기를 맞춘 시각 */
   const resizedAt = useRef(-Infinity);
@@ -187,15 +189,13 @@ export function ChartPane({
             crosshairMarkerVisible: false,
           });
 
-    // 왼쪽 축에 눈금을 그리기 위한 거울 — 선은 보이지 않는다
-    mirror.current = c.addSeries(LineSeries, {
+    // 왼쪽 축에 눈금을 그리기 위한 거울 — 보이지 않는다.
+    // 본 시리즈와 같은 종류로 건다: 캔들 축은 고가·저가까지 보므로 종가만 든 선이면 좌우 눈금이 어긋난다
+    const mirrorBase = {
       priceScaleId: 'left',
-      color: 'rgba(0,0,0,0)',
-      lineWidth: 1,
       priceFormat: PRICE,
       priceLineVisible: false,
       lastValueVisible: false,
-      crosshairMarkerVisible: false,
       // 볼린저 밴드처럼 가격보다 넓게 퍼지는 지표가 켜지면 오른쪽 축이 넓어진다 — 왼쪽도 같은 범위로
       autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
         const b = base();
@@ -207,7 +207,11 @@ export function ChartPane({
           priceRange: { minValue: Math.min(r?.minValue ?? o.min, o.min), maxValue: Math.max(r?.maxValue ?? o.max, o.max) },
         };
       },
-    });
+    };
+    mirror.current =
+      kind === 'candle'
+        ? c.addSeries(CandlestickSeries, { ...mirrorBase, upColor: CLEAR, downColor: CLEAR, borderVisible: false, wickVisible: false })
+        : c.addSeries(LineSeries, { ...mirrorBase, color: CLEAR, lineWidth: 1, crosshairMarkerVisible: false });
 
     layer.current = new IndicatorLayer(c);
     const prim = new DrawingPrimitive(drawingsOf(stockCode));
@@ -352,7 +356,7 @@ export function ChartPane({
     if (!main.current || !mirror.current) return;
     const list = candles ?? [];
     main.current.setData(list.map((c) => toOne(c, kind)) as never);
-    mirror.current.setData(list.map((c) => ({ time: stamp(c.write_time), value: c.close_price })));
+    mirror.current.setData(list.map((c) => toOne(c, kind)) as never);
     listRef.current = list;
     layer.current?.setCandles(list);
     timesRef.current = list.map((c) => stamp(c.write_time));
@@ -394,7 +398,7 @@ export function ChartPane({
   useEffect(() => {
     if (!lastCandle || !candles?.length || !main.current || !mirror.current) return;
     main.current.update(toOne(lastCandle, kind) as never);
-    mirror.current.update({ time: stamp(lastCandle.write_time), value: lastCandle.close_price });
+    mirror.current.update(toOne(lastCandle, kind) as never);
     layer.current?.updateLast(lastCandle);
     // 새 봉이 생겼으면 그림 환산용 시각에도 붙인다
     const t = stamp(lastCandle.write_time);
