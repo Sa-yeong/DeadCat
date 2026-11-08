@@ -69,9 +69,11 @@ export class HoldingService {
             let returnRate = 0;
 
             if (totalPurchaseAmount.gt(0)) {
+                // Decimal 계산 후 소수점 둘째 자리까지 반올림
                 returnRate = valuationProfit
                     .div(totalPurchaseAmount)
                     .mul(100)
+                    .toDecimalPlaces(2)
                     .toNumber();
             }
 
