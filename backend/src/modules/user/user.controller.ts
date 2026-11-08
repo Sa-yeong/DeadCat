@@ -19,6 +19,8 @@ import {
 } from './dto/update-share-option.dto';
 import { UserRelationResponseDto } from './dto/user-relation-response.dto';
 import { ToggleFollowResponseDto } from './dto/toggle-follow-response.dto';
+import { UpdateProfileImageDto } from './dto/update-profile-image.dto';
+import { ProfileImageResponseDto } from './dto/profile-image-response.dto';
 
 interface AuthenticatedRequest extends Request {
     user: {
@@ -72,5 +74,15 @@ export class UserController {
         @Body() dto: UpdateShareOptionDto,
     ): Promise<ShareOptionResponseDto> {
         return await this.userService.updateShareOption(userId, dto);
+    }
+
+    // 20. 프로필 이미지 URL 저장 및 수정
+    @UseGuards(JwtAuthGuard)
+    @Patch('users/me/profile-image')
+    async updateProfileImage(
+        @User() userId: string,
+        @Body() dto: UpdateProfileImageDto,
+    ): Promise<ProfileImageResponseDto> {
+        return await this.userService.updateProfileImage(userId, dto);
     }
 }

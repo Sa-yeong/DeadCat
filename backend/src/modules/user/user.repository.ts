@@ -142,4 +142,19 @@ export class UserRepository {
             following_count,
         };
     }
+
+    // 프로필 이미지 URL 저장 및 업데이트
+    async updateProfileImage(userIdStr: string, profileImgUrl: string) {
+        const userId = BigInt(userIdStr);
+
+        try {
+            return await this.prisma.users.update({
+                where: { id: userId },
+                data: { profile_img_url: profileImgUrl },
+                select: { profile_img_url: true },
+            });
+        } catch {
+            return null;
+        }
+    }
 }

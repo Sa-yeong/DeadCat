@@ -12,6 +12,8 @@ import {
 import { UserRelationResponseDto } from './dto/user-relation-response.dto';
 import { ToggleFollowResponseDto } from './dto/toggle-follow-response.dto';
 import { PrismaService } from 'src/providers/database/prisma.service';
+import { UpdateProfileImageDto } from './dto/update-profile-image.dto';
+import { ProfileImageResponseDto } from './dto/profile-image-response.dto';
 
 @Injectable()
 export class UserService {
@@ -216,6 +218,26 @@ export class UserService {
             data: {
                 users: usersData,
             },
+        };
+    }
+
+    // 19. 사용자 프로필 이미지 URL 저장 및 수정
+    async updateProfileImage(
+        userId: string,
+        dto: UpdateProfileImageDto,
+    ): Promise<ProfileImageResponseDto> {
+        const updatedUser = await this.userRepository.updateProfileImage(
+            userId,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+            dto.profile_img_url,
+        );
+
+        if (!updatedUser) {
+            throw new NotFoundException('사용자를 찾을 수 없습니다.');
+        }
+
+        return {
+            profile_img_url: updatedUser.profile_img_url,
         };
     }
 
