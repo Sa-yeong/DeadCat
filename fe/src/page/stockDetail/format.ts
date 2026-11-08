@@ -10,6 +10,31 @@ export type PriceMarket = 'DOMESTIC' | 'FOREIGN';
 /** 시장 통화 가격 숫자 — 국내 원(그대로) · 해외 달러 소수 2자리. 기호 · 단위는 붙이지 않는다 */
 export const marketPrice = (n: number, market: PriceMarket) => (market === 'FOREIGN' ? usd(n) : won(n));
 
+/**
+ * 머리 가격 글자. 해외는 큰 가격 · 등락 금액이 원화, 달러는 옆에 작게. 국내는 지금 그대로.
+ * 해외인데 원화 칸이 없으면(새 프론트 · 옛 서버가 잠깐 겹칠 때) 달러로 보인다.
+ */
+export function headerPrice(b: {
+  market: PriceMarket;
+  current_price: number;
+  change_price?: number | null;
+  current_price_krw?: number;
+  change_price_krw?: number | null;
+}): { main: string; usd: string | null; change: string | null } {
+  if (b.market === 'FOREIGN' && b.current_price_krw != null) {
+    return {
+      main: `${won(b.current_price_krw)}원`,
+      usd: `$${usd(b.current_price)}`,
+      change: b.change_price_krw == null ? null : `${won(Math.abs(b.change_price_krw))}원`,
+    };
+  }
+  return {
+    main: marketPrice(b.current_price, b.market),
+    usd: null,
+    change: b.change_price == null ? null : marketPrice(Math.abs(b.change_price), b.market),
+  };
+}
+
 /** 차트 축 · 십자선 · 그림 태그 글자 — 국내 원 정수 · 해외 달러 소수 2자리 */
 export const chartPriceText = (market: PriceMarket) => (p: number) =>
   market === 'FOREIGN' ? usd(p) : Math.round(p).toLocaleString('ko-KR');

@@ -8,6 +8,8 @@ export class StockDetailResponseDto {
     current_price: number;
     change_rate: number;
     change_price: number | null; // 전일 대비 금액(시장 통화). 모르면 null
+    current_price_krw: number; // 현재가 원화(평가용 환율). 국내는 원 값 그대로
+    change_price_krw: number | null; // 전일 대비 금액 원화. 모르면 null
     market: string;
     is_favorite: boolean;
     is_event: boolean;
@@ -21,6 +23,8 @@ export class StockDetailResponseDto {
         current_price: number;
         change_rate: number;
         change_price: number | null;
+        current_price_krw: number;
+        change_price_krw: number | null;
         market: string;
         is_favorite: boolean;
         is_event: boolean;
@@ -33,6 +37,8 @@ export class StockDetailResponseDto {
         this.current_price = data.current_price;
         this.change_rate = data.change_rate;
         this.change_price = data.change_price;
+        this.current_price_krw = data.current_price_krw;
+        this.change_price_krw = data.change_price_krw;
         this.market = data.market;
         this.is_favorite = data.is_favorite;
         this.is_event = data.is_event;

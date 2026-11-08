@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { availableLabel, centerTone, chartPriceFormat, chartPriceText, down, marketPrice, orderTime, up, usd } from './format';
+import { availableLabel, centerTone, chartPriceFormat, chartPriceText, down, headerPrice, marketPrice, orderTime, up, usd } from './format';
+
+describe('머리 가격 글자', () => {
+  const foreign = { market: 'FOREIGN' as const, current_price: 186.64, change_price: 5.04, current_price_krw: 254390, change_price_krw: 6870 };
+
+  it('해외 — 큰 가격 · 등락 금액은 원화, 달러는 $ 붙여 소수 2자리', () => {
+    expect(headerPrice(foreign)).toEqual({ main: '254,390원', usd: '$186.64', change: '6,870원' });
+  });
+  it('해외 하락 — 금액은 부호 없이(▼가 따로 붙는다)', () => {
+    expect(headerPrice({ ...foreign, change_price_krw: -7251 }).change).toBe('7,251원');
+  });
+  it('해외 — 원화 등락 금액을 모르면 금액 없이', () => {
+    expect(headerPrice({ ...foreign, change_price_krw: null }).change).toBeNull();
+  });
+  it('해외인데 원화 칸이 없으면 달러 그대로', () => {
+    expect(headerPrice({ market: 'FOREIGN', current_price: 186.64, change_price: 5.04 })).toEqual({
+      main: '186.64',
+      usd: null,
+      change: '5.04',
+    });
+  });
+  it('국내는 이전과 똑같이 — 단위 없음, 달러 칸 없음', () => {
+    expect(
+      headerPrice({ market: 'DOMESTIC', current_price: 193500, change_price: -2750, current_price_krw: 193500, change_price_krw: -2750 }),
+    ).toEqual({ main: '193,500', usd: null, change: '2,750' });
+  });
+});
 
 describe('시장별 가격 표기', () => {
   it('해외는 끝의 0 을 지우지 않고 소수 2자리, 천 단위 쉼표', () => {

@@ -229,6 +229,7 @@ function basic(code: string) {
     stock_name: info(code).name,
     logo_url: null,
     current_price: s.live,
+    ...quoteKrw(code),
     change_rate: rate(code),
     market: 'DOMESTIC',
     is_favorite: code === '005930' || code === '000660',

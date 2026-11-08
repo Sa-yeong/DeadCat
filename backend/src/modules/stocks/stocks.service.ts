@@ -170,6 +170,11 @@ export class StocksService {
               )
             : false;
         const foreign = this.isForeign(meta);
+        // 머리의 원화 — 전체 순위 · 사이드바와 같은 계산 · 같은 환율이라 같은 화면의 숫자가 서로 맞는다
+        const usdKrw = isForeignStock(meta.stock_type)
+            ? await this.price.usdKrwForValuation()
+            : 1;
+        const quote = price ? toKrwQuote(price, meta.stock_type, usdKrw) : null;
 
         return new StockDetailResponseDto({
             stock_code: meta.code,
@@ -178,6 +183,8 @@ export class StocksService {
             current_price: price?.current_price ?? 0,
             change_rate: price?.change_rate ?? 0,
             change_price: price?.change_price ?? null,
+            current_price_krw: quote?.current_price_krw ?? 0,
+            change_price_krw: quote?.change_price_krw ?? null,
             market: meta.stock_type,
             is_favorite: isFavorite,
             is_event: meta.is_event,

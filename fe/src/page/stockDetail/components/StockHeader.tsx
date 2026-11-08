@@ -1,10 +1,11 @@
 import { HEADER_H, HEADER_TOP, useLayout } from '../layout';
-import { marketPrice, pct, tone, toneSoft } from '../format';
+import { headerPrice, pct, tone, toneSoft } from '../format';
 import type { StockBasic } from '../types';
 
 /**
  * 종목명 · 현재가 · 등락. 현재가는 오른쪽 무대가 아니라 종목명 옆에 둔다.
  * 2026-09-29 — 윗공간을 아끼려고 두 줄로 줄였다(코드 한 줄 + 이름·현재가·등락 한 줄).
+ * 2026-11-08 — 해외는 원화를 크게, 달러를 옆에 작게. 차트 · 호가 · 주문은 달러 그대로다.
  */
 export function StockHeader({
   basic,
@@ -28,7 +29,7 @@ export function StockHeader({
   }
   const c = tone(basic.change_rate);
   const soft = toneSoft(basic.change_rate);
-  const changePrice = basic.change_price;
+  const price = headerPrice(basic);
   return (
     <header
       className="absolute flex flex-col justify-center"
@@ -49,10 +50,15 @@ export function StockHeader({
             color: c,
           }}
         >
-          {marketPrice(basic.current_price, basic.market)}
+          {price.main}
         </span>
+        {price.usd && (
+          <span style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 13, fontWeight: 500, color: '#A5A59C' }}>
+            {price.usd}
+          </span>
+        )}
         <span style={{ fontSize: 13, fontWeight: 700, color: soft }}>
-          {basic.change_rate >= 0 ? '▲' : '▼'} {changePrice != null && `${marketPrice(Math.abs(changePrice), basic.market)} `}({pct(basic.change_rate)})
+          {basic.change_rate >= 0 ? '▲' : '▼'} {price.change != null && `${price.change} `}({pct(basic.change_rate)})
         </span>
         {status && <span style={{ fontSize: 12, color: '#A5A59C' }}>{status}</span>}
       </div>

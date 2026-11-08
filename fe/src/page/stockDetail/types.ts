@@ -19,6 +19,10 @@ export interface StockBasic {
   /** 명세에 없음 — 헤더 전일대비 표시에 필요 */
   /** 전일 대비 금액(시장 통화) — 서버 값. 서버가 모르면 차트 종가에서 찾는다(QuoteSync) */
   change_price?: number | null;
+  /** 현재가 원화(사이드바 · 보유와 같은 환율). 국내는 원 값 그대로 */
+  current_price_krw?: number;
+  /** 전일 대비 금액 원화. 모르면 null */
+  change_price_krw?: number | null;
 }
 
 export type Timeframe = '1M' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
