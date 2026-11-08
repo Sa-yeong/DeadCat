@@ -139,7 +139,53 @@ export class StocksRepository {
     }
 
     //stock_history update
+
+    // stock_history update
     async upsertStockHistory(
+        stockId: bigint,
+        historyData: {
+            record_date: Date;
+
+            // 가격은 Decimal 저장을 위해 문자열로 받음
+            open_price: string;
+            close_price: string;
+            low_price: string;
+            high_price: string;
+        }[],
+    ) {
+        // 트랜잭션으로 일괄 처리
+        const operations = historyData.map((item) =>
+            this.prisma.stock_history.upsert({
+                where: {
+                    stock_id_record_date: {
+                        stock_id: stockId,
+                        record_date: item.record_date,
+                    },
+                },
+                update: {
+                    // 가격: Decimal 필드에 문자열 전달
+                    open_price: item.open_price,
+                    close_price: item.close_price,
+                    low_price: item.low_price,
+                    high_price: item.high_price,
+                },
+                create: {
+                    stock_id: stockId,
+                    record_date: item.record_date,
+
+                    // 가격: Decimal 필드에 문자열 전달
+                    open_price: item.open_price,
+                    close_price: item.close_price,
+                    low_price: item.low_price,
+                    high_price: item.high_price,
+                },
+            }),
+        );
+
+        return await this.prisma.$transaction(operations);
+    }
+
+    /*async upsertStockHistory(
         stockId: bigint,
         historyData: {
             record_date: Date;
@@ -176,7 +222,7 @@ export class StocksRepository {
         );
 
         return await this.prisma.$transaction(operations);
-    }
+    }*/
 
     // 기업정보 조화
     async findBasicSummaryByCode(
