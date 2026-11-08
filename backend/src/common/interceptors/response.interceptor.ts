@@ -4,18 +4,20 @@ import {
     Injectable,
     NestInterceptor,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import type { Response } from 'express';
 import { ApiResponseDto } from '../dto/api-response.dto';
+import { SKIP_RESPONSE_TRANSFORM } from '../decorators/skip-response-transform.decorator';
 
-// 모든 성공 응답을 { success: true, data } 래퍼로 포장(프론트 일관성).
-// + 실시간 갱신 화면이 브라우저 캐시로 옛 값을 보지 않도록 Cache-Control: no-store 지정.
 @Injectable()
 export class ResponseInterceptor<T> implements NestInterceptor<
     T,
     ApiResponseDto<T> | T
 > {
+    constructor(private readonly reflector: Reflector) {}
+
     intercept(
         context: ExecutionContext,
         next: CallHandler<T>,
@@ -25,15 +27,16 @@ export class ResponseInterceptor<T> implements NestInterceptor<
         // 브라우저 캐시 방지
         res.setHeader('Cache-Control', 'no-store');
 
+        // 컨트롤러에 응답 래핑 제외 데코레이터가 있는지 확인
+        const skipTransform = this.reflector.getAllAndOverride<boolean>(
+            SKIP_RESPONSE_TRANSFORM,
+            [context.getHandler(), context.getClass()],
+        );
+
         return next.handle().pipe(
             map((data) => {
-                // 이미 API 명세에 맞춘 응답은 그대로 반환
-                if (
-                    data &&
-                    typeof data === 'object' &&
-                    'is_success' in data &&
-                    'code' in data
-                ) {
+                // 예외 처리 대상 API는 원본 응답 그대로 반환
+                if (skipTransform) {
                     return data;
                 }
 
