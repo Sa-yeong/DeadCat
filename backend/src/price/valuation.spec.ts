@@ -1,3 +1,4 @@
+import { Decimal } from '@prisma/client/runtime/client';
 import { quoteFromCloses, toKrwQuote, toValuationKrw } from './valuation';
 import { signedChange } from '../providers/kis/kis.provider';
 
@@ -80,6 +81,16 @@ describe('quoteFromCloses — 캐시가 비었을 때 마지막 두 종가', () 
             change_price: 0,
         });
         expect(quoteFromCloses([])).toBeNull();
+    });
+
+    it('stock_history 가 주는 Decimal 도 그대로 받는다', () => {
+        expect(
+            quoteFromCloses([new Decimal('186.64'), new Decimal('191.2')]),
+        ).toEqual({
+            current_price: 186.64,
+            change_rate: -2.38,
+            change_price: -4.56,
+        });
     });
 });
 

@@ -291,7 +291,7 @@ export class PriceService {
         stocks: {
             code: string;
             stock_type: string | null | undefined;
-            last_close?: number | bigint | null;
+            last_close?: number | bigint | { toString(): string } | null;
         }[],
     ): Promise<Map<string, bigint>> {
         const result = new Map<string, bigint>();

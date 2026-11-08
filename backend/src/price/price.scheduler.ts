@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Prisma } from 'generated/prisma/client';
 import { PrismaService } from '../providers/database/prisma.service';
 import {
     KisDailyChartItem,
@@ -26,18 +27,30 @@ const EXTENDED_RECHECK_MS = 15 * 60 * 1000;
 const EXTENDED_MEMO_MAX = 200;
 const DEFAULT_USD_KRW = 1350;
 const VOLUME_SUMMARY_TTL_SECONDS = 300;
-/** 국내 일봉을 모으는 기간(년) — 차트 확대·축소에서 주봉으로 넘어가기(약 13개월) 전에 끊기지 않게 */
+/** 일봉을 모으는 기간(년) — 차트 확대·축소에서 주봉으로 넘어가기(약 13개월) 전에 끊기지 않게 */
 const HISTORY_YEARS = 2;
-/** KIS 기간별 시세는 한 번에 최대 100건 — 국내 일봉은 이만큼 거슬러 올라가며 받는다(약 500거래일) */
+/** KIS 기간별 시세는 한 번에 최대 100건 — 일봉은 이만큼 거슬러 올라가며 받는다(약 500거래일) */
 const HISTORY_PAGES = 5;
-/** 이만큼 쌓였으면(약 2년 거래일) 오늘 것만 이어 붙인다. 해외는 쪽 넘김이 없어 100 */
+/** 이만큼 쌓였으면(약 2년 거래일) 오늘 것만 이어 붙인다 */
 const DOMESTIC_FULL_HISTORY = 480;
-const FOREIGN_FULL_HISTORY = 100;
+const FOREIGN_FULL_HISTORY = 480;
 
 const toSafeBigInt = (val: string | number): bigint => {
     const num = Number(val);
     if (isNaN(num)) return 0n;
     return BigInt(Math.round(num));
+};
+
+/**
+ * KIS 가격 문자열 → DB 가격. 해외는 소수 넷째 자리까지 오므로 Number 를 거치지 않고
+ * 원문 자릿수 그대로 넘긴다(부동소수 오차 없이). 빈 값 · 숫자가 아닌 값은 0.
+ */
+export const toHistoryPrice = (
+    raw: string | number | null | undefined,
+): Prisma.Decimal => {
+    const text = String(raw ?? '').trim();
+    if (!text || !Number.isFinite(Number(text))) return new Prisma.Decimal(0);
+    return new Prisma.Decimal(text);
 };
 
 @Injectable()
@@ -145,25 +158,25 @@ export class PriceScheduler implements OnModuleInit {
                     `[${stock.name}(${stock.code})] 시세 수집 시작... (현재 ${count}건, 최근 저장일: ${latestDateStr || '없음'})`,
                 );
 
-                let items: KisDailyChartItem[] = [];
-
-                if (stock.stock_type === 'FOREIGN') {
-                    // 해외 종목
-                    items = await this.kis.getOverseasDailyChart(
-                        stock.code,
-                        stock.exchange_code ?? '',
-                        startDate,
-                        endDate,
-                    );
-                } else {
-                    // 국내 종목 — 덜 쌓였으면 100건씩 거슬러 올라가며, 다 쌓였으면 최근 100건만
-                    items = await this.fetchDomesticHistory(
-                        stock.code,
-                        startDate,
-                        endDate,
-                        count >= full ? 1 : HISTORY_PAGES,
-                    );
-                }
+                // 덜 쌓였으면 100건씩 거슬러 올라가며, 다 쌓였으면 최근 100건만
+                const items = await this.fetchHistoryPages(
+                    (to) =>
+                        stock.stock_type === 'FOREIGN'
+                            ? this.kis.getOverseasDailyChart(
+                                  stock.code,
+                                  stock.exchange_code ?? '',
+                                  '',
+                                  to,
+                              )
+                            : this.kis.getDailyChartHistory(
+                                  stock.code,
+                                  startDate,
+                                  to,
+                              ),
+                    startDate,
+                    endDate,
+                    count >= full ? 1 : HISTORY_PAGES,
+                );
 
                 if (!items || items.length === 0) {
                     this.logger.warn(`[${stock.name}] 응답 데이터 없음`);
@@ -208,19 +221,10 @@ export class PriceScheduler implements OnModuleInit {
                     //  Date.UTC를 사용하여 시차 변형 없는 정확한 날짜 생성
                     const recordDate = new Date(Date.UTC(year, month, day));
 
-                    // 주가 원화/달러 변환 및 BigInt 안전 처리
-                    const openPrice = toSafeBigInt(
-                        Math.round(Number(item.stck_oprc || 0)),
-                    );
-                    const closePrice = toSafeBigInt(
-                        Math.round(Number(item.stck_clpr || 0)),
-                    );
-                    const lowPrice = toSafeBigInt(
-                        Math.round(Number(item.stck_lwpr || 0)),
-                    );
-                    const highPrice = toSafeBigInt(
-                        Math.round(Number(item.stck_hgpr || 0)),
-                    );
+                    const openPrice = toHistoryPrice(item.stck_oprc);
+                    const closePrice = toHistoryPrice(item.stck_clpr);
+                    const lowPrice = toHistoryPrice(item.stck_lwpr);
+                    const highPrice = toHistoryPrice(item.stck_hgpr);
 
                     try {
                         await this.prisma.stock_history.upsert({
@@ -278,11 +282,11 @@ export class PriceScheduler implements OnModuleInit {
     }
 
     /**
-     * 국내 일봉 — KIS 는 요청 한 번에 최근 100건만 준다. 받은 것 중 가장 오래된 날 전날을
+     * 일봉(국내 · 해외) — KIS 는 요청 한 번에 최근 100건만 준다. 받은 것 중 가장 오래된 날 전날을
      * 새 끝날로 삼아 pages 번까지 거슬러 올라간다.
      */
-    private async fetchDomesticHistory(
-        code: string,
+    private async fetchHistoryPages(
+        fetchPage: (to: string) => Promise<KisDailyChartItem[]>,
         startDate: string,
         endDate: string,
         pages: number,
@@ -290,11 +294,7 @@ export class PriceScheduler implements OnModuleInit {
         const all: KisDailyChartItem[] = [];
         let to = endDate;
         for (let page = 0; page < pages; page++) {
-            const rows = await this.kis.getDailyChartHistory(
-                code,
-                startDate,
-                to,
-            );
+            const rows = await fetchPage(to);
             if (rows.length === 0) break;
             all.push(...rows);
             const oldest = rows.reduce(
