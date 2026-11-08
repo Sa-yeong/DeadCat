@@ -6,6 +6,8 @@ import {
     Patch,
     Body,
     Query,
+    Post,
+    Param,
 } from '@nestjs/common';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -16,6 +18,7 @@ import {
     UpdateShareOptionDto,
 } from './dto/update-share-option.dto';
 import { UserRelationResponseDto } from './dto/user-relation-response.dto';
+import { ToggleFollowResponseDto } from './dto/toggle-follow-response.dto';
 
 interface AuthenticatedRequest extends Request {
     user: {
@@ -26,6 +29,16 @@ interface AuthenticatedRequest extends Request {
 @Controller()
 export class UserController {
     constructor(private readonly userService: UserService) {}
+
+    // 7. 유저 팔로우 / 팔로우 취소
+    @UseGuards(JwtAuthGuard)
+    @Post('users/:userId/follow')
+    async toggleFollow(
+        @User() currentUserId: string,
+        @Param('userId') targetUserId: string,
+    ): Promise<ToggleFollowResponseDto> {
+        return await this.userService.toggleFollow(currentUserId, targetUserId);
+    }
 
     // 8. 내 정보 조회
     @UseGuards(JwtAuthGuard)

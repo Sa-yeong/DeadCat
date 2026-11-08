@@ -10,6 +10,7 @@ interface Follower{
     target_user_id: number;
     nickname: string;
     profile_img_url: string;
+    follower_count: number;
 }
 
 export function FollowModal({isOpen, onClose}: any){
@@ -62,7 +63,7 @@ export function FollowModal({isOpen, onClose}: any){
         fetchFollowers();
       fetchFollowees();
       }
-    }, [isOpen])
+    }, [isOpen, followers, followees])
 
     if(!isOpen)
         return null;
@@ -79,7 +80,7 @@ export function FollowModal({isOpen, onClose}: any){
 }
 
 export function Follower(){
-    const {followers, processFollow}: any = useOutletContext();
+    const {followers, followees, processFollow}: any = useOutletContext();
 
     return <div className='content'>
         <SearchBar placeholder='검색' />
@@ -89,8 +90,9 @@ export function Follower(){
                 <span className='label'>팔로워가 존재하지 않습니다.</span> :
                 followers.map((user: Follower) => 
                     <Row key={user.target_user_id} id={user.target_user_id}
-                img={user.profile_img_url} name={user.nickname} onProcess={processFollow}
-                type={"follower"} isFollower={true} />
+                img={user.profile_img_url} amount={user.follower_count}
+                name={user.nickname} onProcess={processFollow}
+                isFollowing={followees.some((f: Follower) => f.target_user_id === user.target_user_id)} />
                 )
             }
         </div>
@@ -98,7 +100,7 @@ export function Follower(){
 }
 
 export function Followee(){
-    const {followers, followees, processFollow}: any = useOutletContext();
+    const {followees, processFollow}: any = useOutletContext();
 
     return <div className='content'>
         <SearchBar placeholder='검색' />
@@ -107,31 +109,28 @@ export function Followee(){
                 followees.length === 0 ?
                 <span className='label'>팔로잉이 존재하지 않습니다.</span> :
                 followees.map((user: Follower) => 
-                    <Row key={user.target_user_id} id={user.target_user_id}
-                     img={user.profile_img_url} name={user.nickname} onProcess={processFollow}
-                     type={"followee"} 
-                     isFollower={followers.some((f: Follower) => f.target_user_id === user.target_user_id)} />
+                    <Row key={user.target_user_id} id={user.target_user_id} img={user.profile_img_url} 
+                     name={user.nickname} onProcess={processFollow} amount={user.follower_count}
+                     isFollowing={followees.some((f: Follower) => f.target_user_id === user.target_user_id)} />
                 )
             }
         </div>
     </div>;
 }
 
-function Row({id, img, name, onProcess, type, isFollower}: any){
+function Row({id, img, name, amount, onProcess, isFollowing}: any){
     return <div className='follow-row'>
         <span className='left-side'>
             <img alt='타 사용자 프로필 이미지' src={img} />
             <span className='user-info'>
                 <span className='name'>{name}</span>
-                <span className='amount'>수</span>
+                <span className='amount'>팔로워 {amount}</span>
             </span>
         </span>
         {
-            type === "follower" ?
-            <button onClick={() => onProcess(id)}>삭제</button> :
-                isFollower ?
-                <button onClick={() => onProcess(id)}>팔로잉</button>:
-                <button onClick={() => onProcess(id)}>팔로우</button>
+            isFollowing ?
+            <button onClick={() => onProcess(id)}>팔로우 취소</button>:
+            <button onClick={() => onProcess(id)}>팔로우</button>
         }
         
     </div>;

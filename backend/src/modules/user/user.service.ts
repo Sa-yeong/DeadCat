@@ -10,10 +10,91 @@ import {
     UpdateShareOptionDto,
 } from './dto/update-share-option.dto';
 import { UserRelationResponseDto } from './dto/user-relation-response.dto';
+import { ToggleFollowResponseDto } from './dto/toggle-follow-response.dto';
+import { PrismaService } from 'src/providers/database/prisma.service';
 
 @Injectable()
 export class UserService {
-    constructor(private readonly userRepository: UserRepository) {}
+    constructor(
+        private readonly userRepository: UserRepository,
+        private readonly prisma: PrismaService,
+    ) {}
+
+    //팔로우 메서드
+    async toggleFollow(
+        followerIdStr: string,
+        followeeIdStr: string,
+    ): Promise<ToggleFollowResponseDto> {
+        // 1. String -> BigInt 변환
+        const followerId = BigInt(followerIdStr);
+        const followeeId = BigInt(followeeIdStr);
+
+        // 2. 자기 자신 팔로우 방지
+        if (followerId === followeeId) {
+            throw new BadRequestException('자기 자신은 팔로우할 수 없습니다.');
+        }
+
+        // 3. 팔로우 대상 유저 존재 확인
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const targetUser = await this.prisma.users.findUnique({
+            where: { id: followeeId },
+        });
+
+        if (!targetUser) {
+            throw new NotFoundException('존재하지 않는 유저입니다.');
+        }
+
+        // 4. 기존 팔로우 상태 확인
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const existingFollow = await this.prisma.follow.findUnique({
+            where: {
+                follower_id_followee_id: {
+                    follower_id: followerId,
+                    followee_id: followeeId,
+                },
+            },
+        });
+
+        let isFollowing = false;
+
+        if (existingFollow) {
+            // 이미 팔로우 상태 -> 팔로우 취소 (DELETE)
+            await this.prisma.follow.delete({
+                where: {
+                    follower_id_followee_id: {
+                        follower_id: followerId,
+                        followee_id: followeeId,
+                    },
+                },
+            });
+            isFollowing = false;
+        } else {
+            // 팔로우 안 되어 있음 -> 팔로우 등록 (CREATE)
+            await this.prisma.follow.create({
+                data: {
+                    follower_id: followerId,
+                    followee_id: followeeId,
+                },
+            });
+            isFollowing = true;
+        }
+
+        // 5. Response 구성 (BigInt 타입 id를 response spec에 맞춰 number 타입으로 변환)
+        return {
+            code: 'success',
+            description: isFollowing ? '팔로우 성공' : '팔로우 취소 성공',
+            data: {
+                is_following: isFollowing,
+                target_user: {
+                    id: Number(targetUser.id),
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    nickname: targetUser.nickname,
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    profile_img_url: targetUser.profile_img_url,
+                },
+            },
+        };
+    }
 
     async getMyProfile(userId: string): Promise<UserProfileResponseDto> {
         const user = await this.userRepository.findMyProfile(userId);
@@ -54,33 +135,92 @@ export class UserService {
         };
     }
 
-    /*async getUserRelations(
-        userId: string,
-        type: 'FOLLOWER' | 'FOLLOWING',
-    ): Promise<UserRelationResponseDto[]> {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const relations = await this.userRepository.findRelations(userId, type);
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-        return relations.map((rel) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const targetUser =
-                type === 'FOLLOWER'
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      rel.users_follows_follower_idTousers
-                    : rel.users_follows_followee_idTousers;
-
-            return {
-                target_user_id: Number(targetUser.id),
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                nickname: targetUser.nickname,
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                profile_img_url: targetUser.profile_img_url ?? null,
-            };
-        });
-    }*/
     // 18. 나의 팔로워 및 팔로잉 유저 목록 조회
-    async getUserRelations(userId: string, type: string) {
+    async getUserRelations(
+        userIdStr: string,
+        type: 'FOLLOWER' | 'FOLLOWING',
+    ): Promise<UserRelationResponseDto> {
+        const userId = BigInt(userIdStr);
+
+        let usersData: {
+            target_user_id: number;
+            nickname: string;
+            profile_img_url: string | null;
+            follower_count: number;
+        }[] = [];
+
+        if (type === 'FOLLOWER') {
+            // 나를 팔로우하는 유저들 목록 (내 followee_id = userId)
+            const follows = await this.prisma.follow.findMany({
+                where: { followee_id: userId },
+                include: {
+                    users_follow_follower_idTousers: {
+                        select: {
+                            id: true,
+                            nickname: true,
+                            profile_img_url: true,
+                            _count: {
+                                select: {
+                                    // 해당 유저를 팔로우하고 있는 수 (유저의 팔로워 수)
+                                    follow_follow_followee_idTousers: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            usersData = follows.map((f) => {
+                const u = f.users_follow_follower_idTousers;
+                return {
+                    target_user_id: Number(u.id),
+                    nickname: u.nickname,
+                    profile_img_url: u.profile_img_url,
+                    follower_count: u._count.follow_follow_followee_idTousers,
+                };
+            });
+        } else {
+            // 내가 팔로우하는 유저들 목록 (내 follower_id = userId)
+            const follows = await this.prisma.follow.findMany({
+                where: { follower_id: userId },
+                include: {
+                    users_follow_followee_idTousers: {
+                        select: {
+                            id: true,
+                            nickname: true,
+                            profile_img_url: true,
+                            _count: {
+                                select: {
+                                    // 해당 유저를 팔로우하고 있는 수 (유저의 팔로워 수)
+                                    follow_follow_followee_idTousers: true,
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            usersData = follows.map((f) => {
+                const u = f.users_follow_followee_idTousers;
+                return {
+                    target_user_id: Number(u.id),
+                    nickname: u.nickname,
+                    profile_img_url: u.profile_img_url,
+                    follower_count: u._count.follow_follow_followee_idTousers,
+                };
+            });
+        }
+
+        return {
+            is_success: true,
+            data: {
+                users: usersData,
+            },
+        };
+    }
+
+    // 18. 나의 팔로워 및 팔로잉 유저 목록 조회
+    /*async getUserRelations(userId: string, type: string) {
         // 1. 조회 유형 검증
         const upperType = type?.toUpperCase();
 
@@ -90,50 +230,40 @@ export class UserService {
             );
         }
 
-        // 문자열 사용자 ID를 BigInt로 변환
         const currentUserId = BigInt(userId);
 
         // 2. 팔로워 수, 팔로잉 수, 목록 병렬 조회
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const [counts, followList] = await Promise.all([
             this.userRepository.getRelationCounts(currentUserId),
-
             upperType === 'FOLLOWER'
                 ? this.userRepository.findFollowers(currentUserId)
                 : this.userRepository.findFollowings(currentUserId),
         ]);
 
-        // 3. 조회 유형에 맞는 상대방 사용자 정보 추출
+        // 3. 사용자 정보 추출 및 DTO 형태로 변환
         const users = followList
-            .map((item: any) => {
-                // FOLLOWER: 나를 팔로우하는 사용자
-                // FOLLOWING: 내가 팔로우하는 사용자
+            .map((item: any) =>
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-                return upperType === 'FOLLOWER'
+                upperType === 'FOLLOWER'
                     ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                       item?.users_follow_follower_idTousers
-                    : item?.users_follow_followee_idTousers;
-            })
-            // 연결된 사용자 정보가 없는 데이터 제외
+                    : // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                      item?.users_follow_followee_idTousers,
+            )
             .filter((user: any) => user?.id != null)
-            // API 응답 DTO 형태로 변환
             .map((user: any) => ({
                 target_user_id: Number(user.id),
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 nickname: user.nickname,
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 profile_img_url: user.profile_img_url ?? null,
             }));
 
-        // 4. 응답 반환
+        // 4. 반환 (글로벌 TransformInterceptor가 { success: true, data: ... } 형태로 감싸줍니다)
         return {
-            is_success: true,
-            code: 'COMMON200',
-            message: '성공입니다.',
-            data: {
-                follower_count: counts.follower_count,
-                following_count: counts.following_count,
-                users,
-            },
+            follower_count: counts.follower_count,
+            following_count: counts.following_count,
+            users,
         };
-    }
+    }*/
 }

@@ -13,11 +13,9 @@ import { AiOutlineRise, AiOutlineFall } from 'react-icons/ai';
 // }
 
 export function RoomList(){
-    const {riseRooms, fallRooms, rooms}: any = useOutletContext();
+    const {riseRooms, fallRooms, rooms, currentUser}: any = useOutletContext();
 
     const navigate = useNavigate();
-
-    console.log(rooms[0]?.room_img_url);
 
     return <div className="roomList-container">
         <div>
@@ -34,7 +32,7 @@ export function RoomList(){
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
                             onClick={()=>navigate(`/room/${room.user_id}`)}
-                            isMine={false} />
+                            isMine={currentUser === room.user_id ? true : false} />
                         })
                     }
                 </Carousel>
@@ -54,7 +52,7 @@ export function RoomList(){
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
                             onClick={()=>navigate(`/room/${room.user_id}`)}
-                            isMine={false} />
+                            isMine={currentUser === room.user_id ? true : false} />
                         })
                     }
                 </Carousel>
@@ -71,7 +69,7 @@ export function RoomList(){
                         return <Room img={room.room_img_url} nickname={room.nickname}
                         profit={room.profit_rate} tags={room.tags}
                         onClick={()=>navigate(`/room/${room.user_id}`)}
-                        isMine={false}  />
+                        isMine={currentUser === room.user_id ? true : false}  />
                     })
                 }
             </div>

@@ -15,14 +15,16 @@ interface Holdings{
     market: string;
 }
 
-export function MyStockList() {
+export function MyStockList({token}:any) {
     const [myHoldings, setMyHoldings] = useState<Holdings[]>([]);
     const navigate = useNavigate();
 
     useEffect(() => {
         const fetchHoldings = async () => {
             try{
-                const token = localStorage.getItem('token');
+                if(!token)
+                    return null;
+                
                 const response = await api.get('/holdings', {
                     headers: {Authorization: `Bearer ${token}`}
                 })

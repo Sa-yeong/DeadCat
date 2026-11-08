@@ -1,3 +1,4 @@
+import './Signup.css'
 import { useState } from "react";
 import { api } from "../api/axios";
 

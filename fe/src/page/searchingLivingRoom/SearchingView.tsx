@@ -7,6 +7,7 @@ import { FaAngleDown, FaPlus, FaCheck } from 'react-icons/fa6';
 import { LuSparkles, LuArrowUpDown } from 'react-icons/lu';
 import { GoMirror } from 'react-icons/go';
 import { api } from '../../api/axios';
+import { LoginModal } from '../../modal/LoginModal';
 
 
 interface RoomDetail{
@@ -34,6 +35,7 @@ export function SearchingView(){
     const [keywords, setKeywords] = useState<string[]>([]);
     const [clickSim, setClickSim] = useState<boolean>(false);
     const [clickOpp, setClickOpp] = useState<boolean>(false);
+    const [currentUser, setCurrentUser] = useState<number|null>(null);
     const [rooms, setRooms] = useState<RoomDetail[]>([]);
     const [riseRooms, setRiseRooms] = useState<RoomDetail[]>([]);
     const [fallRooms, setFallRooms] = useState<RoomDetail[]>([]);
@@ -120,8 +122,7 @@ export function SearchingView(){
                     response = await api.get('/home/rooms/tags');
                 }
 
-                setTags(response.data.data.data.tags);
-                console.log(response.data.data.data.tags);
+                setTags(response.data.data.tags);
             }catch(e){console.error(`전체 태그 목록 조회 실패: `, e)}
         }
         
@@ -136,9 +137,9 @@ export function SearchingView(){
                     )
                 }else{response = await api.get('/home/rooms/explore')}
 
-                setRiseRooms(response.data.data.data.soaring_rooms);
-                setFallRooms(response.data.data.data.plummeting_rooms);
-                console.log(response.data.data.data);
+                setCurrentUser(response.data.user_id);
+                setRiseRooms(response.data.data.soaring_rooms);
+                setFallRooms(response.data.data.plummeting_rooms);
             }catch(e){console.error('급등 / 급락 거실 조회 실패: ', e);}
         }
 
@@ -161,9 +162,9 @@ export function SearchingView(){
                     params: {sort: order}
                 });
 
-                setRooms(response.data.data.data.rooms);
-                setSeletedTags(response.data.data.data.reference_tags)
-                console.log('유사한 거실 조회 성공 ', response.data.data.data)
+                setRooms(response.data.data.rooms);
+                setSeletedTags(response.data.data.reference_tags)
+                console.log('유사한 거실 조회 성공 ', response.data.data)
             }catch(e){console.error('유사한 거실 조회 실패: ', e);}
         }
 
@@ -180,9 +181,9 @@ export function SearchingView(){
                     params: {sort: order}
                 });
 
-                setRooms(response.data.data.data.rooms);
-                setSeletedTags(response.data.data.data.reference_tags)
-                console.log('정반대 거실 조회 성공 ', response.data.data.data)
+                setRooms(response.data.data.rooms);
+                setSeletedTags(response.data.data.reference_tags)
+                console.log('정반대 거실 조회 성공 ', response.data.data)
             }catch(e){console.error('정반대 거실 조회 실패: ', e);}
         }
 
@@ -218,8 +219,7 @@ export function SearchingView(){
                     })
                 }
 
-                setRooms(response.data.data.data.rooms);
-                console.log(response.data.data.data);
+                setRooms(response.data.data.rooms);
             }catch(e){console.error('거실 리스트 조회 실패: ', e)}
         };
 
@@ -269,21 +269,22 @@ export function SearchingView(){
             <Header tags={tags} order={order} setOrder={setOrder} setSelectedTags={setSeletedTags}
             setKeywords={setKeywords} setClickSim={setClickSim} setClickOpp={setClickOpp}
             findTag={findTag} findKeyword={findKeyword}
-            searchedKeyword={searchedKeyword}
+            searchedKeyword={searchedKeyword} token={token}
             setSearchedKeyword={setSearchedKeyword} searchStock={searchStock} />
             <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, 
                 setClickOpp, setClickSim,
-                riseRooms, fallRooms, rooms}} />
+                riseRooms, fallRooms, rooms, currentUser}} />
         </div>
     </div>
     ;
 }
 
-function Header({tags, order, setOrder, setSelectedTags, setKeywords,
+function Header({token, tags, order, setOrder, setSelectedTags, setKeywords,
     setClickSim, setClickOpp, findTag, findKeyword, searchedKeyword,
     setSearchedKeyword, searchStock}:any){  
     
     const [searchText, setSearchText] = useState<string>("");
+    const [isOpen, setIsOpen] = useState<boolean>(false);
 
     // 태그 종류
     const content = (
@@ -299,6 +300,19 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             }
         </div>
     )
+
+    const clickButton = (type: string) => {
+        if(token){ // 로그인 상태인 경우
+            if(type === "Sim"){
+                setClickSim(true);
+                setClickOpp(false);
+            }else{
+                setClickOpp(true);
+                setClickSim(false);
+            }
+        } else
+            setIsOpen(true);
+    }
 
     const items: MenuProps['items'] = [
         {
@@ -386,9 +400,10 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
                 </span>
             </Dropdown>
             <button style={{color: '#528bff', borderColor: '#1c2f56'}}
-            onClick={()=>{setClickSim(true); setClickOpp(false);}}> <LuSparkles /> 나와 유사한 거실</button>
+            onClick={()=>clickButton('Sim')}> <LuSparkles /> 나와 유사한 거실</button>
             <button style={{color: '#ff4d4d', borderColor: '#4e1717'}}
-            onClick={()=>{setClickOpp(true); setClickSim(false);}}> <GoMirror /> 나와 정반대 거실</button>
+            onClick={()=>clickButton('Opp')}> <GoMirror /> 나와 정반대 거실</button>
         </span>
+        <LoginModal isOpen={isOpen} onClose={()=>setIsOpen(false)} />
     </div>;
 }

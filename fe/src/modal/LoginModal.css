@@ -13,20 +13,20 @@
     z-index: 9999;
 }
 .modal-overlay .login-modal{
-    background: white;
+    background: #131316;
     border-radius: 8px;
     width: 400px;
     padding: 40px;
-    box-shadow: 0 4px 20px;
+    box-shadow: 0 4px 20px #131316;
     position: relative;
 }
-.modal-overlay .login-modal .modal-close{
+.modal-overlay .login-modal svg{
     position: absolute;
-    width: 1.5vw;
-    height: 1.5vw;
     right: 5px;
     top: 5px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    background: transparent;
+    border: none;
+    color: gray;
+    width: 20px;
+    height: 20px;
 }
