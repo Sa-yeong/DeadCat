@@ -314,6 +314,7 @@ export function StockDetailPage() {
             bars={bars}
             timeframe={timeframe}
             today={volume}
+            market={basic?.stock_code === stockCode ? basic.market : undefined}
             solid={solid.volume}
             onToggle={() => setBlockSolid('volume')}
           />

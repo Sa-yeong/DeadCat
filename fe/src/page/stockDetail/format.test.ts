@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { availableLabel, centerTone, chartPriceFormat, chartPriceText, down, headerPrice, marketPrice, orderTime, up, usd } from './format';
+import { availableLabel, centerTone, chartPriceFormat, chartPriceText, down, headerPrice, marketPrice, orderTime, tradingValueText, up, usd } from './format';
+
+describe('거래량 블럭의 거래대금 글자', () => {
+  it('해외 — 억 · 조 뒤에 달러', () => {
+    expect(tradingValueText(10_300_000_000, 'FOREIGN')).toBe('103억 달러');
+    expect(tradingValueText(1_000_000_000_000, 'FOREIGN')).toBe('1조 달러');
+  });
+  it('해외 1억 달러 미만 — 만 단위로 줄인다', () => {
+    expect(tradingValueText(84_000_000, 'FOREIGN')).toBe('8,400만 달러');
+    expect(tradingValueText(5_000, 'FOREIGN')).toBe('5,000 달러');
+  });
+  it('국내 — 지금 그대로, 단위 없음', () => {
+    expect(tradingValueText(10_300_000_000, 'DOMESTIC')).toBe('103억');
+    expect(tradingValueText(84_000_000, 'DOMESTIC')).toBe('84,000,000');
+  });
+  it('시장을 아직 모르면 단위를 붙이지 않는다', () => {
+    expect(tradingValueText(10_300_000_000, undefined)).toBe('103억');
+  });
+});
 
 describe('머리 가격 글자', () => {
   const foreign = { market: 'FOREIGN' as const, current_price: 186.64, change_price: 5.04, current_price_krw: 254390, change_price_krw: 6870 };

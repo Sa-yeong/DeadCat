@@ -68,6 +68,19 @@ export function short(n: number): string {
   return won(n);
 }
 
+/**
+ * 거래량 블럭의 오늘 거래대금. 해외는 값이 달러라 단위를 붙인다(103억 달러).
+ * 해외 1억 달러 미만은 자릿수를 다 쓰면 한 줄에 안 들어가서 만 단위로(8,400만 달러).
+ * 국내와 시장을 아직 모를 때는 단위 없이 그대로.
+ */
+export function tradingValueText(n: number, market: PriceMarket | undefined): string {
+  if (market !== 'FOREIGN') return short(n);
+  const a = Math.abs(n);
+  if (a >= 1e8) return `${short(n)} 달러`;
+  if (a >= 1e4) return `${Math.round(n / 1e4).toLocaleString('ko-KR')}만 달러`;
+  return `${Math.round(n).toLocaleString('ko-KR')} 달러`;
+}
+
 /** 주식 수 — 8,100,000 → 8.1M */
 export function shares(n: number): string {
   if (Math.abs(n) >= 1e6) return `${(n / 1e6).toFixed(1)}M`;

@@ -1,6 +1,7 @@
 import { useLayout } from '../layout';
 import { Block } from './Block';
-import { barLabel, down, short, shares, up } from '../format';
+import { barLabel, down, shares, tradingValueText, up } from '../format';
+import type { PriceMarket } from '../format';
 import type { Candle, Timeframe, VolumeSummary } from '../types';
 import { R } from '../radius';
 
@@ -29,12 +30,14 @@ export function VolumeBlock({
   bars: all,
   timeframe,
   today,
+  market,
   solid,
   onToggle,
 }: {
   bars: Candle[];
   timeframe: Timeframe;
   today: VolumeSummary | null;
+  market: PriceMarket | undefined;
   solid: boolean;
   onToggle: () => void;
 }) {
@@ -70,7 +73,7 @@ export function VolumeBlock({
               <b style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 13, color: '#EDEDEA' }}>
                 {shares(today.total_volume)}
               </b>{' '}
-              주 · 거래대금 {short(today.total_trading_value)}
+              주 · 거래대금 {tradingValueText(today.total_trading_value, market)}
             </span>
           )}
         </div>
