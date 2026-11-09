@@ -91,7 +91,7 @@ function setup(opts: {
     const tags = {
         assignInvestmentTags: jest.fn().mockResolvedValue(undefined),
     };
-    const marketTime = { isOperatingTime: jest.fn(() => opts.open) };
+    const marketTime = { isTradingOpen: jest.fn(() => opts.open) };
     const funds = {
         usdKrw: jest.fn().mockResolvedValue(1400),
         availableCash: jest

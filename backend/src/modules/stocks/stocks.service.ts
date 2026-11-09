@@ -18,11 +18,6 @@ import {
 import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-response.dto';
 import { isForeignStock, marketOf, tickRuleOf } from '../orders/order-rules';
 import { quoteFromCloses, toKrwQuote } from '../../price/valuation';
-import {
-    isFinishedUsBar,
-    replaceFormingBar,
-    usClock,
-} from '../../price/us-session';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 /** KIS 호가 조회 결과(국내·해외 공통 모양) */
@@ -189,7 +184,8 @@ export class StocksService {
             is_favorite: isFavorite,
             is_event: meta.is_event,
             tick_rule: tickRuleOf(foreign, meta.categories?.name),
-            market_open: this.marketTime.isOperatingTime(marketOf(foreign)),
+            market_open: this.marketTime.isTradingOpen(marketOf(foreign)),
+            market_session: foreign ? this.marketTime.foreignSession() : null,
         });
     }
 
@@ -252,16 +248,16 @@ export class StocksService {
                 timeframe,
             );
 
-            const candles = history.map((h) => ({
-                write_time: h.record_date.toISOString(), // ISO-8601
-                open_price: Number(h.open_price),
-                close_price: Number(h.close_price),
-                low_price: Number(h.low_price),
-                high_price: Number(h.high_price),
-                volume: Number(h.volume ?? 0),
-            }));
-            return this.withRegularBar(candles, stockCode).map(
-                (c) => new StockChartResponseDto(c),
+            return history.map(
+                (h) =>
+                    new StockChartResponseDto({
+                        write_time: h.record_date.toISOString(), // ISO-8601
+                        open_price: Number(h.open_price),
+                        close_price: Number(h.close_price),
+                        low_price: Number(h.low_price),
+                        high_price: Number(h.high_price),
+                        volume: Number(h.volume ?? 0),
+                    }),
             );
         }
 
@@ -281,37 +277,6 @@ export class StocksService {
         );
     }
 
-    /**
-     * 해외 일봉 마지막 막대 — DB 는 수집 시점에 따라 시간외 값이 남아 있거나 아직 없다.
-     * 끝난 정규장 일봉을 알고 있으면 그 날짜 막대를 그것으로 바꾼다(그보다 뒤 막대는 진행 중 값이라 뺀다).
-     */
-    private withRegularBar<T extends StockChartItem>(
-        candles: T[],
-        code: string,
-    ): StockChartItem[] {
-        const bar = this.price.regularBarOf(code);
-        if (!bar) return candles;
-        const d = bar.date;
-        const day = new Date(
-            Date.UTC(
-                Number(d.slice(0, 4)),
-                Number(d.slice(4, 6)) - 1,
-                Number(d.slice(6, 8)),
-            ),
-        ).toISOString();
-        return [
-            ...candles.filter((c) => c.write_time < day),
-            {
-                write_time: day,
-                open_price: bar.open,
-                close_price: bar.close,
-                low_price: bar.low,
-                high_price: bar.high,
-                volume: bar.volume,
-            },
-        ];
-    }
-
     private readonly logger = new Logger(StocksService.name);
     /** 같은 종목·주기를 동시에 여러 명이 열어도 KIS 는 한 번만 부른다 */
     private readonly periodLoads = new Map<string, Promise<StockChartItem[]>>();
@@ -325,9 +290,7 @@ export class StocksService {
         },
         tf: PeriodFrame,
     ): Promise<StockChartItem[]> {
-        const cacheTf = this.isForeign(meta)
-            ? this.foreignPeriodKey(tf)
-            : `${tf}.${PERIOD_CACHE_VER}`;
+        const cacheTf = `${tf}.${PERIOD_CACHE_VER}`;
         const cached = await this.price.readStockChart(meta.code, cacheTf);
         if (cached.length) return cached;
 
@@ -356,15 +319,6 @@ export class StocksService {
             this.periodLoads.set(key, job);
         }
         return job;
-    }
-
-    /**
-     * 해외 주 · 월 · 년봉 보관 칸 — 뉴욕 날짜와 장 마감 전후로 나눈다.
-     * 그래야 정규장이 끝나면(끝난 일봉이 하나 늘면) 보관 시간을 기다리지 않고 다시 만든다.
-     */
-    private foreignPeriodKey(tf: PeriodFrame): string {
-        const c = usClock();
-        return `${tf}.${PERIOD_CACHE_VER}.us.${c.date}.${isFinishedUsBar(c.date, c) ? 'closed' : 'open'}`;
     }
 
     private async loadPeriodChart(
@@ -410,25 +364,8 @@ export class StocksService {
             if (got.length < 100) break;
             end = this.dayBefore(oldest);
         }
-        if (foreign) {
-            // 진행 중 막대는 시간외 값이 섞여 있다 — 끝난 일봉으로 다시 만든다(년봉은 월봉에서 나온다)
-            const daily = await this.kisProvider.getOverseasDailyChart(
-                meta.code,
-                meta.exchange_code ?? '',
-                '',
-                today,
-                '0',
-            );
-            const formed = replaceFormingBar(
-                rows,
-                daily,
-                tf === 'WEEK' ? 'WEEK' : 'MONTH',
-                usClock(),
-            );
-            const candles = this.toCandles(formed);
-            return tf === 'YEAR' ? this.byYear(candles) : candles;
-        }
-        return this.toCandles(rows);
+        const candles = this.toCandles(rows);
+        return foreign && tf === 'YEAR' ? this.byYear(candles) : candles;
     }
 
     /** YYYYMMDD 의 전날 */
@@ -667,9 +604,9 @@ export class StocksService {
             meta.stock_type === 'OVERSEAS' ||
             /^[A-Za-z]+$/.test(stockCode);
 
-        // 해외 호가는 정규장 시간에만 — 장외 값은 애프터마켓이 끝날 때의 호가라 현재가(정규장 종가)와 어긋난다.
-        // 판정은 주문 규칙과 같다. 장외에는 KIS 를 부르지 않는다
-        if (isOverseas && !this.marketTime.isOperatingTime('FOREIGN')) {
+        // 해외 호가는 지금 열린 장의 호가 — 닫힌 시간에는 KIS 를 부르지 않는다(주문 규칙과 같은 판정)
+        const session = isOverseas ? this.marketTime.foreignSession() : null;
+        if (session === 'CLOSED') {
             return new OrderbookResponseDto(stockCode, [], []);
         }
 
@@ -680,6 +617,7 @@ export class StocksService {
                 ? this.kisProvider.getOverseasOrderbook(
                       stockCode,
                       meta.exchange_code || 'NAS',
+                      session === 'DAY',
                   )
                 : this.kisProvider.getOrderbook(stockCode),
         );

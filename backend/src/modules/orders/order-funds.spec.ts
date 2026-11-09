@@ -304,7 +304,7 @@ function setup(balance: bigint, held: Record<string, number> = {}) {
         { getUsdKrwRate: jest.fn().mockResolvedValue(1400) } as never,
         { fill: jest.fn() } as never,
         { assignInvestmentTags: jest.fn() } as never,
-        { isOperatingTime: () => false } as never,
+        { isTradingOpen: () => false } as never,
         funds,
     );
     return { service, repo, state };

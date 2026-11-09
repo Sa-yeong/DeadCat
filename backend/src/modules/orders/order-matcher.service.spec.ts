@@ -58,7 +58,7 @@ function setup(openMarkets: string[], orders = [pendingOrder()]) {
         assignInvestmentTags: jest.fn().mockResolvedValue(undefined),
     };
     const marketTime = {
-        isOperatingTime: jest.fn((m: string) => openMarkets.includes(m)),
+        isTradingOpen: jest.fn((m: string) => openMarkets.includes(m)),
     };
     const notifications = { publish: jest.fn() };
     const matcher = new OrderMatcher(

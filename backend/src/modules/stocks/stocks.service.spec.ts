@@ -55,7 +55,10 @@ function serviceWith(opts: {
                 ),
         } as never,
         {} as never,
-        { isOperatingTime: jest.fn().mockReturnValue(false) } as never,
+        {
+            isTradingOpen: jest.fn().mockReturnValue(false),
+            foreignSession: jest.fn().mockReturnValue('CLOSED'),
+        } as never,
     );
     return { service, usdKrwForValuation };
 }
@@ -145,5 +148,82 @@ describe('getStockDetail — 원화 칸', () => {
         const d = await service.getStockDetail('NVDA');
         expect(d.current_price_krw).toBe(0);
         expect(d.change_price_krw).toBeNull();
+    });
+});
+
+describe('호가 · 장 구분 — 해외', () => {
+    function orderbookService(session: string, stock_type = 'FOREIGN') {
+        const getOverseasOrderbook = jest
+            .fn()
+            .mockResolvedValue({ asks: [{ price: 359.88, quantity: 1 }], bids: [] });
+        const getOrderbook = jest
+            .fn()
+            .mockResolvedValue({ asks: [], bids: [{ price: 70000, quantity: 3 }] });
+        const service = new StocksService(
+            {
+                readPrices: jest.fn().mockResolvedValue(new Map()),
+                usdKrwForValuation: jest.fn().mockResolvedValue(1363),
+            } as never,
+            {} as never,
+            {
+                findStockByCode: jest.fn().mockResolvedValue({
+                    id: 1n,
+                    code: stock_type === 'FOREIGN' ? 'TSLA' : '005930',
+                    stock_type,
+                    exchange_code: 'NASD',
+                    is_event: false,
+                    characters: null,
+                    categories: null,
+                }),
+                findLastTwoCloses: jest.fn().mockResolvedValue([]),
+            } as never,
+            { getOverseasOrderbook, getOrderbook } as never,
+            {
+                isTradingOpen: jest.fn().mockReturnValue(session !== 'CLOSED'),
+                foreignSession: jest.fn().mockReturnValue(session),
+            } as never,
+        );
+        return { service, getOverseasOrderbook, getOrderbook };
+    }
+
+    it('닫힌 시간에는 KIS 를 부르지 않고 비운다', async () => {
+        const { service, getOverseasOrderbook } = orderbookService('CLOSED');
+        const book = await service.getOrderbook('TSLA');
+        expect(book.asks).toEqual([]);
+        expect(book.bids).toEqual([]);
+        expect(getOverseasOrderbook).not.toHaveBeenCalled();
+    });
+
+    it('프리마켓은 그 장의 호가(정규 코드)', async () => {
+        const { service, getOverseasOrderbook } = orderbookService('PRE');
+        const book = await service.getOrderbook('TSLA');
+        expect(getOverseasOrderbook).toHaveBeenCalledWith('TSLA', 'NASD', false);
+        expect(book.asks).toHaveLength(1);
+    });
+
+    it('데이마켓은 주간거래 코드', async () => {
+        const { service, getOverseasOrderbook } = orderbookService('DAY');
+        await service.getOrderbook('TSLA');
+        expect(getOverseasOrderbook).toHaveBeenCalledWith('TSLA', 'NASD', true);
+    });
+
+    it('국내 호가는 장 구분과 무관', async () => {
+        const { service, getOrderbook, getOverseasOrderbook } =
+            orderbookService('CLOSED', 'DOMESTIC');
+        await service.getOrderbook('005930');
+        expect(getOrderbook).toHaveBeenCalledWith('005930');
+        expect(getOverseasOrderbook).not.toHaveBeenCalled();
+    });
+
+    it('머리에 지금 장을 알려 준다 — 국내는 null', async () => {
+        const f = orderbookService('AFTER');
+        expect(await f.service.getStockDetail('TSLA')).toMatchObject({
+            market_open: true,
+            market_session: 'AFTER',
+        });
+        const d = orderbookService('AFTER', 'DOMESTIC');
+        expect(await d.service.getStockDetail('005930')).toMatchObject({
+            market_session: null,
+        });
     });
 });

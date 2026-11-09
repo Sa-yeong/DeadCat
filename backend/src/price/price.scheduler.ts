@@ -11,20 +11,19 @@ import {
 import { PriceService } from './price.service';
 import {
     isFinishedUsBar,
-    isUsAfterHours,
-    isUsRegular,
-    regularVolumeOf,
     usClock,
+    type FinishedBar,
     type UsClock,
 } from './us-session';
+import {
+    MarketTimeService,
+    type ForeignSession,
+} from '../modules/character-engine/service/market-time.service';
 
 //const POLL_CRON = '*/30 * * * * *';
 
 const POLL_CRON = '0 * * * * *'; // 매 1분마다 실행으로 변경
 const PRICE_TTL_SECONDS = 100;
-/** 애프터마켓이 끝나기 전 그날 시간외 거래량을 다시 재는 간격 */
-const EXTENDED_RECHECK_MS = 15 * 60 * 1000;
-const EXTENDED_MEMO_MAX = 200;
 const DEFAULT_USD_KRW = 1350;
 const VOLUME_SUMMARY_TTL_SECONDS = 300;
 /** 일봉을 모으는 기간(년) — 차트 확대·축소에서 주봉으로 넘어가기(약 13개월) 전에 끊기지 않게 */
@@ -63,12 +62,13 @@ export class PriceScheduler implements OnModuleInit {
         private readonly prisma: PrismaService,
         private readonly kis: KisProvider,
         private readonly price: PriceService,
+        private readonly marketTime: MarketTimeService,
     ) {}
 
-    /** 종목 · 날짜별 시간외 거래량 — 분봉을 여러 번 받아야 해서 기억해 둔다 */
-    private readonly extended = new Map<
+    /** 종목별 정규장이 끝난 마지막 일봉 — 끝난 막대가 바뀔 때(뉴욕 날짜 · 장 마감)만 다시 받는다 */
+    private readonly finishedBars = new Map<
         string,
-        { volume: number; amount: number; at: number }
+        { key: string; bar: FinishedBar }
     >();
 
     // 서버 시작 시 실행되는 초기화 로직
@@ -321,138 +321,116 @@ export class PriceScheduler implements OnModuleInit {
     }
 
     /**
-     * 해외 시세 — 정규장 값만(체결 판단도 같은 값을 본다).
-     *  · 장중: 현재가 API
-     *  · 장외: 일봉의 끝난 막대. 현재가 API 는 프리 · 애프터 체결을 주므로 쓰지 않는다
-     *  · 애프터마켓 동안: 이 서버가 오늘 본 마지막 정규장 값이 있으면 그대로(그 시간 일봉 종가는 장담 못 함)
+     * 해외 시세 — 현재가는 지금 열린 장의 마지막 체결가(체결 판단도 같은 값을 본다).
+     * 등락 기준은 직전 정규장 종가: KIS 값이 데이 · 프리 · 정규에서 그대로 맞고, 애프터는 오늘 정규장 마지막 체결가로 다시 계산.
+     * 거래량 · 거래대금은 정규장 기준이라 정규장 밖에서는 끝난 일봉 값을 쓴다.
+     * 닫힌 시간(장 사이 · 주말)에는 마지막 값을 지킨다 — 이 서버가 들고 있는 값이 없으면 KIS 에서 한 번만.
      */
     private async readOverseasPrices(
         overseas: { symbol: string; exchange: string }[],
     ): Promise<Map<string, StockPrice>> {
+        const session = this.marketTime.foreignSession();
         const clock = usClock();
-        const exchanges = new Map(overseas.map((o) => [o.symbol, o.exchange]));
-        if (isUsRegular(clock)) {
-            const live = await this.kis.getOverseasPrices(overseas);
-            for (const [code, price] of live) {
-                price.regular_et_date = clock.date;
-                const exchange = exchanges.get(code) ?? '';
-                await this.takeOutExtended(
-                    code,
-                    exchange,
-                    price,
-                    clock.date,
-                    'pre',
-                    clock,
-                );
-                // 서버를 장중에 켰으면 어제 끝난 일봉이 아직 없다 — 일봉 차트 마지막 막대에 쓴다
-                if (!this.price.regularBarOf(code)) {
-                    await this.fetchFinishedBar(code, exchange, price, clock);
-                }
-            }
-            return live;
-        }
         const result = new Map<string, StockPrice>();
-        const rest: typeof overseas = [];
-        for (const item of overseas) {
-            const kept = isUsAfterHours(clock)
-                ? this.price.regularPriceOf(item.symbol, clock.date)
-                : null;
-            if (kept) result.set(item.symbol, kept);
-            else rest.push(item);
+
+        const missing: typeof overseas = [];
+        if (session === 'CLOSED') {
+            for (const item of overseas) {
+                const kept = this.price.latestPriceOf(item.symbol);
+                if (kept) result.set(item.symbol, kept);
+                else missing.push(item);
+            }
+            if (missing.length === 0) return result;
         }
-        const closes = await this.kis.getOverseasRegularCloses(rest, clock);
-        for (const [code, price] of closes) {
-            await this.finishRegularBar(
-                code,
-                exchanges.get(code) ?? '',
-                price,
-                clock,
-            );
-            result.set(code, price);
+
+        const targets = session === 'CLOSED' ? missing : overseas;
+        const live = await this.kis.getOverseasPrices(
+            targets,
+            session === 'DAY',
+        );
+        for (const item of targets) {
+            const fresh = live.get(item.symbol);
+            // 체결이 없어 값이 비었으면(거래 적은 종목의 데이마켓 등) 마지막 값을 지킨다
+            const price =
+                fresh && fresh.current_price > 0
+                    ? fresh
+                    : this.price.latestPriceOf(item.symbol);
+            if (!price) continue;
+            await this.applySessionRules(item, price, session, clock);
+            result.set(item.symbol, price);
         }
         return result;
     }
 
-    /** 끝난 일봉의 거래량 · 거래대금에서 그날 시간외를 뺀다 */
-    private async finishRegularBar(
-        code: string,
-        exchange: string,
+    /** 장 구분에 따른 등락 기준 · 거래량 기준을 시세 한 건에 맞춘다 */
+    private async applySessionRules(
+        item: { symbol: string; exchange: string },
         price: StockPrice,
+        session: ForeignSession,
         clock: UsClock,
     ): Promise<void> {
-        const bar = price.regular_bar;
-        if (!bar) return;
-        await this.takeOutExtended(
-            code,
-            exchange,
-            price,
-            bar.date,
-            'all',
-            clock,
-        );
-        bar.volume = price.accumulated_volume ?? bar.volume;
-    }
-
-    /** 장중 — 어제 끝난 일봉만 받아 붙인다(현재가 · 등락은 그대로 장중 값) */
-    private async fetchFinishedBar(
-        code: string,
-        exchange: string,
-        price: StockPrice,
-        clock: UsClock,
-    ): Promise<void> {
-        try {
-            const done = await this.kis.getOverseasRegularClose(
-                code,
-                exchange,
-                clock,
-            );
-            await this.finishRegularBar(code, exchange, done, clock);
-            price.regular_bar = done.regular_bar;
-        } catch (e) {
-            this.logger.warn(
-                `해외 일봉 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
+        if (session === 'AFTER') {
+            await this.ensureAfterBase(item, clock.date);
+            Object.assign(
+                price,
+                this.price.afterChangeOf(
+                    item.symbol,
+                    clock.date,
+                    price.current_price,
+                ),
             );
         }
-    }
-
-    /**
-     * KIS 누적 거래량 · 거래대금에는 프리 · 애프터가 들어 있다 — 분봉으로 시간외를 재서 뺀다.
-     * 못 재면 그대로 두고 경고만(현재가는 맞으므로 이번 주기를 버리지 않는다).
-     * phase: pre — 장중(프리만 끝남, 하루 한 번) · all — 그날 전체(애프터가 끝나기 전에는 15분마다 다시).
-     */
-    private async takeOutExtended(
-        code: string,
-        exchange: string,
-        price: StockPrice,
-        date: string,
-        phase: 'pre' | 'all',
-        clock: UsClock,
-    ): Promise<void> {
-        const key = `${code}:${date}:${phase}`;
-        let ext = this.extended.get(key);
-        const settled =
-            phase === 'pre' || date < clock.date || !isUsAfterHours(clock);
-        if (!ext || (!settled && Date.now() - ext.at > EXTENDED_RECHECK_MS)) {
-            try {
-                ext = {
-                    ...(await this.kis.getOverseasExtendedVolume(
-                        code,
-                        exchange,
-                        date,
-                    )),
-                    at: Date.now(),
-                };
-                if (this.extended.size > EXTENDED_MEMO_MAX)
-                    this.extended.clear();
-                this.extended.set(key, ext);
-            } catch (e) {
-                this.logger.warn(
-                    `해외 시간외 거래량 실패 ${code}: ${e instanceof Error ? e.message : String(e)}`,
-                );
-                return;
+        if (session !== 'REGULAR') {
+            const bar = await this.finishedBarOf(item, clock);
+            if (bar) {
+                price.accumulated_volume = bar.volume;
+                price.trading_value = bar.amount;
             }
         }
-        Object.assign(price, regularVolumeOf(price, ext));
+    }
+
+    /** 애프터마켓 등락 기준을 뉴욕 날짜마다 한 번 채운다 — 못 받으면 KIS 등락 그대로 두고 다음 주기에 다시 */
+    private async ensureAfterBase(
+        item: { symbol: string; exchange: string },
+        etDate: string,
+    ): Promise<void> {
+        if (this.price.hasAfterBase(item.symbol, etDate)) return;
+        try {
+            const close = await this.kis.getOverseasRegularLast(
+                item.symbol,
+                item.exchange,
+                etDate,
+            );
+            if (close) this.price.setAfterBase(item.symbol, etDate, close);
+        } catch (e) {
+            this.logger.warn(
+                `해외 애프터 기준 실패 ${item.symbol}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        }
+    }
+
+    /** 정규장이 끝난 마지막 일봉 — 끝난 막대가 그대로면 다시 받지 않는다 */
+    private async finishedBarOf(
+        item: { symbol: string; exchange: string },
+        clock: UsClock,
+    ): Promise<FinishedBar | null> {
+        const key = `${clock.date}:${isFinishedUsBar(clock.date, clock)}`;
+        const memo = this.finishedBars.get(item.symbol);
+        if (memo?.key === key) return memo.bar;
+        try {
+            const bar = await this.kis.getOverseasFinishedBar(
+                item.symbol,
+                item.exchange,
+                clock,
+            );
+            if (bar) this.finishedBars.set(item.symbol, { key, bar });
+            return bar;
+        } catch (e) {
+            this.logger.warn(
+                `해외 일봉 실패 ${item.symbol}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+            return memo?.bar ?? null;
+        }
     }
 
     @Cron(POLL_CRON)
@@ -558,6 +536,7 @@ export class PriceScheduler implements OnModuleInit {
                     const summary = await this.kis.fetchOverseasVolumeSummary(
                         item.symbol,
                         item.exchange,
+                        this.marketTime.foreignSession() === 'DAY',
                     );
 
                     // 검증(Fallback): API 호출은 성공했으나 volume_graph가 비어있거나 total_volume이 0인 경우,

@@ -5,7 +5,7 @@ import {
     StockPrice,
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
-import type { RegularBar } from './us-session';
+import { changeAgainst } from './us-session';
 import {
     DEFAULT_USD_KRW,
     KrwQuote,
@@ -144,15 +144,36 @@ export class PriceService {
     // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
     private static readonly LIVE_TTL_S = 60 * 60 * 24 * 7;
 
-    /** 마지막으로 끝난 정규장 일봉(해외) — 없으면 null. 옛 서버가 Redis 를 덮어도 이 서버 값을 쓰도록 메모리에서 */
-    regularBarOf(code: string): RegularBar | null {
-        return this.latest.get(code)?.regular_bar ?? null;
+    /** 이 서버가 들고 있는 마지막 시세 — 닫힌 시간 · 빈 응답 때 그 값을 지킨다. 없으면 null */
+    latestPriceOf(code: string): CachedPrice | null {
+        const v = this.latest.get(code);
+        return v && v.current_price > 0 ? v : null;
     }
 
-    /** 이 서버가 그 뉴욕 날짜에 본 마지막 정규장 값 — 없으면 null */
-    regularPriceOf(code: string, etDate: string): CachedPrice | null {
-        const v = this.latest.get(code);
-        return v?.regular_et_date === etDate ? v : null;
+    /** 애프터마켓 등락 기준 — 종목별 오늘 정규장 마지막 체결가(스케줄러가 뉴욕 날짜마다 한 번 채운다) */
+    private readonly afterBases = new Map<
+        string,
+        { etDate: string; close: number }
+    >();
+
+    setAfterBase(code: string, etDate: string, close: number): void {
+        this.afterBases.set(code, { etDate, close });
+    }
+
+    hasAfterBase(code: string, etDate: string): boolean {
+        return this.afterBases.get(code)?.etDate === etDate;
+    }
+
+    /** 애프터마켓 등락(오늘 정규장 마지막 체결가 대비) — 기준을 아직 모르면 null */
+    afterChangeOf(
+        code: string,
+        etDate: string,
+        price: number,
+    ): { change_rate: number; change_price: number } | null {
+        const base = this.afterBases.get(code);
+        return base?.etDate === etDate
+            ? changeAgainst(base.close, price)
+            : null;
     }
 
     // 웹소켓 수신 시 단일 종목 실시간 시세 반영 (Redis에는 FLUSH_MS마다 몰아서)

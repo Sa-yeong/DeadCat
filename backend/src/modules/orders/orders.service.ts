@@ -87,7 +87,7 @@ export class OrdersService {
             }
         }
 
-        const marketOpen = this.marketTime.isOperatingTime(marketOf(foreign));
+        const marketOpen = this.marketTime.isTradingOpen(marketOf(foreign));
         if (isMarket && !marketOpen) {
             throw new BadRequestException(
                 '장 시간이 아니라 시장가로 주문할 수 없어요. 지정가로 주문하면 다음 장에 체결돼요.',

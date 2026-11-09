@@ -39,7 +39,7 @@ export interface FillResult {
  *  - 현재가가 캐시에 없는 종목은 이번 회차를 건너뛴다(추측 가격으로 체결하지 않는다).
  *  - 서버가 여러 대여도 같은 주문을 두 번 체결하지 않는다 — 체결은 PENDING→COMPLETED 선점으로 시작.
  *  - 체결 순간 잔고·보유가 모자라면 REJECTED로 닫는다(계속 재시도하지 않는다).
- *  - 체결은 장중에만 — 장외 주문은 건너뛰고 다음 장이 열리면 체결한다(판정은 캐릭터 수면과 같은 MarketTimeService).
+ *  - 체결은 열린 장에서만 — 해외는 데이 · 프리 · 정규 · 애프터 어디서든 그 장의 현재가로, 닫힌 시간이면 건너뛰고 다음 장이 열리면 체결한다(판정은 MarketTimeService).
  */
 @Injectable()
 export class OrderMatcher {
@@ -78,7 +78,7 @@ export class OrderMatcher {
         this.running = true;
         try {
             const pending = (await this.repo.findPendingOrders()).filter((o) =>
-                this.marketTime.isOperatingTime(
+                this.marketTime.isTradingOpen(
                     marketOf(isForeignStock(o.stocks.stock_type)),
                 ),
             );
