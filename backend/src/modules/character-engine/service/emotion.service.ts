@@ -18,6 +18,7 @@ import { StockHistoryRepository } from 'src/modules/stock-history/stock-history.
 import { PrismaService } from 'src/providers/database/prisma.service';
 import { concat, finalize, map, Observable, of, Subject } from 'rxjs';
 import { parseUserIdParam } from 'src/common/rooms/room-access';
+import { isForeignStock, marketOf } from '../../orders/order-rules';
 
 // 거실 감정 다시 계산 주기 — 1분. 시세 갱신(price.scheduler, 매분 0초)과 겹치지 않게 30초에
 const EMOTION_PUSH_CRON = '30 * * * * *';
@@ -114,10 +115,10 @@ export class EmotionService {
         // 6. 종목 경향성 + 사용자 수익률 계산
         const tendency = this.tendencyService.calculate(chart, userProfitRate);
 
-        // 7. 국내/해외 시장 구분
-        const market = stock.stock_type === 'FOREIGN' ? 'FOREIGN' : 'DOMESTIC';
-
-        const isOperatingTime = this.marketTimeService.isOperatingTime(market);
+        // 7. 장외 판정 — 해외는 네 장 중 하나라도 열려 있으면 깨어 있다(주문 · 체결과 같은 판정)
+        const isOperatingTime = this.marketTimeService.isTradingOpen(
+            marketOf(isForeignStock(stock.stock_type)),
+        );
 
         // 8. 감정 엔진
         const engine = new EmotionEngine();

@@ -12,34 +12,18 @@ describe('MarketTimeService', () => {
             ['15:31', false],
         ])('화요일 %s → %s', (hhmm, open) => {
             const date = new Date(`2026-11-03T${hhmm}:00+09:00`);
-            expect(service.isOperatingTime('DOMESTIC', date)).toBe(open);
+            expect(service.isTradingOpen('DOMESTIC', date)).toBe(open);
         });
 
         it('토요일은 장중 시각이어도 닫힘', () => {
             const date = new Date('2026-11-07T10:00:00+09:00');
-            expect(service.isOperatingTime('DOMESTIC', date)).toBe(false);
-        });
-    });
-
-    // 2026년 미국 서머타임은 3/8~11/1 — 7월은 UTC-4, 11월 3일은 UTC-5
-    describe.each([
-        ['서머타임', '2026-07-14', '-04:00'],
-        ['표준시', '2026-11-03', '-05:00'],
-    ])('해외 %s — 평일 09:30~16:00 뉴욕 시각', (_name, day, offset) => {
-        it.each([
-            ['09:29', false],
-            ['09:30', true],
-            ['16:00', true],
-            ['16:01', false],
-        ])('%s → %s', (hhmm, open) => {
-            const date = new Date(`${day}T${hhmm}:00${offset}`);
-            expect(service.isOperatingTime('FOREIGN', date)).toBe(open);
+            expect(service.isTradingOpen('DOMESTIC', date)).toBe(false);
         });
     });
 
     it('해외 토요일은 닫힘', () => {
         const date = new Date('2026-11-07T10:00:00-05:00');
-        expect(service.isOperatingTime('FOREIGN', date)).toBe(false);
+        expect(service.isTradingOpen('FOREIGN', date)).toBe(false);
     });
 
     // 2026년 미국 서머타임은 3/8~11/1 — 뉴욕 시각으로 판정하므로 한국 시각만 1시간 당겨진다
@@ -123,13 +107,136 @@ describe('MarketTimeService', () => {
                 ),
             ).toBe(false);
         });
+    });
 
-        it('국내는 isOperatingTime 과 같다', () => {
-            for (const hhmm of ['08:59', '09:00', '15:30', '15:31']) {
-                const d = new Date(`2026-11-03T${hhmm}:00+09:00`);
-                expect(service.isTradingOpen('DOMESTIC', d)).toBe(
-                    service.isOperatingTime('DOMESTIC', d),
-                );
+    // 결정 7 — 캐릭터 수면도 isTradingOpen 하나를 본다. 네 장의 맨 끝 · 맨 앞 분이 깨어 있어야 한다
+    describe.each([
+        ['표준시', '2026-11-03', '-05:00'],
+        ['서머타임', '2026-07-14', '-04:00'],
+    ])('장외 판정 경계 %s', (_name, day, offset) => {
+        it.each([
+            ['03:59', true], // 데이 끝
+            ['04:00', true], // 프리 시작
+            ['09:29', true], // 프리 끝
+            ['09:30', true], // 정규 시작
+            ['16:00', true], // 애프터 시작 — 예전 정규장 판정에선 16:01 부터 잠들었다
+            ['16:01', true],
+            ['19:49', true], // 애프터 끝
+            ['19:50', false], // 닫힌 시간
+            ['19:59', false],
+            ['20:00', true], // 데이 시작
+        ])('%s → %s', (hhmm, open) => {
+            const date = new Date(`${day}T${hhmm}:00${offset}`);
+            expect(service.isTradingOpen('FOREIGN', date)).toBe(open);
+        });
+    });
+
+    describe('isOrderExpired — 해외: 그 거래일의 애프터마켓 종료(뉴욕 19:50)', () => {
+        const et = (d: string, hhmm: string, ss = '00') =>
+            new Date(`2026-11-${d}T${hhmm}:${ss}-05:00`);
+        const expired = (placed: Date, now: Date) =>
+            service.isOrderExpired('FOREIGN', placed, now);
+
+        it('장이 바뀌어도 유지되다가 애프터 끝에 만료 — 월 저녁 데이마켓에 낸 주문', () => {
+            // 2026-11-02 월 21:00 ET = 화요일 거래일의 데이마켓
+            const placed = et('02', '21:00');
+            for (const [d, t] of [
+                ['02', '23:59'], // 데이
+                ['03', '03:59'], // 데이
+                ['03', '04:00'], // 프리
+                ['03', '09:30'], // 정규
+                ['03', '16:00'], // 애프터
+                ['03', '19:49'],
+            ]) {
+                expect(expired(placed, et(d, t))).toBe(false);
+            }
+            expect(expired(placed, et('03', '19:49', '59'))).toBe(false);
+            expect(expired(placed, et('03', '19:50'))).toBe(true);
+        });
+
+        it('정규장에 낸 주문은 그날 19:50 에', () => {
+            const placed = et('03', '12:00');
+            expect(expired(placed, et('03', '19:49'))).toBe(false);
+            expect(expired(placed, et('03', '19:50'))).toBe(true);
+        });
+
+        it('19:50 ~ 20:00 닫힌 시간에 낸 주문은 다음 거래일 것', () => {
+            const placed = et('03', '19:55');
+            expect(expired(placed, et('03', '23:00'))).toBe(false);
+            expect(expired(placed, et('04', '19:49'))).toBe(false);
+            expect(expired(placed, et('04', '19:50'))).toBe(true);
+        });
+
+        it('금요일 밤 · 주말에 낸 주문은 월요일 19:50 까지', () => {
+            for (const placed of [
+                et('06', '20:30'), // 금 닫힘
+                et('07', '12:00'), // 토
+                et('08', '20:30'), // 일 데이마켓 = 월요일 거래일
+            ]) {
+                expect(expired(placed, et('08', '23:00'))).toBe(false);
+                expect(expired(placed, et('09', '19:49'))).toBe(false);
+                expect(expired(placed, et('09', '19:50'))).toBe(true);
+            }
+        });
+
+        it('서머타임이 끝나는 주말을 넘어도 뉴욕 19:50', () => {
+            // 금 2026-10-30 은 UTC-4, 월 2026-11-02 는 UTC-5 (11/1 해제)
+            const placed = new Date('2026-10-30T20:30:00-04:00');
+            expect(expired(placed, et('02', '19:49'))).toBe(false);
+            expect(expired(placed, et('02', '19:50'))).toBe(true);
+        });
+
+        it('서머타임 기간도 뉴욕 19:50', () => {
+            const placed = new Date('2026-07-14T12:00:00-04:00');
+            expect(expired(placed, new Date('2026-07-14T19:49:00-04:00'))).toBe(
+                false,
+            );
+            expect(expired(placed, new Date('2026-07-14T19:50:00-04:00'))).toBe(
+                true,
+            );
+        });
+
+        it('서버가 며칠 꺼져 있었어도 지난 주문은 만료로 본다 — 지금 장이 열려 있어도', () => {
+            expect(expired(et('03', '12:00'), et('05', '12:00'))).toBe(true);
+        });
+    });
+
+    describe('isOrderExpired — 국내: 그날 장 마감', () => {
+        const kst = (d: string, hhmm: string, ss = '00') =>
+            new Date(`2026-11-${d}T${hhmm}:${ss}+09:00`);
+        const expired = (placed: Date, now: Date) =>
+            service.isOrderExpired('DOMESTIC', placed, now);
+
+        it('장중에 낸 주문은 장이 닫히는 15:31:00 에 — isTradingOpen 이 열렸다고 하는 동안은 유지', () => {
+            const placed = kst('03', '10:00');
+            expect(expired(placed, kst('03', '15:30', '59'))).toBe(false);
+            expect(
+                service.isTradingOpen('DOMESTIC', kst('03', '15:30', '59')),
+            ).toBe(true);
+            expect(expired(placed, kst('03', '15:31'))).toBe(true);
+            expect(service.isTradingOpen('DOMESTIC', kst('03', '15:31'))).toBe(
+                false,
+            );
+        });
+
+        it('장 시작 전에 낸 주문은 그날 마감에', () => {
+            const placed = kst('03', '08:00');
+            expect(expired(placed, kst('03', '15:30'))).toBe(false);
+            expect(expired(placed, kst('03', '15:31'))).toBe(true);
+        });
+
+        it('장 마감 뒤에 낸 주문은 다음 거래일 것', () => {
+            const placed = kst('03', '20:00');
+            expect(expired(placed, kst('04', '08:00'))).toBe(false);
+            expect(expired(placed, kst('04', '15:30'))).toBe(false);
+            expect(expired(placed, kst('04', '15:31'))).toBe(true);
+        });
+
+        it('금요일 장 뒤 · 주말에 낸 주문은 월요일 마감에', () => {
+            for (const placed of [kst('06', '16:00'), kst('07', '12:00')]) {
+                expect(expired(placed, kst('08', '12:00'))).toBe(false);
+                expect(expired(placed, kst('09', '15:30'))).toBe(false);
+                expect(expired(placed, kst('09', '15:31'))).toBe(true);
             }
         });
     });

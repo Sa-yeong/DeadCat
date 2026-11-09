@@ -118,11 +118,18 @@ describe('주문 알림 문구', () => {
     expect(text(laterNotice(later({ status: 'REJECTED' })).body)).toBe('삼성전자 10주 매수 — 잔고 또는 보유 수량이 부족해 체결되지 못했어요');
   });
 
+  it('나중 만료 — 거절과 다른 제목 · 문장, 회색 띠', () => {
+    const n = laterNotice(later({ status: 'EXPIRED', fill_price: null }));
+    expect(n.tone).toBe('FAIL');
+    expect(text(n.title)).toBe('대기 주문 만료');
+    expect(text(n.body)).toBe('삼성전자 10주 매수 — 장이 끝날 때까지 체결되지 않았어요');
+  });
+
   it('놓친 것이 3개까지면 그대로, 4개부터는 「그 밖에」 한 장 + 가장 최근 3개', () => {
     const list = (n: number) => Array.from({ length: n }, (_, i) => later({ order_id: String(i), quantity: i + 1 }));
     expect(missedNotices(list(3)).map((c) => text(c.body))).toEqual(['삼성전자 1주 · 71,400원', '삼성전자 2주 · 71,400원', '삼성전자 3주 · 71,400원']);
     const many = missedNotices(list(5));
-    expect(many.map((c) => text(c.body))).toEqual(['그 밖에 대기 주문 2건이 체결 · 거절됐어요', '삼성전자 3주 · 71,400원', '삼성전자 4주 · 71,400원', '삼성전자 5주 · 71,400원']);
+    expect(many.map((c) => text(c.body))).toEqual(['그 밖에 대기 주문 2건이 체결 · 거절 · 만료됐어요', '삼성전자 3주 · 71,400원', '삼성전자 4주 · 71,400원', '삼성전자 5주 · 71,400원']);
     expect(many[0].summary).toBe(true);
     expect(missedNotices([])).toEqual([]);
   });

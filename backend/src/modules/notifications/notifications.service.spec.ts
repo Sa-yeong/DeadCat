@@ -2,6 +2,11 @@
 jest.mock('./notifications.repository', () => ({
     NotificationsRepository: class {},
 }));
+jest.mock(
+    'src/providers/database/prisma.service',
+    () => ({ PrismaService: class {} }),
+    { virtual: true },
+);
 
 import { NotificationsService } from './notifications.service';
 import { OrderNotification } from './dto/order-notification.dto';
@@ -114,6 +119,79 @@ describe('NotificationsService.listUnread', () => {
             reason: null,
             at: '2026-11-02T01:00:00.000Z',
         });
+    });
+});
+
+describe('NotificationsService.listUnread — 만료', () => {
+    it('DB의 CANCELLED(안 보여준 것) → 알림에서는 EXPIRED, 시각은 접수 시각', async () => {
+        const { service, repo } = setup();
+        repo.findUnread.mockResolvedValue([
+            {
+                id: 5n,
+                status: 'CANCELLED',
+                side: 'BUY',
+                quantity: 3,
+                price: 22900n,
+                filled_price: null,
+                filled_at: null,
+                create_at: new Date('2026-11-02T01:00:00Z'),
+                stocks: { code: 'AAPL', name: '애플', stock_type: 'FOREIGN' },
+            },
+        ]);
+        const [n] = await service.listUnread(7n);
+        expect(n).toMatchObject({
+            status: 'EXPIRED',
+            order_id: '5',
+            fill_price: null,
+            reason: null,
+            at: '2026-11-02T01:00:00.000Z',
+        });
+    });
+});
+
+describe('NotificationsRepository — 만료 알림이 걸리는 조건', () => {
+    const { NotificationsRepository } = jest.requireActual<
+        typeof import('./notifications.repository')
+    >('./notifications.repository');
+
+    function repoWith() {
+        const orders = {
+            findMany: jest.fn().mockResolvedValue([]),
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        };
+        return {
+            repo: new NotificationsRepository({ orders } as never),
+            orders,
+        };
+    }
+
+    it('놓친 목록은 CANCELLED도 보되 notified_at이 빈 것만 — 사용자 취소는 이미 채워져 있어 안 걸린다', async () => {
+        const { repo, orders } = repoWith();
+        await repo.findUnread(7n, 20);
+        expect(orders.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: {
+                    user_id: 7n,
+                    status: { in: ['COMPLETED', 'REJECTED', 'CANCELLED'] },
+                    notified_at: null,
+                },
+            }),
+        );
+    });
+
+    it('보여줬음 표시도 만료 주문에 찍힌다', async () => {
+        const { repo, orders } = repoWith();
+        await repo.markNotified(7n, [5n]);
+        expect(orders.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: {
+                    id: { in: [5n] },
+                    user_id: 7n,
+                    status: { in: ['COMPLETED', 'REJECTED', 'CANCELLED'] },
+                    notified_at: null,
+                },
+            }),
+        );
     });
 });
 

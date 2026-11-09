@@ -21,18 +21,61 @@ const DAY_EVENINGS: ReadonlySet<string> = new Set([
     'Thu',
 ]);
 
+// 국내 장(한국 시각, 자정부터 지난 분). 마지막 분인 15:30 안에는 열려 있고 15:31:00 부터 닫힌다
+const KRX_START = 9 * 60;
+const KRX_LAST_MINUTE = 15 * 60 + 30;
+
+interface WallClock {
+    /** 그 시간대의 날짜 YYYYMMDD */
+    date: string;
+    /** 그 시간대의 자정부터 지난 분 */
+    minutes: number;
+    weekend: boolean;
+}
+
+function seoulClock(date: Date): WallClock {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul',
+        weekday: 'short',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(date);
+    const get = (t: Intl.DateTimeFormatPartTypes) =>
+        parts.find((p) => p.type === t)?.value ?? '';
+    const weekday = get('weekday');
+    return {
+        date: `${get('year')}${get('month')}${get('day')}`,
+        // en-US 24시간 표기는 자정을 24 로 줄 때가 있다
+        minutes: (Number(get('hour')) % 24) * 60 + Number(get('minute')),
+        weekend: weekday === 'Sat' || weekday === 'Sun',
+    };
+}
+
+/** 이 날짜 다음의 첫 평일 YYYYMMDD — 달력 계산만 하므로 시간대와 무관하다 */
+function nextWeekday(yyyymmdd: string): string {
+    const d = new Date(
+        Date.UTC(
+            Number(yyyymmdd.slice(0, 4)),
+            Number(yyyymmdd.slice(4, 6)) - 1,
+            Number(yyyymmdd.slice(6, 8)),
+        ),
+    );
+    do {
+        d.setUTCDate(d.getUTCDate() + 1);
+    } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+    return d.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
 @Injectable()
 export class MarketTimeService {
-    /** 정규 장 시간 — 해외는 정규장만 본다. 주문 · 체결 · 시세 · 화면은 isTradingOpen 을 쓴다 */
-    isOperatingTime(market: MarketType, date = new Date()): boolean {
-        if (market === 'DOMESTIC') {
-            return this.isDomesticOperatingTime(date);
-        }
-
-        return this.isForeignOperatingTime(date);
-    }
-
-    /** 지금 거래할 수 있는가 — 해외는 네 장 중 하나라도 열려 있으면 true. 휴장일 판정은 없다 */
+    /**
+     * 지금 거래할 수 있는가 — 주문 · 체결 · 시세 · 화면 · 캐릭터 수면이 모두 이 판정을 본다.
+     * 해외는 네 장 중 하나라도 열려 있으면 true. 휴장일 판정은 없다
+     */
     isTradingOpen(market: MarketType, date = new Date()): boolean {
         if (market === 'DOMESTIC') {
             return this.isDomesticOperatingTime(date);
@@ -56,64 +99,30 @@ export class MarketTimeService {
         return 'CLOSED';
     }
 
+    /**
+     * 이 대기 주문의 거래일이 끝났는가. 해외는 애프터마켓 종료(19:50 뉴욕), 국내는 장 마감(15:31:00 한국)이 끝.
+     * 장 종료 뒤 · 주말에 낸 주문은 다음 거래일의 것이고, 해외는 장이 바뀌어도(데이 → 프리 → 정규 → 애프터) 같은 거래일이다.
+     * 경과 시간이 아니라 「끝나는 날짜」를 비교하므로 서버가 꺼져 있는 동안 지난 주문도 다음 점검에 걸린다.
+     */
+    isOrderExpired(
+        market: MarketType,
+        placedAt: Date,
+        now = new Date(),
+    ): boolean {
+        return this.closingDay(market, placedAt) < this.closingDay(market, now);
+    }
+
+    /** 이 순간이 속한 거래일이 끝나는 날짜 YYYYMMDD — 오늘 장이 이미 끝났거나 주말이면 다음 평일 */
+    private closingDay(market: MarketType, date: Date): string {
+        const clock = market === 'DOMESTIC' ? seoulClock(date) : usClock(date);
+        const end = market === 'DOMESTIC' ? KRX_LAST_MINUTE + 1 : AFTER_END;
+        return !clock.weekend && clock.minutes < end
+            ? clock.date
+            : nextWeekday(clock.date);
+    }
+
     private isDomesticOperatingTime(date: Date): boolean {
-        const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Seoul',
-            weekday: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        }).formatToParts(date);
-
-        const weekday = this.getPart(parts, 'weekday');
-
-        const hour = Number(this.getPart(parts, 'hour'));
-
-        const minute = Number(this.getPart(parts, 'minute'));
-
-        if (weekday === 'Sat' || weekday === 'Sun') {
-            return false;
-        }
-
-        const currentMinutes = hour * 60 + minute;
-
-        const start = 9 * 60;
-        const end = 15 * 60 + 30;
-
-        return currentMinutes >= start && currentMinutes <= end;
-    }
-
-    private isForeignOperatingTime(date: Date): boolean {
-        const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/New_York',
-            weekday: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        }).formatToParts(date);
-
-        const weekday = this.getPart(parts, 'weekday');
-
-        const hour = Number(this.getPart(parts, 'hour'));
-
-        const minute = Number(this.getPart(parts, 'minute'));
-
-        if (weekday === 'Sat' || weekday === 'Sun') {
-            return false;
-        }
-
-        const currentMinutes = hour * 60 + minute;
-
-        const start = 9 * 60 + 30;
-        const end = 16 * 60;
-
-        return currentMinutes >= start && currentMinutes <= end;
-    }
-
-    private getPart(
-        parts: Intl.DateTimeFormatPart[],
-        type: Intl.DateTimeFormatPartTypes,
-    ): string {
-        return parts.find((part) => part.type === type)?.value ?? '';
+        const { weekend, minutes } = seoulClock(date);
+        return !weekend && minutes >= KRX_START && minutes <= KRX_LAST_MINUTE;
     }
 }

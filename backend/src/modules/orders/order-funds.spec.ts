@@ -12,7 +12,9 @@ jest.mock('src/price/price.service', () => ({ PriceService: class {} }), {
 jest.mock('src/providers/kis/kis.provider', () => ({ KisProvider: class {} }), {
     virtual: true,
 });
-jest.mock('./order-matcher.service', () => ({ OrderMatcher: class {} }));
+jest.mock('../notifications/notifications.service', () => ({
+    NotificationsService: class {},
+}));
 jest.mock('../tags/services/tag-assignment.service', () => ({
     TagAssignmentService: class {},
 }));
@@ -22,6 +24,8 @@ import { OrdersRepository } from './orders.repository';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, OrderSide, OrderType } from './dto/create-order.dto';
 import { availableCash, sellableQuantity } from './order-rules';
+import { OrderMatcher } from './order-matcher.service';
+import { MarketTimeService } from '../character-engine/service/market-time.service';
 
 describe('availableCash', () => {
     const buy = (price: bigint | null, quantity: number, foreign = false) => ({
@@ -231,7 +235,7 @@ function fakeDb(balance: bigint, held: Record<string, number> = {}) {
                         (where.user_id == null || r.user_id === where.user_id),
                 );
                 if (!o) return { count: 0 };
-                o.status = data.status;
+                Object.assign(o, data);
                 return { count: 1 };
             },
             findFirst: async ({ where }: { where: { id: bigint } }) => {
@@ -298,6 +302,15 @@ function setup(balance: bigint, held: Record<string, number> = {}) {
         ),
     };
     const funds = new OrderFundsService(prisma as never, price as never);
+    const notifications = { publish: jest.fn() };
+    const matcher = new OrderMatcher(
+        repo,
+        price as never,
+        {} as never,
+        {} as never,
+        new MarketTimeService(),
+        notifications as never,
+    );
     const service = new OrdersService(
         repo,
         price as never,
@@ -307,7 +320,7 @@ function setup(balance: bigint, held: Record<string, number> = {}) {
         { isTradingOpen: () => false } as never,
         funds,
     );
-    return { service, repo, state };
+    return { service, repo, state, matcher, notifications, price };
 }
 
 const buy = (price: number, quantity: number): CreateOrderDto => ({
@@ -417,6 +430,95 @@ describe('주문 접수 시나리오 — 잔고 · 보유 묶어 두기', () => 
         });
         await expect(service.available(USER)).resolves.toMatchObject({
             available_cash: 190_000,
+        });
+    });
+
+    describe('만료', () => {
+        /** Date만 멈춘다 — 메모리 DB는 setImmediate로 한 박자씩 쉰다 */
+        const at = (iso: string) =>
+            jest
+                .useFakeTimers({
+                    doNotFake: [
+                        'hrtime',
+                        'nextTick',
+                        'performance',
+                        'queueMicrotask',
+                        'setImmediate',
+                        'clearImmediate',
+                        'setInterval',
+                        'clearInterval',
+                        'setTimeout',
+                        'clearTimeout',
+                    ],
+                })
+                .setSystemTime(new Date(iso));
+        afterEach(() => jest.useRealTimers());
+
+        it('장 마감에 만료되면 묶어 둔 금액 · 수량이 풀리고, 돈 · 주식은 그대로', async () => {
+            const { service, matcher, state, price } = setup(1_000_000n, {
+                [String(SAMSUNG)]: 10,
+            });
+            price.readPrices.mockResolvedValue(new Map()); // 장중이지만 시세가 없어 체결되지 않는다
+            at('2026-11-03T10:00:00+09:00');
+            await service.createOrder(USER, buy(100000, 9));
+            await service.createOrder(USER, sell(4));
+            await expect(service.available(USER, '005930')).resolves.toEqual({
+                available_cash: 100_000,
+                sellable_quantity: 6,
+            });
+
+            // 마감 전 점검 — 그대로 묶여 있다
+            at('2026-11-03T15:30:59+09:00');
+            await matcher.sweep();
+            await expect(service.available(USER, '005930')).resolves.toEqual({
+                available_cash: 100_000,
+                sellable_quantity: 6,
+            });
+
+            at('2026-11-03T15:31:00+09:00');
+            await matcher.sweep();
+            await expect(service.available(USER, '005930')).resolves.toEqual({
+                available_cash: 1_000_000,
+                sellable_quantity: 10,
+            });
+            expect(state.balances.get(USER)).toBe(1_000_000n);
+            expect(state.holdings.get(SAMSUNG)).toBe(10);
+            // 놓쳐도 다음 접속에 알릴 수 있게 notified_at을 비워 둔다
+            for (const o of state.orders) {
+                expect(o.status).toBe('CANCELLED');
+                expect(o).not.toHaveProperty('notified_at');
+            }
+        });
+
+        it('해외는 장이 바뀌는 동안 묶여 있다가 애프터 끝에 풀린다', async () => {
+            const { service, matcher, notifications } = setup(1_000_000n);
+            at('2026-11-02T21:00:00-05:00'); // 화요일 거래일의 데이마켓
+            await service.createOrder(USER, {
+                ...buy(228.86, 3),
+                stock_code: 'AAPL',
+            });
+            const locked = { available_cash: 38_788 };
+
+            for (const now of [
+                '2026-11-03T04:00:00-05:00',
+                '2026-11-03T09:30:00-05:00',
+                '2026-11-03T16:00:00-05:00',
+                '2026-11-03T19:49:59-05:00',
+            ]) {
+                at(now);
+                await matcher.sweep();
+                await expect(service.available(USER)).resolves.toMatchObject(
+                    locked,
+                );
+            }
+            expect(notifications.publish).not.toHaveBeenCalled();
+
+            at('2026-11-03T19:50:00-05:00');
+            await matcher.sweep();
+            await expect(service.available(USER)).resolves.toMatchObject({
+                available_cash: 1_000_000,
+            });
+            expect(notifications.publish).toHaveBeenCalledTimes(1);
         });
     });
 

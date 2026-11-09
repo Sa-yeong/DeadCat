@@ -25,6 +25,10 @@ export interface FillTarget {
     quantity: number;
 }
 
+type PendingRow = Awaited<
+    ReturnType<OrdersRepository['findPendingOrders']>
+>[number];
+
 /** 체결 시도 결과. fillPrice = 체결가(시장 통화 최소 단위), 체결됐을 때만 / reason = 거절 이유, 거절됐을 때만 */
 export interface FillResult {
     status: 'COMPLETED' | 'REJECTED' | 'PENDING';
@@ -40,6 +44,8 @@ export interface FillResult {
  *  - 서버가 여러 대여도 같은 주문을 두 번 체결하지 않는다 — 체결은 PENDING→COMPLETED 선점으로 시작.
  *  - 체결 순간 잔고·보유가 모자라면 REJECTED로 닫는다(계속 재시도하지 않는다).
  *  - 체결은 열린 장에서만 — 해외는 데이 · 프리 · 정규 · 애프터 어디서든 그 장의 현재가로, 닫힌 시간이면 건너뛰고 다음 장이 열리면 체결한다(판정은 MarketTimeService).
+ *  - 거래일이 끝난 주문은 체결보다 먼저 만료시킨다 — 서버가 꺼져 있다 켜졌을 때 지난 주문이 오늘 가격에 체결되지 않게.
+ *    만료는 DB에 CANCELLED(notified_at 비움)로 남고, 알림에서만 EXPIRED로 구분한다. 잔고 · 보유 묶어 두기는 PENDING만 세므로 저절로 풀린다.
  */
 @Injectable()
 export class OrderMatcher {
@@ -77,7 +83,10 @@ export class OrderMatcher {
         if (this.running) return;
         this.running = true;
         try {
-            const pending = (await this.repo.findPendingOrders()).filter((o) =>
+            const alive = await this.expireOverdue(
+                await this.repo.findPendingOrders(),
+            );
+            const pending = alive.filter((o) =>
                 this.marketTime.isTradingOpen(
                     marketOf(isForeignStock(o.stocks.stock_type)),
                 ),
@@ -131,6 +140,35 @@ export class OrderMatcher {
         } finally {
             this.running = false;
         }
+    }
+
+    /** 거래일이 끝난 대기 주문을 닫고 알린다. 아직 살아 있는 주문만 돌려준다 */
+    private async expireOverdue(orders: PendingRow[]): Promise<PendingRow[]> {
+        const now = new Date();
+        const alive: PendingRow[] = [];
+        for (const o of orders) {
+            const market = marketOf(isForeignStock(o.stocks.stock_type));
+            if (!this.marketTime.isOrderExpired(market, o.create_at, now)) {
+                alive.push(o);
+                continue;
+            }
+            const closed = await this.repo.closePendingOrder(
+                o.id,
+                'CANCELLED',
+                {},
+            );
+            // 그 사이 사용자가 취소했거나 체결됐으면 만료가 아니다
+            if (closed === 0) continue;
+            this.logger.log(`대기 주문 만료 #${o.id}`);
+            this.notifications.publish(
+                o.user_id,
+                toOrderNotification(
+                    { ...o, status: 'EXPIRED', filled_price: null },
+                    now,
+                ),
+            );
+        }
+        return alive;
     }
 
     /**

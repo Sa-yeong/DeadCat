@@ -9,7 +9,7 @@ type Currency = 'KRW' | 'USD';
 /** 알림 통로 이벤트 · 놓친 목록 한 줄(백엔드 OrderNotification) */
 export interface OrderNotification {
   type: 'order';
-  status: 'COMPLETED' | 'REJECTED';
+  status: 'COMPLETED' | 'REJECTED' | 'EXPIRED';
   order_id: string;
   stock_code: string;
   stock_name: string;
@@ -77,6 +77,13 @@ export function orderResultNotice(r: OrderResultLike): NoticeInput {
 /** 통로로 온(또는 놓친) 나중 결과 → 알림. 거절 이유는 DB에 없어 놓친 목록에선 정해진 문장 */
 export function laterNotice(n: OrderNotification): NoticeInput {
   if (n.status === 'COMPLETED') return filled(n);
+  if (n.status === 'EXPIRED') {
+    return {
+      tone: 'FAIL',
+      title: ['대기 주문 만료'],
+      body: [`${n.stock_name} ${n.quantity}주 `, { side: n.order_side }, ' — 장이 끝날 때까지 체결되지 않았어요'],
+    };
+  }
   return {
     tone: 'FAIL',
     title: ['대기 주문 거절'],
@@ -96,7 +103,7 @@ export function missedNotices(list: OrderNotification[]): NoticeInput[] {
   if (list.length <= MAX_NOTICES) return list.map(laterNotice);
   const rest = list.length - MAX_NOTICES;
   return [
-    { tone: 'FAIL', title: [], body: [`그 밖에 대기 주문 ${rest}건이 체결 · 거절됐어요`], summary: true },
+    { tone: 'FAIL', title: [], body: [`그 밖에 대기 주문 ${rest}건이 체결 · 거절 · 만료됐어요`], summary: true },
     ...list.slice(-MAX_NOTICES).map(laterNotice),
   ];
 }

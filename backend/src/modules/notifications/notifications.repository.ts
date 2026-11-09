@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/providers/database/prisma.service';
 
-/** 「안 보여준 알림」이 되는 주문 상태 */
-const NOTIFIED_STATUSES = ['COMPLETED', 'REJECTED'];
+/**
+ * 「안 보여준 알림」이 되는 주문 상태. notified_at이 비어 있는 것만 본다.
+ * CANCELLED는 만료만 걸린다 — 사용자가 취소하면 그 자리에서 notified_at을 채운다.
+ */
+const NOTIFIED_STATUSES = ['COMPLETED', 'REJECTED', 'CANCELLED'];
 
 @Injectable()
 export class NotificationsRepository {

@@ -3,6 +3,7 @@ import { filter, map, Observable, Subject } from 'rxjs';
 import { NotificationsRepository } from './notifications.repository';
 import {
     OrderNotification,
+    notificationStatus,
     toOrderNotification,
 } from './dto/order-notification.dto';
 
@@ -39,8 +40,8 @@ export class NotificationsService {
         const rows = await this.repo.findUnread(userId, UNREAD_LIMIT);
         return rows.map((o) =>
             toOrderNotification(
-                { ...o, status: o.status as OrderNotification['status'] },
-                o.filled_at ?? o.create_at, // 거절은 시각을 저장하지 않아 접수 시각
+                { ...o, status: notificationStatus(o.status) },
+                o.filled_at ?? o.create_at, // 거절 · 만료는 시각을 저장하지 않아 접수 시각
             ),
         );
     }

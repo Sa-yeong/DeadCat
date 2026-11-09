@@ -125,6 +125,7 @@ export class OrdersRepository {
                 type: true,
                 quantity: true,
                 price: true,
+                create_at: true,
                 stocks: {
                     select: { code: true, name: true, stock_type: true },
                 },
@@ -187,6 +188,7 @@ export class OrdersRepository {
     /**
      * 대기 → 다른 상태(REJECTED·CANCELLED). 바뀐 건수.
      * 내 주문만 바꾸려면 userId, 화면이 결과를 이미 알면(접수 응답·본인 취소) acknowledged를 넘긴다.
+     * 만료는 CANCELLED + acknowledged 없음 — notified_at이 빈 CANCELLED가 곧 「아직 안 알린 만료」다.
      */
     async closePendingOrder(
         orderId: bigint,

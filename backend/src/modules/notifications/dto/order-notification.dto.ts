@@ -1,9 +1,19 @@
 import { fromMinor, isForeignStock, type Side } from '../../orders/order-rules';
 
+export type OrderNotificationStatus = 'COMPLETED' | 'REJECTED' | 'EXPIRED';
+
+/** DB 상태 → 알림 상태. 만료는 DB에 CANCELLED로 남는다 — 사용자 취소는 그 자리에서 notified_at을 채우므로 알림 대상인 CANCELLED는 만료뿐이다 */
+export const notificationStatus = (
+    dbStatus: string | null,
+): OrderNotificationStatus =>
+    dbStatus === 'CANCELLED'
+        ? 'EXPIRED'
+        : (dbStatus as OrderNotificationStatus);
+
 /** 알림 한 줄 — 실시간 이벤트와 놓친 목록의 모양이 같다. 가격은 전부 시장 통화 */
 export interface OrderNotification {
     type: 'order';
-    status: 'COMPLETED' | 'REJECTED';
+    status: OrderNotificationStatus;
     order_id: string;
     stock_code: string;
     stock_name: string;
@@ -22,7 +32,7 @@ export interface OrderNotification {
 /** 알림 재료. price·filled_price = 시장 통화 최소 단위(국내 원, 해외 센트) */
 export interface OrderNotificationSource {
     id: bigint;
-    status: 'COMPLETED' | 'REJECTED';
+    status: OrderNotificationStatus;
     side: string | null;
     quantity: number;
     price: bigint | null;
