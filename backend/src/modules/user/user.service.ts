@@ -1,6 +1,7 @@
 import {
     BadRequestException,
     Injectable,
+    Logger,
     NotFoundException,
 } from '@nestjs/common';
 
@@ -8,6 +9,8 @@ import { UserRepository } from './user.repository';
 
 // 사용자 프로필 DTO (실제 파일명에 맞춤)
 import { UserProfileResponseDto } from './dto/user-profile-response.dto';
+import { join, basename } from 'path';
+import { unlink } from 'fs/promises';
 
 import {
     ShareOptionResponseDto,
@@ -21,6 +24,8 @@ import { ProfileImageResponseDto } from './dto/profile-image-response.dto';
 
 @Injectable()
 export class UserService {
+    private readonly logger = new Logger(UserService.name);
+
     constructor(
         private readonly userRepository: UserRepository,
         private readonly prisma: PrismaService,
@@ -184,68 +189,199 @@ export class UserService {
         userId: string,
         filename: string,
     ): Promise<ProfileImageResponseDto> {
-        // 서버 주소 기반 접근 URL 생성
-        const profileImgUrl = `http://localhost:3000/uploads/profiles/${filename}`;
-
-        const updatedUser = await this.userRepository.updateProfileImage(
-            userId,
-            profileImgUrl,
+        // 새로 업로드된 이미지의 실제 로컬 경로
+        const newFilePath = join(
+            process.cwd(),
+            'uploads',
+            'profiles',
+            filename,
         );
 
-        if (!updatedUser) {
+        // 서버 주소 설정
+        const baseUrl = (
+            process.env.APP_BASE_URL ?? 'http://localhost:3000'
+        ).replace(/\/$/, '');
+
+        // 새 이미지 URL 생성
+        const profileImgUrl = `${baseUrl}/uploads/profiles/${filename}`;
+
+        try {
+            // 1. 기존 프로필 이미지 URL 조회
+            const previousUser =
+                await this.userRepository.findProfileImage(userId);
+
+            if (!previousUser) {
+                throw new NotFoundException('사용자를 찾을 수 없습니다.');
+            }
+
+            // 2. 기존 이미지의 실제 파일 경로 확인
+            const oldFilePath = this.getOldProfileImagePath(
+                previousUser.profile_img_url,
+                userId,
+                baseUrl,
+            );
+
+            // 3. DB에 새 이미지 URL 저장
+            const updatedUser = await this.userRepository.updateProfileImage(
+                userId,
+                profileImgUrl,
+            );
+
+            // 4. DB 업데이트 성공 후 기존 이미지 삭제
+            if (oldFilePath && oldFilePath !== newFilePath) {
+                try {
+                    await unlink(oldFilePath);
+                    this.logger.log('기존 프로필 이미지 삭제 완료');
+                } catch (error) {
+                    // 기존 파일 삭제 실패가 DB 업데이트 성공을 되돌리지는 않음
+                    this.logger.warn(
+                        `기존 프로필 이미지 삭제 실패: ${String(error)}`,
+                    );
+                }
+            }
+
+            // 5. 새 이미지 URL 반환
+            return {
+                profile_img_url: updatedUser.profile_img_url,
+            };
+        } catch (error) {
+            // DB 업데이트 실패 또는 사용자 조회 실패 시 새 이미지 정리
+            try {
+                await unlink(newFilePath);
+                this.logger.log('새로 업로드된 이미지 정리 완료');
+            } catch {
+                // 파일이 이미 없거나 삭제할 수 없는 경우 무시
+            }
+
+            // 원래 발생한 오류 전달
+            throw error;
+        }
+    }
+
+    // 기존 프로필 이미지가 삭제 가능한 로컬 업로드 파일인지 확인
+    private getOldProfileImagePath(
+        imageUrl: string | null,
+        userId: string,
+        baseUrl: string,
+    ): string | null {
+        // 기본 프로필 또는 이미지 URL이 없는 사용자
+        if (!imageUrl) {
+            return null;
+        }
+
+        try {
+            const oldUrl = new URL(imageUrl);
+            const currentBaseUrl = new URL(baseUrl);
+
+            // 현재 서버에서 제공하는 이미지 URL만 허용
+            if (oldUrl.origin !== currentBaseUrl.origin) {
+                return null;
+            }
+
+            // uploads/profiles 경로에 있는 파일만 허용
+            const prefix = '/uploads/profiles/';
+
+            if (!oldUrl.pathname.startsWith(prefix)) {
+                return null;
+            }
+
+            // URL에서 실제 파일명 추출
+            const filename = basename(decodeURIComponent(oldUrl.pathname));
+
+            // 해당 사용자가 업로드한 이미지인지 확인
+            if (!filename.startsWith(`profile_${userId}_`)) {
+                return null;
+            }
+
+            // 실제 로컬 파일 경로 반환
+            return join(process.cwd(), 'uploads', 'profiles', filename);
+        } catch {
+            // 잘못된 URL은 삭제 대상으로 처리하지 않음
+            return null;
+        }
+    }
+
+    // 20. 사용자 프로필 이미지 파일 저장 및 수정
+    /*async updateProfileImage(
+        userId: string,
+        filename: string,
+    ): Promise<ProfileImageResponseDto> {
+        // 1. 기존 프로필 이미지 URL 조회
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+        const previousUser = await this.userRepository.findProfileImage(userId);
+
+        if (!previousUser) {
+            // 사용자가 존재하지 않으면 새로 업로드한 파일 삭제
+            const newFilePath = join(
+                process.cwd(),
+                'uploads',
+                'profiles',
+                filename,
+            );
+
+            await unlink(newFilePath).catch(() => undefined);
+
             throw new NotFoundException('사용자를 찾을 수 없습니다.');
         }
 
-        return {
-            profile_img_url: updatedUser.profile_img_url,
-        };
-    }
+        // 2. 새 이미지 URL 생성
+        const profileImgUrl = `http://localhost:3000/uploads/profiles/${filename}`;
 
-    // 18. 나의 팔로워 및 팔로잉 유저 목록 조회
-    /*async getUserRelations(userId: string, type: string) {
-        // 1. 조회 유형 검증
-        const upperType = type?.toUpperCase();
-
-        if (upperType !== 'FOLLOWER' && upperType !== 'FOLLOWING') {
-            throw new BadRequestException(
-                'type은 FOLLOWER 또는 FOLLOWING 이어야 합니다.',
+        try {
+            // 3. DB에 새 이미지 URL 저장
+            const updatedUser = await this.userRepository.updateProfileImage(
+                userId,
+                profileImgUrl,
             );
+
+            if (!updatedUser) {
+                throw new NotFoundException('사용자를 찾을 수 없습니다.');
+            }
+
+            // 4. 기존 이미지가 있을 때만 삭제
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const oldImageUrl = previousUser.profile_img_url;
+
+            if (oldImageUrl) {
+                const pathname = new URL(oldImageUrl).pathname;
+                const oldFilename = basename(pathname);
+
+                // 해당 사용자가 직접 업로드한 이미지인지 확인
+                if (oldFilename.startsWith(`profile_${userId}_`)) {
+                    const oldFilePath = join(
+                        process.cwd(),
+                        'uploads',
+                        'profiles',
+                        oldFilename,
+                    );
+
+                    // 새 이미지와 다른 파일인 경우에만 삭제
+                    if (
+                        oldFilePath !==
+                        join(process.cwd(), 'uploads', 'profiles', filename)
+                    ) {
+                        await unlink(oldFilePath).catch(() => undefined);
+                    }
+                }
+            }
+
+            // 5. 새 이미지 URL 반환
+            return {
+                profile_img_url: updatedUser.profile_img_url,
+            };
+        } catch (error) {
+            // DB 업데이트 실패 시 새로 업로드한 파일 삭제
+            const newFilePath = join(
+                process.cwd(),
+                'uploads',
+                'profiles',
+                filename,
+            );
+
+            await unlink(newFilePath).catch(() => undefined);
+
+            // 원래 오류 전달
+            throw error;
         }
-
-        const currentUserId = BigInt(userId);
-
-        // 2. 팔로워 수, 팔로잉 수, 목록 병렬 조회
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const [counts, followList] = await Promise.all([
-            this.userRepository.getRelationCounts(currentUserId),
-            upperType === 'FOLLOWER'
-                ? this.userRepository.findFollowers(currentUserId)
-                : this.userRepository.findFollowings(currentUserId),
-        ]);
-
-        // 3. 사용자 정보 추출 및 DTO 형태로 변환
-        const users = followList
-            .map((item: any) =>
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-                upperType === 'FOLLOWER'
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      item?.users_follow_follower_idTousers
-                    : // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                      item?.users_follow_followee_idTousers,
-            )
-            .filter((user: any) => user?.id != null)
-            .map((user: any) => ({
-                target_user_id: Number(user.id),
-                nickname: user.nickname,
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                profile_img_url: user.profile_img_url ?? null,
-            }));
-
-        // 4. 반환 (글로벌 TransformInterceptor가 { success: true, data: ... } 형태로 감싸줍니다)
-        return {
-            follower_count: counts.follower_count,
-            following_count: counts.following_count,
-            users,
-        };
     }*/
 }
