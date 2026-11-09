@@ -1,5 +1,6 @@
 import { HEADER_H, HEADER_TOP, useLayout } from '../layout';
 import { headerPrice, pct, tone, toneSoft } from '../format';
+import { sessionLabel } from '../marketSession';
 import type { StockBasic } from '../types';
 
 /**
@@ -30,6 +31,7 @@ export function StockHeader({
   const c = tone(basic.change_rate);
   const soft = toneSoft(basic.change_rate);
   const price = headerPrice(basic);
+  const session = sessionLabel(basic);
   return (
     <header
       className="absolute flex flex-col justify-center"
@@ -57,6 +59,7 @@ export function StockHeader({
             {price.usd}
           </span>
         )}
+        {session && <span style={{ fontSize: 13, fontWeight: 500, color: '#A5A59C' }}>{session}</span>}
         <span style={{ fontSize: 13, fontWeight: 700, color: soft }}>
           {basic.change_rate >= 0 ? '▲' : '▼'} {price.change != null && `${price.change} `}({pct(basic.change_rate)})
         </span>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLayout } from '../layout';
 import { Block, TabChip } from './Block';
 import { availableLabel, up, won } from '../format';
+import { isMarketClosed } from '../marketSession';
 import { R } from '../radius';
 import { createOrder, errorMessage } from '../api';
 import type { StockBasic } from '../types';
@@ -53,7 +54,7 @@ export function OrderBlock({
   const rule = basic?.tick_rule ?? 'KRX_STOCK';
   const currency = basic?.market === 'FOREIGN' ? 'USD' : 'KRW';
   const currentPrice = basic?.current_price ?? 0;
-  const marketClosed = basic?.market_open === false;
+  const marketClosed = basic ? isMarketClosed(basic) : false;
 
   const [tab, setTab] = useState<'order' | 'pending'>('order');
   const { orders: pending, reload: reloadPending } = usePendingOrders(stockCode);

@@ -3,6 +3,7 @@ import { BLOCK_CHROME, useLayout } from '../layout';
 import { Block } from './Block';
 import { money } from '../../../common/notifications/orderNotices';
 import { centerTone, down, marketPrice, up, won, type PriceMarket } from '../format';
+import { isBookHidden } from '../marketSession';
 import type { Tick } from '../QuoteSync';
 import { R } from '../radius';
 
@@ -35,8 +36,8 @@ export function OrderBookBlock({
   const centerLook = centerTone(tick.basic.change_rate);
 
   // 전부 그린다 — 위에서부터 매도(높은 값 → 현재가 쪽), 아래로 매수(현재가 쪽 → 낮은 값)
-  // 해외 장외에는 호가가 없다(서버가 비워서 준다) — 가운데 현재가 줄과 안내만
-  const usClosed = tick.basic.market === 'FOREIGN' && tick.basic.market_open === false;
+  // 해외 닫힌 시간에는 호가가 없다(서버가 비워서 준다) — 가운데 현재가 줄과 안내만
+  const usClosed = isBookHidden(tick.basic);
   const asks = usClosed ? [] : [...tick.orderbook.asks].sort((x, y) => y.price - x.price).slice(-MAX_LEVELS);
   const bids = usClosed ? [] : [...tick.orderbook.bids].sort((x, y) => y.price - x.price).slice(0, MAX_LEVELS);
   const maxQty = Math.max(1, ...asks.map((a) => a.quantity), ...bids.map((x) => x.quantity));
@@ -108,7 +109,7 @@ export function OrderBookBlock({
         </button>
         {usClosed && (
           <p className="m-0 text-center" style={{ padding: '14px 0 0', fontSize: 12.5, color: '#8F8F88' }}>
-            정규장 시간에 보여요
+            장이 열리면 보여요
           </p>
         )}
         {bids.map((x) => (

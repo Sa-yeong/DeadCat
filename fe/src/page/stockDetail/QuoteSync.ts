@@ -1,5 +1,6 @@
 import type { Candle, Orderbook, StockBasic, Timeframe, VolumeSummary } from './types';
 import { getBasic, getChart, getOrderbook, getVolume } from './api';
+import { alignLastCandle } from './marketSession';
 
 /** 화면이 들고 있는 "항상 보이는 값" 한 덩어리.
  *  현재가와 호가를 같은 tick에 묶는 이유 — 따로 반영하면 호가창 가운데 줄과
@@ -31,7 +32,8 @@ export const SLOW_MS = 30000;
  * WebSocket으로 가면 이 클래스가 PriceFeedClient를 감싸는 자리가 된다.
  *
  * 차트 마지막 봉은 2초마다 받지 않는다 — 차트 API는 봉 전체(일봉 약 100개)를 주고
- * 백엔드가 매번 DB를 읽는다. 느린 주기로 받아 둔 마지막 봉에 현재가를 덮어 쓴다.
+ * 백엔드가 매번 DB를 읽는다. 느린 주기로 받아 둔 마지막 봉에 현재가를 덮어 쓴다
+ * (해외 일 · 주 · 월 · 년봉은 정규장에만 — alignLastCandle).
  *
  * epoch — 종목을 바꾸면 세대를 올린다. 이전 종목의 늦은 응답이 도착해도
  * 세대가 다르면 버려서, 새 종목 화면에 옛 값이 박히는 것을 막는다.
@@ -100,13 +102,7 @@ export class QuoteSync {
         ...raw,
         change_price: raw.change_price ?? changeFrom(raw.current_price, raw.change_rate, this.dayCloses),
       };
-      // 한 틱 안에서는 마지막 봉 종가 = 현재가. 두 응답의 시점이 조금만 달라도
-      // 차트 축 태그와 헤더 현재가가 서로 다른 숫자를 보인다
-      const px = basic.current_price;
-      const aligned = lastCandle
-        ? { ...lastCandle, close_price: px, high_price: Math.max(lastCandle.high_price, px), low_price: Math.min(lastCandle.low_price, px) }
-        : null;
-      this.h.onTick({ basic, orderbook, lastCandle: aligned, timeframe: tf });
+      this.h.onTick({ basic, orderbook, lastCandle: alignLastCandle(lastCandle, basic, tf), timeframe: tf });
     } catch (e) {
       if (gen === this.epoch) this.h.onError?.(e);
     }

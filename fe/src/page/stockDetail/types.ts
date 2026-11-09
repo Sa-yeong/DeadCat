@@ -14,8 +14,10 @@ export interface StockBasic {
   is_event: boolean;
   /** 호가 단위 규칙 — 프론트가 같은 표(tick.ts)로 ±를 계산한다 */
   tick_rule: TickRule;
-  /** 지금 장중인가 — 아니면 시장가 주문을 낼 수 없다 */
+  /** 지금 장중인가 — 아니면 시장가 주문을 낼 수 없다. 해외는 네 장 중 하나라도 열려 있으면 true */
   market_open: boolean;
+  /** 해외 — 지금 열린 장(서버 판정). 국내는 null, 옛 서버는 없음 */
+  market_session?: MarketSession | null;
   /** 명세에 없음 — 헤더 전일대비 표시에 필요 */
   /** 전일 대비 금액(시장 통화) — 서버 값. 서버가 모르면 차트 종가에서 찾는다(QuoteSync) */
   change_price?: number | null;
@@ -24,6 +26,8 @@ export interface StockBasic {
   /** 전일 대비 금액 원화. 모르면 null */
   change_price_krw?: number | null;
 }
+
+export type MarketSession = 'DAY' | 'PRE' | 'REGULAR' | 'AFTER' | 'CLOSED';
 
 export type Timeframe = '1M' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR';
 

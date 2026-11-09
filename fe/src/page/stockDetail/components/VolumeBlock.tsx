@@ -2,6 +2,7 @@ import { useLayout } from '../layout';
 import { Block } from './Block';
 import { barLabel, down, shares, tradingValueText, up } from '../format';
 import type { PriceMarket } from '../format';
+import { volumeSummaryLabel } from '../marketSession';
 import type { Candle, Timeframe, VolumeSummary } from '../types';
 import { R } from '../radius';
 
@@ -21,7 +22,7 @@ const UNIT: Record<Timeframe, string> = {
  *
  * 막대는 페이지가 준 봉(차트와 같은 캔들 목록)에서 가장 최근 MAX_BARS개.
  * 막대 색은 그 봉이 오른 봉인지 내린 봉인지 — 증권 앱 관례.
- * 윗줄 합계는 주기와 무관한 **오늘** 누적 거래량·거래대금(volume-summary).
+ * 윗줄 합계는 주기와 무관한 **오늘**(해외는 최근 정규장) 누적 거래량·거래대금(volume-summary).
  *
  * 원래 `거래량 / 수급` 탭 전환이었으나 **수급은 이번 범위에서 제외**(2026-09-25).
  * 나중에 붙일 때는 탭을 되살리고 신규 API(GET /stocks/{code}/investor-flow)를 받는다.
@@ -66,10 +67,11 @@ export function VolumeBlock({
     >
       <div className="flex flex-col" style={{ gap: 7 }}>
         <div className="flex items-baseline justify-between" style={{ height: 16, fontSize: 12, color: '#97978E' }}>
-          <span>{UNIT[timeframe]} 거래량</span>
+          {/* 해외는 오른쪽 글자가 길어(최근 정규장 · 달러) 한 줄에 안 들어간다 — 블럭 제목이 이미 「거래량」이라 단위만 */}
+          <span>{market === 'FOREIGN' ? UNIT[timeframe] : `${UNIT[timeframe]} 거래량`}</span>
           {today && (
             <span>
-              오늘{' '}
+              {volumeSummaryLabel(market)}{' '}
               <b style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 13, color: '#EDEDEA' }}>
                 {shares(today.total_volume)}
               </b>{' '}
