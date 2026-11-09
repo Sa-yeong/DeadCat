@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearToken, readToken, subscribeToken } from './authToken';
+import { clearToken, leavesOnLogout, readToken, subscribeToken } from './authToken';
 
 /** 로그아웃 — 토큰이 지워지고, 이 탭의 구독자(알림 통로 · 사이드바 · 관심)와 다른 탭이 같이 따라오는지 */
 
@@ -23,6 +23,20 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('로그아웃되면 홈으로 나가는 화면', () => {
+  it('거실 · 남의 거실 · 마이페이지와 그 하위 탭은 나간다', () => {
+    for (const p of ['/room', '/room/42', '/mypage', '/mypage/assets', '/mypage/community/likes']) {
+      expect(leavesOnLogout(p)).toBe(true);
+    }
+  });
+
+  it('나머지 화면은 그 자리에 있는다 — 이름만 비슷한 주소도', () => {
+    for (const p of ['/', '/stocks/basic-list', '/stocks/005930', '/explore/basic', '/roomy', '/mypages']) {
+      expect(leavesOnLogout(p)).toBe(false);
+    }
+  });
 });
 
 describe('로그아웃 공용 상태', () => {

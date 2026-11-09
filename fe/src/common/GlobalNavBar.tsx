@@ -1,7 +1,7 @@
 import './GlobalNavBar.css'
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { clearToken, useAuthToken } from './authToken';
+import { clearToken, leavesOnLogout, useAuthToken } from './authToken';
 import { SearchBar } from './SearchBar';
 import { SidebarLogin } from './sidebar/panels/parts';
 
@@ -9,11 +9,20 @@ import { SidebarLogin } from './sidebar/panels/parts';
  * 프로필 원 옆 버튼. 비로그인 — 팀 공용 로그인 창(로그인하면 지금 주소로 돌아오고 창은 스스로 닫힌다).
  * 로그인 — 토큰을 지우고 어느 화면에서든 홈으로(캐릭터 상태가 달라지므로).
  * 뒤로 가기로 로그인 화면에 돌아오지 않게 지금 기록을 덮어 쓴다.
+ * 다른 탭에서 로그아웃되면 거실 · 마이페이지를 보던 이 탭도 홈으로 나간다. 네비는 어느 화면에나 있어서 여기서 듣는다.
  */
 function AuthButton(){
     const token = useAuthToken();
+    const { pathname } = useLocation();
     const navigate = useNavigate();
     const [loginOpen, setLoginOpen] = useState(false);
+
+    const hadToken = useRef(token !== null);
+    useEffect(() => {
+        const loggedOut = hadToken.current && token === null;
+        hadToken.current = token !== null;
+        if (loggedOut && leavesOnLogout(pathname)) navigate('/', {replace:true});
+    }, [token, pathname, navigate]);
 
     const logout = () => {
         clearToken();

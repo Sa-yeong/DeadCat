@@ -34,6 +34,14 @@ export function clearToken(): void {
 }
 
 /**
+ * 로그아웃되면 홈으로 나가야 하는 화면 — 거실(내 거실 · 남의 거실) · 마이페이지.
+ * 본문이 로그인 때 받은 내용을 그대로 들고 있어서, 다른 탭의 로그아웃을 따라가지 못한다.
+ */
+export function leavesOnLogout(pathname: string): boolean {
+  return ['/room', '/mypage'].some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/**
  * 지금 토큰 — 바뀌면 다시 그린다.
  * 같은 탭의 로그인은 알림이 없지만 팀 Login 이 navigate 로 끝나므로
  * useLocation 이 다시 그리면서 토큰을 다시 읽는다. 그래서 라우터 안에서만 쓴다.
