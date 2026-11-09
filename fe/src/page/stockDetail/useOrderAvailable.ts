@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getOrderAvailable, hasLogin, isUnauthorized, type OrderAvailable } from './api';
+import { useAuthToken } from '../../common/authToken';
 import { subscribeOrderEvents } from '../../common/notifications/orderFeed';
 import { subscribeOrderChanges } from '../../common/orders/orderChanges';
 
@@ -11,6 +12,8 @@ import { subscribeOrderChanges } from '../../common/orders/orderChanges';
  * 받기에 실패하면 받아 둔 값을 그대로 둔다 — 주문 때 서버가 다시 검사하므로 표시가 잠깐 낡아도 안전하다.
  */
 export function useOrderAvailable(stockCode: string) {
+  // 로그인 · 로그아웃(다른 탭 포함)도 다시 받는다 — 지금 화면에 머무는 경우가 있어서
+  const token = useAuthToken();
   const [available, setAvailable] = useState<OrderAvailable | null>(null);
   /** 겹친 요청은 마지막 것만 — 먼저 보낸 응답이 늦게 와서 옛 값으로 덮지 않게 */
   const latest = useRef(0);
@@ -38,7 +41,7 @@ export function useOrderAvailable(stockCode: string) {
       stopChanges();
       latest.current++; // 떠난 뒤 도착한 응답은 버린다
     };
-  }, [reload]);
+  }, [reload, token]);
 
   return { available, reload };
 }

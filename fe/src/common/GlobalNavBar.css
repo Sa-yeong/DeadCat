@@ -124,3 +124,22 @@
     background: #5b49d8;
     cursor: pointer;
 }
+
+/* 로그인 · 로그아웃 — 검색창과 같은 높이 · 둥근 선 */
+.globalNav .gnb-auth {
+    flex-shrink: 0;
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    background: none;
+    color: #9a9a93;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.globalNav .gnb-auth:hover {
+    color: #ededea;
+}

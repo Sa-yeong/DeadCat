@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelOrder, errorMessage, getPendingOrders, hasLogin, isUnauthorized, type PendingOrder } from '../api';
 import { down, orderTime, up } from '../format';
 import { R } from '../radius';
+import { useAuthToken } from '../../../common/authToken';
 import { subscribeOrderEvents } from '../../../common/notifications/orderFeed';
 import { subscribeOrderChanges } from '../../../common/orders/orderChanges';
 import { cancelFailedNotice, cancelledNotice, money } from '../../../common/notifications/orderNotices';
@@ -21,6 +22,8 @@ export interface PendingOrdersState {
  * 로그인 안 했으면 비어 있는 것으로 친다.
  */
 export function usePendingOrders(stockCode: string) {
+  // 로그인 · 로그아웃(다른 탭 포함)도 다시 받는다 — 지금 화면에 머무는 경우가 있어서
+  const token = useAuthToken();
   const [orders, setOrders] = useState<PendingOrdersState>({ rows: [], failed: false });
   /** 겹친 요청은 마지막 것만 — 먼저 보낸 응답이 늦게 와서 옛 목록으로 덮지 않게 */
   const latest = useRef(0);
@@ -52,7 +55,7 @@ export function usePendingOrders(stockCode: string) {
       stopChanges();
       latest.current++; // 떠난 뒤 도착한 응답은 버린다
     };
-  }, [stockCode, reload]);
+  }, [stockCode, reload, token]);
 
   return { orders, reload };
 }

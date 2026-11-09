@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { down, up } from '../../page/stockDetail/format';
 import { R } from '../../page/stockDetail/radius';
+import { useAuthToken } from '../authToken';
 import { startOrderFeed } from './orderFeed';
 import { clearNotices, dismissNotice, getNotices, subscribeNotices, type Notice, type NoticePart } from './store';
 
@@ -11,28 +12,13 @@ const SHOW_MS = 4000;
 
 const STRIP = { BUY: up, SELL: down, FAIL: '#6E6E74' } as const;
 
-function readToken(): string | null {
-  try {
-    return localStorage.getItem('token');
-  } catch {
-    return null;
-  }
-}
-
-/** 다른 탭의 로그인 · 로그아웃 */
-function subscribeToken(fn: () => void) {
-  window.addEventListener('storage', fn);
-  return () => window.removeEventListener('storage', fn);
-}
-
 /**
  * 앱 공용 알림 상자 — 화면 우하단. Root 에 하나 둔다.
- * 로그인한 동안 알림 통로를 열고, 계정이 바뀌면 닫았다가 새로 연다.
- * 같은 탭의 로그인은 이벤트가 없지만 navigate 로 끝나므로 useLocation 이 다시 그려 토큰을 다시 읽는다.
+ * 로그인한 동안 알림 통로를 열고, 로그아웃하면 닫고, 계정이 바뀌면 닫았다가 새로 연다.
  */
 export function NotificationCenter() {
   const { pathname } = useLocation();
-  const token = useSyncExternalStore(subscribeToken, readToken);
+  const token = useAuthToken();
   const notices = useSyncExternalStore(subscribeNotices, getNotices);
 
   useEffect(() => {
