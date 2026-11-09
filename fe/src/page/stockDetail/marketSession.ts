@@ -1,4 +1,4 @@
-import type { Candle, MarketSession, StockBasic, Timeframe } from './types';
+import type { Candle, MarketSession, Orderbook, StockBasic, Timeframe } from './types';
 
 /**
  * 해외 종목이 지금 어느 장에 있는지로 화면이 달라지는 규칙들.
@@ -26,9 +26,15 @@ export function isMarketClosed(b: Session & Pick<StockBasic, 'market_open'>): bo
   return b.market_open === false;
 }
 
-/** 호가 대신 안내를 보일 때 — 해외 닫힌 시간만. 국내는 장외에도 받은 호가를 그대로 그린다 */
-export function isBookHidden(b: Session & Pick<StockBasic, 'market_open'>): boolean {
-  return b.market === 'FOREIGN' && isMarketClosed(b);
+/**
+ * 호가 대신 안내를 보일 때 — 해외 닫힌 시간에 서버가 줄 호가도 없을 때만.
+ * 닫힌 시간에도 직전 장의 마지막 호가가 오면 그대로 그린다. 국내는 장외에도 받은 호가를 그대로 그린다
+ */
+export function isBookHidden(
+  b: Session & Pick<StockBasic, 'market_open'>,
+  book: Pick<Orderbook, 'asks' | 'bids'>,
+): boolean {
+  return b.market === 'FOREIGN' && isMarketClosed(b) && book.asks.length + book.bids.length === 0;
 }
 
 /** 거래량 블럭 합계 앞 글자 — 해외 합계는 정규장 기준이라 「오늘」이 아니다 */

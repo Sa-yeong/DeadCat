@@ -38,10 +38,10 @@ export function OrderBookBlock({
   const priceText = bookPriceText(tick.basic);
 
   // 전부 그린다 — 위에서부터 매도(높은 값 → 현재가 쪽), 아래로 매수(현재가 쪽 → 낮은 값)
-  // 해외 닫힌 시간에는 호가가 없다(서버가 비워서 준다) — 가운데 현재가 줄과 안내만
-  const usClosed = isBookHidden(tick.basic);
-  const asks = usClosed ? [] : [...tick.orderbook.asks].sort((x, y) => y.price - x.price).slice(-MAX_LEVELS);
-  const bids = usClosed ? [] : [...tick.orderbook.bids].sort((x, y) => y.price - x.price).slice(0, MAX_LEVELS);
+  // 해외 닫힌 시간에는 직전 장의 마지막 호가를 그대로 그린다. 그것도 없으면 가운데 현재가 줄과 안내만
+  const noBook = isBookHidden(tick.basic, tick.orderbook);
+  const asks = [...tick.orderbook.asks].sort((x, y) => y.price - x.price).slice(-MAX_LEVELS);
+  const bids = [...tick.orderbook.bids].sort((x, y) => y.price - x.price).slice(0, MAX_LEVELS);
   const maxQty = Math.max(1, ...asks.map((a) => a.quantity), ...bids.map((x) => x.quantity));
 
   // 현재가 줄을 가운데로 — 종목이 바뀌거나 블럭 높이가 바뀔 때만. 매 틱마다 하면 사용자가 스크롤한 걸 되돌린다
@@ -73,7 +73,7 @@ export function OrderBookBlock({
           height: b.height - BLOCK_CHROME,
           overflowY: 'auto',
           overscrollBehavior: 'contain',
-          justifyContent: usClosed ? 'center' : undefined,
+          justifyContent: noBook ? 'center' : undefined,
         }}
       >
         {asks.map((a) => (
@@ -109,7 +109,7 @@ export function OrderBookBlock({
           </div>
           <div />
         </button>
-        {usClosed && (
+        {noBook && (
           <p className="m-0 text-center" style={{ padding: '14px 0 0', fontSize: 12.5, color: '#8F8F88' }}>
             장이 열리면 보여요
           </p>

@@ -131,6 +131,52 @@ describe('MarketTimeService', () => {
         });
     });
 
+    describe('isSinceLastForeignOpen — 닫힌 시간에 직전 장의 값인가', () => {
+        // 2026-11-02 월 ~ 11-08 일, 서머타임 해제 뒤(ET = UTC-5)
+        const et = (d: string, hhmm: string) =>
+            new Date(`2026-11-${d}T${hhmm}:00-05:00`);
+        const fresh = (at: Date, now: Date) =>
+            service.isSinceLastForeignOpen(at, now);
+
+        it('평일 닫힌 시간 — 그 장(전날 20:00 ~ 오늘 19:50)에서 받은 값', () => {
+            const now = et('03', '19:55');
+            expect(fresh(et('03', '19:49'), now)).toBe(true);
+            expect(fresh(et('02', '20:00'), now)).toBe(true);
+        });
+
+        it('평일 닫힌 시간 — 그보다 앞 장의 값은 아니다', () => {
+            const now = et('03', '19:55');
+            expect(fresh(et('02', '19:49'), now)).toBe(false);
+        });
+
+        it('닫힌 시간 안에서 받은 값(KIS 조회)은 그 닫힌 시간 내내 유효', () => {
+            expect(fresh(et('07', '10:00'), et('08', '19:59'))).toBe(true);
+            expect(fresh(et('03', '19:51'), et('03', '19:59'))).toBe(true);
+        });
+
+        it('지난 닫힌 시간에 받은 값은 다음 닫힌 시간에는 아니다', () => {
+            expect(fresh(et('02', '19:59'), et('03', '19:50'))).toBe(false);
+        });
+
+        it.each([
+            ['금 저녁', '06', '21:00'],
+            ['토', '07', '12:00'],
+            ['일 낮', '08', '19:59'],
+        ])('주말 %s — 금요일 애프터 값은 직전 장', (_n, d, hhmm) => {
+            const now = et(d, hhmm);
+            expect(fresh(et('06', '19:49'), now)).toBe(true);
+            expect(fresh(et('05', '20:00'), now)).toBe(true);
+        });
+
+        it.each([
+            ['금 저녁', '06', '21:00'],
+            ['토', '07', '12:00'],
+            ['일 낮', '08', '19:59'],
+        ])('주말 %s — 목요일 애프터 값은 아니다', (_n, d, hhmm) => {
+            expect(fresh(et('05', '19:49'), et(d, hhmm))).toBe(false);
+        });
+    });
+
     describe('isOrderExpired — 해외: 그 거래일의 애프터마켓 종료(뉴욕 19:50)', () => {
         const et = (d: string, hhmm: string, ss = '00') =>
             new Date(`2026-11-${d}T${hhmm}:${ss}-05:00`);

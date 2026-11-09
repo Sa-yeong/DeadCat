@@ -592,6 +592,56 @@ export class StocksService {
         return value;
     }
 
+    /**
+     * 종목별로 KIS 에서 마지막으로 받은 해외 호가 — 닫힌 시간에 그대로 보여 준다.
+     * 서버 메모리에만 둔다: 볼 때마다(종목당 1초에 한 번) Redis 에 쓸 만큼의 값이 아니고,
+     * 서버를 새로 켜서 비어 있으면 KIS 조회로 다시 채워진다.
+     */
+    private readonly lastForeignBook = new Map<
+        string,
+        { at: number; book: OrderbookData }
+    >();
+
+    /** KIS 해외 호가를 받고, 비어 있지 않으면 마지막 호가로 들고 있는다 */
+    private async fetchForeignBook(
+        code: string,
+        exchange: string,
+        dayMarket: boolean,
+    ): Promise<OrderbookData> {
+        const book = await this.kisProvider.getOverseasOrderbook(
+            code,
+            exchange,
+            dayMarket,
+        );
+        if (book.asks.length + book.bids.length > 0) {
+            this.lastForeignBook.set(code, { at: Date.now(), book });
+        }
+        return book;
+    }
+
+    /**
+     * 닫힌 시간의 해외 호가 — 직전 장의 마지막 호가, 없으면 KIS 조회, 그것도 비면 빈 호가(화면이 안내를 띄운다).
+     * 호가는 누가 그 종목을 볼 때만 받으므로 들고 있는 값이 며칠 전 장의 것일 수 있다 — 그건 없는 것으로 친다.
+     */
+    private async closedForeignBook(
+        code: string,
+        exchange: string,
+    ): Promise<OrderbookData> {
+        const kept = this.lastForeignBook.get(code);
+        if (kept && this.marketTime.isSinceLastForeignOpen(new Date(kept.at))) {
+            return kept.book;
+        }
+        try {
+            return await this.sharedOrderbook(code, () =>
+                this.fetchForeignBook(code, exchange, false),
+            );
+        } catch (e) {
+            // 호가를 못 받아도 머리 시세까지 같이 실패하면 안 된다(화면은 둘을 함께 받는다)
+            this.logger.warn(`닫힌 시간 호가 조회 실패 ${code}: ${String(e)}`);
+            return { asks: [], bids: [] };
+        }
+    }
+
     // GET /stocks/{stock_code}/orderbook 실시간 호가창 조회
     async getOrderbook(stockCode: string): Promise<OrderbookResponseDto> {
         const meta = await this.repo.findStockByCode(stockCode);
@@ -604,23 +654,24 @@ export class StocksService {
             meta.stock_type === 'OVERSEAS' ||
             /^[A-Za-z]+$/.test(stockCode);
 
-        // 해외 호가는 지금 열린 장의 호가 — 닫힌 시간에는 KIS 를 부르지 않는다(주문 규칙과 같은 판정)
+        // 해외 호가는 지금 열린 장의 호가, 닫힌 시간에는 직전 장의 마지막 호가(주문 규칙과 같은 판정)
         const session = isOverseas ? this.marketTime.foreignSession() : null;
-        if (session === 'CLOSED') {
-            return new OrderbookResponseDto(stockCode, [], []);
-        }
+        const exchange = meta.exchange_code || 'NAS';
 
         // 화면은 보는 사람마다 2초에 한 번 호가를 부른다. 매번 KIS를 직접 부르면 시청자 수만큼
         // 호출이 늘어 KIS 초당 한도에 걸린다 — 종목별로 1초 동안 같은 결과(진행 중인 요청 포함)를 나눠 쓴다.
-        const orderbook = await this.sharedOrderbook(stockCode, () =>
-            isOverseas
-                ? this.kisProvider.getOverseasOrderbook(
-                      stockCode,
-                      meta.exchange_code || 'NAS',
-                      session === 'DAY',
-                  )
-                : this.kisProvider.getOrderbook(stockCode),
-        );
+        const orderbook =
+            session === 'CLOSED'
+                ? await this.closedForeignBook(stockCode, exchange)
+                : await this.sharedOrderbook(stockCode, () =>
+                      isOverseas
+                          ? this.fetchForeignBook(
+                                stockCode,
+                                exchange,
+                                session === 'DAY',
+                            )
+                          : this.kisProvider.getOrderbook(stockCode),
+                  );
 
         // DTO 객체 변환
         const asks = orderbook.asks.map(

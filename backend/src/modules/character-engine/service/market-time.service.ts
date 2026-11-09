@@ -12,6 +12,8 @@ const REGULAR_START = 9 * 60 + 30;
 const AFTER_START = 16 * 60;
 const AFTER_END = 19 * 60 + 50; // 19:50 ~ 20:00 은 닫힌 시간
 const DAY_START = 20 * 60;
+/** 닫힌 시간 사이의 열린 구간 하나 — 20:00 데이마켓 시작부터 다음 날 19:50 애프터 끝까지(분) */
+const OPEN_STRETCH = 24 * 60 + AFTER_END - DAY_START;
 /** 데이마켓이 저녁 20:00 에 열리는 요일 — 일요일 저녁부터 목요일 저녁까지(금요일 저녁은 주말로 닫힘) */
 const DAY_EVENINGS: ReadonlySet<string> = new Set([
     'Sun',
@@ -97,6 +99,18 @@ export class MarketTimeService {
         if (minutes < AFTER_START) return 'REGULAR';
         if (minutes < AFTER_END) return 'AFTER';
         return 'CLOSED';
+    }
+
+    /**
+     * 닫힌 시간에, 이 시각이 바로 앞 열린 구간부터 지금까지 안인가 — 그보다 옛날 장에서 받은 값은
+     * 「직전 장의 값」이 아니다. 서머타임이 바뀌는 일요일에는 한 시간쯤 어긋날 수 있다(구간이 하루라 영향 없음)
+     */
+    isSinceLastForeignOpen(at: Date, now = new Date()): boolean {
+        const { weekday, minutes } = usClock(now);
+        const daysPastClose = weekday === 'Sat' ? 1 : weekday === 'Sun' ? 2 : 0;
+        const closedFor = daysPastClose * 24 * 60 + minutes - AFTER_END;
+        const window = (closedFor + OPEN_STRETCH) * 60_000;
+        return now.getTime() - at.getTime() <= window;
     }
 
     /**

@@ -49,15 +49,26 @@ describe('시장가 — 닫힌 시간에만 끈다', () => {
   });
 });
 
-describe('호가 안내 — 해외 닫힌 시간에만', () => {
+describe('호가 안내 — 해외 닫힌 시간에 호가도 없을 때만', () => {
+  const noBook = { asks: [], bids: [] };
+  const book = { asks: [{ price: 359.88, quantity: 1 }], bids: [] };
+
   it.each(OPEN_SESSIONS)('해외 %s — 호가를 그린다', (s) => {
-    expect(isBookHidden(foreign(s))).toBe(false);
+    expect(isBookHidden(foreign(s), book)).toBe(false);
+    expect(isBookHidden(foreign(s), noBook)).toBe(false);
   });
-  it('해외 닫힌 시간 — 안내', () => {
-    expect(isBookHidden(foreign('CLOSED'))).toBe(true);
+  it('해외 닫힌 시간 · 호가 없음 — 안내', () => {
+    expect(isBookHidden(foreign('CLOSED'), noBook)).toBe(true);
+  });
+  it('해외 닫힌 시간 · 마지막 호가 있음 — 그대로 그린다', () => {
+    expect(isBookHidden(foreign('CLOSED'), book)).toBe(false);
   });
   it('국내는 장외에도 받은 호가를 그린다', () => {
-    expect(isBookHidden(domestic(false))).toBe(false);
+    expect(isBookHidden(domestic(false), noBook)).toBe(false);
+  });
+  it('마지막 호가가 있어도 닫힌 시간 시장가는 끈 채로', () => {
+    expect(isBookHidden(foreign('CLOSED'), book)).toBe(false);
+    expect(isMarketClosed(foreign('CLOSED'))).toBe(true);
   });
 });
 

@@ -156,6 +156,8 @@ describe('호가 · 장 구분 — 해외', () => {
         const getOverseasOrderbook = jest
             .fn()
             .mockResolvedValue({ asks: [{ price: 359.88, quantity: 1 }], bids: [] });
+        const isSinceLastForeignOpen = jest.fn().mockReturnValue(true);
+        const foreignSession = jest.fn().mockReturnValue(session);
         const getOrderbook = jest
             .fn()
             .mockResolvedValue({ asks: [], bids: [{ price: 70000, quantity: 3 }] });
@@ -180,18 +182,105 @@ describe('호가 · 장 구분 — 해외', () => {
             { getOverseasOrderbook, getOrderbook } as never,
             {
                 isTradingOpen: jest.fn().mockReturnValue(session !== 'CLOSED'),
-                foreignSession: jest.fn().mockReturnValue(session),
+                foreignSession,
+                isSinceLastForeignOpen,
             } as never,
         );
-        return { service, getOverseasOrderbook, getOrderbook };
+        return {
+            service,
+            getOverseasOrderbook,
+            getOrderbook,
+            foreignSession,
+            isSinceLastForeignOpen,
+        };
     }
 
-    it('닫힌 시간에는 KIS 를 부르지 않고 비운다', async () => {
-        const { service, getOverseasOrderbook } = orderbookService('CLOSED');
-        const book = await service.getOrderbook('TSLA');
+    /** 공유 창(1초)을 넘겨 다음 호출이 KIS 까지 가게 한다 */
+    function passShareWindow() {
+        const now = Date.now();
+        jest.spyOn(Date, 'now').mockReturnValue(now + 2000);
+    }
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('닫힌 시간 — 열린 장에서 받은 마지막 호가를 그대로 주고 KIS 를 부르지 않는다', async () => {
+        const f = orderbookService('AFTER');
+        await f.service.getOrderbook('TSLA');
+        f.foreignSession.mockReturnValue('CLOSED');
+        f.getOverseasOrderbook.mockClear();
+
+        const book = await f.service.getOrderbook('TSLA');
+        expect(book.asks).toEqual([{ price: 359.88, quantity: 1 }]);
+        expect(f.getOverseasOrderbook).not.toHaveBeenCalled();
+    });
+
+    it('마지막 호가는 그 장의 맨 뒤 값 — 나중에 받은 것이 앞의 것을 덮는다', async () => {
+        const f = orderbookService('AFTER');
+        await f.service.getOrderbook('TSLA');
+        passShareWindow();
+        f.getOverseasOrderbook.mockResolvedValue({
+            asks: [{ price: 360.5, quantity: 7 }],
+            bids: [],
+        });
+        await f.service.getOrderbook('TSLA');
+        f.foreignSession.mockReturnValue('CLOSED');
+
+        const book = await f.service.getOrderbook('TSLA');
+        expect(book.asks).toEqual([{ price: 360.5, quantity: 7 }]);
+    });
+
+    it('열린 장에서 빈 응답을 받아도 앞서 받은 호가를 지우지 않는다', async () => {
+        const f = orderbookService('AFTER');
+        await f.service.getOrderbook('TSLA');
+        passShareWindow();
+        f.getOverseasOrderbook.mockResolvedValue({ asks: [], bids: [] });
+        await f.service.getOrderbook('TSLA');
+        f.foreignSession.mockReturnValue('CLOSED');
+
+        const book = await f.service.getOrderbook('TSLA');
+        expect(book.asks).toHaveLength(1);
+    });
+
+    it('닫힌 시간 · 들고 있는 호가 없음 — KIS 조회(정규 코드), 받은 것은 들고 있는다', async () => {
+        const f = orderbookService('CLOSED');
+        const book = await f.service.getOrderbook('TSLA');
+        expect(f.getOverseasOrderbook).toHaveBeenCalledWith('TSLA', 'NASD', false);
+        expect(book.asks).toHaveLength(1);
+
+        passShareWindow();
+        f.getOverseasOrderbook.mockClear();
+        await f.service.getOrderbook('TSLA');
+        expect(f.getOverseasOrderbook).not.toHaveBeenCalled();
+    });
+
+    it('닫힌 시간 · KIS 도 비면 빈 호가(화면 안내)', async () => {
+        const f = orderbookService('CLOSED');
+        f.getOverseasOrderbook.mockResolvedValue({ asks: [], bids: [] });
+        const book = await f.service.getOrderbook('TSLA');
         expect(book.asks).toEqual([]);
         expect(book.bids).toEqual([]);
-        expect(getOverseasOrderbook).not.toHaveBeenCalled();
+    });
+
+    it('닫힌 시간 · KIS 실패 — 오류 대신 빈 호가', async () => {
+        const f = orderbookService('CLOSED');
+        f.getOverseasOrderbook.mockRejectedValue(new Error('KIS down'));
+        const book = await f.service.getOrderbook('TSLA');
+        expect(book.asks).toEqual([]);
+        expect(book.bids).toEqual([]);
+    });
+
+    it('며칠 전 장에서 받은 호가는 없는 것으로 치고 KIS 를 본다', async () => {
+        const f = orderbookService('AFTER');
+        await f.service.getOrderbook('TSLA');
+        f.foreignSession.mockReturnValue('CLOSED');
+        f.isSinceLastForeignOpen.mockReturnValue(false);
+        passShareWindow();
+        f.getOverseasOrderbook.mockClear();
+        f.getOverseasOrderbook.mockResolvedValue({ asks: [], bids: [] });
+
+        const book = await f.service.getOrderbook('TSLA');
+        expect(f.getOverseasOrderbook).toHaveBeenCalledTimes(1);
+        expect(book.asks).toEqual([]);
     });
 
     it('프리마켓은 그 장의 호가(정규 코드)', async () => {
