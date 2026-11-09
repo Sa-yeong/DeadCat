@@ -114,6 +114,31 @@ export class MarketTimeService {
     }
 
     /**
+     * 국내 장외에, 이 시각이 바로 앞 장(가장 최근 평일 09:00)부터 지금까지 안인가 — 해외의
+     * isSinceLastForeignOpen 과 같은 뜻. 주말 · 월요일 장 전이면 금요일 장이 바로 앞 장이다
+     */
+    isSinceLastDomesticOpen(at: Date, now = new Date()): boolean {
+        const { date, minutes, weekend } = seoulClock(now);
+        let daysBack = 0;
+        if (weekend || minutes < KRX_START) {
+            const day = new Date(
+                Date.UTC(
+                    Number(date.slice(0, 4)),
+                    Number(date.slice(4, 6)) - 1,
+                    Number(date.slice(6, 8)),
+                ),
+            );
+            do {
+                day.setUTCDate(day.getUTCDate() - 1);
+                daysBack++;
+            } while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
+        }
+        // 분 단위로 자른 시각이라 초만큼 모자랄 수 있다 — 1분 넉넉히
+        const window = (daysBack * 24 * 60 + minutes - KRX_START + 1) * 60_000;
+        return now.getTime() - at.getTime() <= window;
+    }
+
+    /**
      * 이 대기 주문의 거래일이 끝났는가. 해외는 애프터마켓 종료(19:50 뉴욕), 국내는 장 마감(15:31:00 한국)이 끝.
      * 장 종료 뒤 · 주말에 낸 주문은 다음 거래일의 것이고, 해외는 장이 바뀌어도(데이 → 프리 → 정규 → 애프터) 같은 거래일이다.
      * 경과 시간이 아니라 「끝나는 날짜」를 비교하므로 서버가 꺼져 있는 동안 지난 주문도 다음 점검에 걸린다.

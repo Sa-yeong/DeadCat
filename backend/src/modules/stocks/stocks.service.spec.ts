@@ -157,6 +157,8 @@ describe('호가 · 장 구분 — 해외', () => {
             .fn()
             .mockResolvedValue({ asks: [{ price: 359.88, quantity: 1 }], bids: [] });
         const isSinceLastForeignOpen = jest.fn().mockReturnValue(true);
+        const isSinceLastDomesticOpen = jest.fn().mockReturnValue(true);
+        const isTradingOpen = jest.fn().mockReturnValue(session !== 'CLOSED');
         const foreignSession = jest.fn().mockReturnValue(session);
         const getOrderbook = jest
             .fn()
@@ -181,9 +183,10 @@ describe('호가 · 장 구분 — 해외', () => {
             } as never,
             { getOverseasOrderbook, getOrderbook } as never,
             {
-                isTradingOpen: jest.fn().mockReturnValue(session !== 'CLOSED'),
+                isTradingOpen,
                 foreignSession,
                 isSinceLastForeignOpen,
+                isSinceLastDomesticOpen,
             } as never,
         );
         return {
@@ -191,7 +194,9 @@ describe('호가 · 장 구분 — 해외', () => {
             getOverseasOrderbook,
             getOrderbook,
             foreignSession,
+            isTradingOpen,
             isSinceLastForeignOpen,
+            isSinceLastDomesticOpen,
         };
     }
 
@@ -302,6 +307,78 @@ describe('호가 · 장 구분 — 해외', () => {
         await service.getOrderbook('005930');
         expect(getOrderbook).toHaveBeenCalledWith('005930');
         expect(getOverseasOrderbook).not.toHaveBeenCalled();
+    });
+
+    describe('국내 장외 — 해외 닫힌 시간과 같은 장치 (F6)', () => {
+        it('장중에 받은 마지막 호가를 장외에 그대로 주고 KIS 를 부르지 않는다', async () => {
+            const f = orderbookService('OPEN', 'DOMESTIC');
+            await f.service.getOrderbook('005930');
+            f.isTradingOpen.mockReturnValue(false);
+            f.getOrderbook.mockClear();
+
+            const book = await f.service.getOrderbook('005930');
+            expect(book.bids).toEqual([{ price: 70000, quantity: 3 }]);
+            expect(f.getOrderbook).not.toHaveBeenCalled();
+            expect(f.isSinceLastForeignOpen).not.toHaveBeenCalled();
+        });
+
+        it('장중 빈 응답은 앞서 받은 호가를 지우지 않는다', async () => {
+            const f = orderbookService('OPEN', 'DOMESTIC');
+            await f.service.getOrderbook('005930');
+            passShareWindow();
+            f.getOrderbook.mockResolvedValue({ asks: [], bids: [] });
+            await f.service.getOrderbook('005930');
+            f.isTradingOpen.mockReturnValue(false);
+
+            const book = await f.service.getOrderbook('005930');
+            expect(book.bids).toHaveLength(1);
+        });
+
+        it('들고 있는 호가 없음 — KIS 조회, 받은 것은 들고 있는다', async () => {
+            const f = orderbookService('CLOSED', 'DOMESTIC');
+            const book = await f.service.getOrderbook('005930');
+            expect(f.getOrderbook).toHaveBeenCalledTimes(1);
+            expect(book.bids).toHaveLength(1);
+
+            passShareWindow();
+            f.getOrderbook.mockClear();
+            await f.service.getOrderbook('005930');
+            expect(f.getOrderbook).not.toHaveBeenCalled();
+        });
+
+        it('KIS 도 비거나 실패하면 빈 호가', async () => {
+            const f = orderbookService('CLOSED', 'DOMESTIC');
+            f.getOrderbook.mockResolvedValue({ asks: [], bids: [] });
+            expect((await f.service.getOrderbook('005930')).bids).toEqual([]);
+
+            passShareWindow();
+            f.getOrderbook.mockRejectedValue(new Error('KIS down'));
+            const book = await f.service.getOrderbook('005930');
+            expect(book.asks).toEqual([]);
+            expect(book.bids).toEqual([]);
+        });
+
+        it('앞 장보다 옛날 호가는 없는 것으로 치고 KIS 를 본다', async () => {
+            const f = orderbookService('OPEN', 'DOMESTIC');
+            await f.service.getOrderbook('005930');
+            f.isTradingOpen.mockReturnValue(false);
+            f.isSinceLastDomesticOpen.mockReturnValue(false);
+            passShareWindow();
+            f.getOrderbook.mockClear();
+            f.getOrderbook.mockResolvedValue({ asks: [], bids: [] });
+
+            const book = await f.service.getOrderbook('005930');
+            expect(f.getOrderbook).toHaveBeenCalledTimes(1);
+            expect(book.bids).toEqual([]);
+        });
+
+        it('장중에는 늘 KIS 값(공유 창 밖)', async () => {
+            const f = orderbookService('OPEN', 'DOMESTIC');
+            await f.service.getOrderbook('005930');
+            passShareWindow();
+            await f.service.getOrderbook('005930');
+            expect(f.getOrderbook).toHaveBeenCalledTimes(2);
+        });
     });
 
     it('머리에 지금 장을 알려 준다 — 국내는 null', async () => {

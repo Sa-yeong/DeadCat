@@ -593,47 +593,47 @@ export class StocksService {
     }
 
     /**
-     * 종목별로 KIS 에서 마지막으로 받은 해외 호가 — 닫힌 시간에 그대로 보여 준다.
+     * 종목별로 KIS 에서 마지막으로 받은 호가(국내 · 해외) — 닫힌 시간 · 장외에 그대로 보여 준다.
      * 서버 메모리에만 둔다: 볼 때마다(종목당 1초에 한 번) Redis 에 쓸 만큼의 값이 아니고,
      * 서버를 새로 켜서 비어 있으면 KIS 조회로 다시 채워진다.
      */
-    private readonly lastForeignBook = new Map<
+    private readonly lastBook = new Map<
         string,
         { at: number; book: OrderbookData }
     >();
 
-    /** KIS 해외 호가를 받고, 비어 있지 않으면 마지막 호가로 들고 있는다 */
-    private async fetchForeignBook(
+    /** KIS 호가를 받고, 비어 있지 않으면 마지막 호가로 들고 있는다 */
+    private async fetchBook(
         code: string,
-        exchange: string,
-        dayMarket: boolean,
+        load: () => Promise<OrderbookData>,
     ): Promise<OrderbookData> {
-        const book = await this.kisProvider.getOverseasOrderbook(
-            code,
-            exchange,
-            dayMarket,
-        );
+        const book = await load();
         if (book.asks.length + book.bids.length > 0) {
-            this.lastForeignBook.set(code, { at: Date.now(), book });
+            this.lastBook.set(code, { at: Date.now(), book });
         }
         return book;
     }
 
     /**
-     * 닫힌 시간의 해외 호가 — 직전 장의 마지막 호가, 없으면 KIS 조회, 그것도 비면 빈 호가(화면이 안내를 띄운다).
+     * 닫힌 시간(해외) · 장외(국내)의 호가 — 직전 장의 마지막 호가, 없으면 KIS 조회, 그것도 비면 빈 호가.
      * 호가는 누가 그 종목을 볼 때만 받으므로 들고 있는 값이 며칠 전 장의 것일 수 있다 — 그건 없는 것으로 친다.
      */
-    private async closedForeignBook(
+    private async closedBook(
         code: string,
-        exchange: string,
+        foreign: boolean,
+        load: () => Promise<OrderbookData>,
     ): Promise<OrderbookData> {
-        const kept = this.lastForeignBook.get(code);
-        if (kept && this.marketTime.isSinceLastForeignOpen(new Date(kept.at))) {
-            return kept.book;
+        const kept = this.lastBook.get(code);
+        if (kept) {
+            const at = new Date(kept.at);
+            const fresh = foreign
+                ? this.marketTime.isSinceLastForeignOpen(at)
+                : this.marketTime.isSinceLastDomesticOpen(at);
+            if (fresh) return kept.book;
         }
         try {
             return await this.sharedOrderbook(code, () =>
-                this.fetchForeignBook(code, exchange, false),
+                this.fetchBook(code, load),
             );
         } catch (e) {
             // 호가를 못 받아도 머리 시세까지 같이 실패하면 안 된다(화면은 둘을 함께 받는다)
@@ -660,18 +660,23 @@ export class StocksService {
 
         // 화면은 보는 사람마다 2초에 한 번 호가를 부른다. 매번 KIS를 직접 부르면 시청자 수만큼
         // 호출이 늘어 KIS 초당 한도에 걸린다 — 종목별로 1초 동안 같은 결과(진행 중인 요청 포함)를 나눠 쓴다.
-        const orderbook =
-            session === 'CLOSED'
-                ? await this.closedForeignBook(stockCode, exchange)
-                : await this.sharedOrderbook(stockCode, () =>
-                      isOverseas
-                          ? this.fetchForeignBook(
-                                stockCode,
-                                exchange,
-                                session === 'DAY',
-                            )
-                          : this.kisProvider.getOrderbook(stockCode),
-                  );
+        const load = (): Promise<OrderbookData> =>
+            isOverseas
+                ? this.kisProvider.getOverseasOrderbook(
+                      stockCode,
+                      exchange,
+                      session === 'DAY',
+                  )
+                : this.kisProvider.getOrderbook(stockCode);
+        // 국내 장외도 해외 닫힌 시간처럼 마지막 호가를 그대로 둔다(주문 · 감정과 같은 판정)
+        const closed = isOverseas
+            ? session === 'CLOSED'
+            : !this.marketTime.isTradingOpen('DOMESTIC');
+        const orderbook = closed
+            ? await this.closedBook(stockCode, isOverseas, load)
+            : await this.sharedOrderbook(stockCode, () =>
+                  this.fetchBook(stockCode, load),
+              );
 
         // DTO 객체 변환
         const asks = orderbook.asks.map(

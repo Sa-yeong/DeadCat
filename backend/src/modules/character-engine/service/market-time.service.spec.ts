@@ -177,6 +177,40 @@ describe('MarketTimeService', () => {
         });
     });
 
+    describe('isSinceLastDomesticOpen — 장외에 바로 앞 장의 값인가 (F6)', () => {
+        // 2026-11-02 월 ~ 11-09 월
+        const kst = (d: string, hhmm: string) =>
+            new Date(`2026-11-${d}T${hhmm}:00+09:00`);
+        const fresh = (at: Date, now: Date) =>
+            service.isSinceLastDomesticOpen(at, now);
+
+        it('평일 장 마감 뒤 — 오늘 장(09:00 ~)에서 받은 값', () => {
+            const now = kst('03', '20:00');
+            expect(fresh(kst('03', '15:30'), now)).toBe(true);
+            expect(fresh(kst('03', '09:00'), now)).toBe(true);
+            expect(fresh(kst('03', '16:10'), now)).toBe(true); // 장외에 KIS 로 받은 값
+            expect(fresh(kst('02', '15:30'), now)).toBe(false);
+        });
+
+        it('평일 장 시작 전 — 어제 장의 값, 그제 값은 아니다', () => {
+            const now = kst('04', '07:32');
+            expect(fresh(kst('03', '15:30'), now)).toBe(true);
+            expect(fresh(kst('03', '09:00'), now)).toBe(true);
+            expect(fresh(kst('02', '15:30'), now)).toBe(false);
+        });
+
+        it.each([
+            ['토', '07', '12:00'],
+            ['일', '08', '23:00'],
+            ['월 장 전', '09', '08:59'],
+        ])('주말 %s — 금요일 장의 값, 목요일 값은 아니다', (_n, d, hhmm) => {
+            const now = kst(d, hhmm);
+            expect(fresh(kst('06', '15:30'), now)).toBe(true);
+            expect(fresh(kst('06', '09:00'), now)).toBe(true);
+            expect(fresh(kst('05', '15:30'), now)).toBe(false);
+        });
+    });
+
     describe('isOrderExpired — 해외: 그 거래일의 애프터마켓 종료(뉴욕 19:50)', () => {
         const et = (d: string, hhmm: string, ss = '00') =>
             new Date(`2026-11-${d}T${hhmm}:${ss}-05:00`);
