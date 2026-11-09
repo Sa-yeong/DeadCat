@@ -54,6 +54,8 @@ export interface RoomCharacterDto {
   ownedClothesId: number | null;
   /** 받은 반응 수(종류 합) */
   receivedReactionCount: number;
+  /** 받은 반응 — 종류 이름 → 개수. 받은 적 없는 종류는 칸이 없다 */
+  receivedReactions: Record<string, number>;
   /** VISITOR 전용 · 내가 이 캐릭터에 남긴 반응 종류(캐릭터마다 1인 1개). 없거나 비로그인이면 null */
   myReaction?: string | null;
 }
@@ -225,6 +227,8 @@ export interface RoomReactions {
 export interface CharacterReactions {
   stockId: number;
   receivedReactionCount: number;
+  /** 종류 이름 → 개수 */
+  receivedReactions: Record<string, number>;
   myReaction: string | null;
 }
 

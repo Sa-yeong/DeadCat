@@ -5,7 +5,7 @@ import * as api from '../api';
 import type { OwnerId } from '../api';
 import type { GuestbookPost, GuestbookReply, ReactionKind, RoomReactions, ViewMode } from '../types';
 import { PanelHeader } from './SidePanel';
-import { Icon, ReactionFace } from './ui';
+import { Icon, ReactionChip } from './ui';
 import { C, ghostBtn, solidBtn } from './style';
 
 type Lane = 'text' | 'reaction';
@@ -249,22 +249,15 @@ export function GuestbookPanel({
           // 비로그인에게는 '내 반응'이 없다 — 서버도 null 로 준다
           const mine = !guest && roomReactions.mine === k.reactionType;
           return (
-            <button
+            <ReactionChip
               key={k.reactionType}
-              type="button"
-              aria-label={mine ? `${k.reactionType} 취소` : k.reactionType}
-              aria-pressed={mine}
+              kind={k}
+              count={roomReactions.counts[k.reactionType] ?? 0}
+              mine={mine}
               disabled={!visiting}
+              ariaLabel={mine ? `${k.reactionType} 취소` : k.reactionType}
               onClick={() => react(k.reactionType)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px', borderRadius: R.control,
-                border: mine ? `1px solid ${C.accent}` : '1px solid transparent', background: C.input, color: C.text,
-                fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, cursor: visiting ? 'pointer' : 'default',
-              }}
-            >
-              <ReactionFace kind={k} size={13} />
-              {roomReactions.counts[k.reactionType] ?? 0}
-            </button>
+            />
           );
         })}
       </div>

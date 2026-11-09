@@ -159,6 +159,8 @@ export function RoomHud({
   const [charge, setCharge] = useState<{ charId: string; ms: number; key: number } | null>(null);
   /** 보유 목록을 새로 받을 때마다 올라간다 — 그 전에 보낸 증여의 응답은 보유 수를 다시 깎지 않는다(새 목록에 이미 반영) */
   const itemSession = useRef(0);
+  /** 캐릭터 반응을 보내는 중 */
+  const reacting = useRef(false);
 
   /**
    * 비로그인은 다 보여 주되 **참여는 로그인 뒤에**. 반응·방명록·팔로우를 누르면 로그인 창을 띄운다.
@@ -345,6 +347,7 @@ export function RoomHud({
           key={selected}
           x={selAt.x}
           y={selAt.y}
+          rightEdge={sideOpen ? layout.panel.left : layout.width}
           mode={mode}
           character={sel}
           def={selDef}
@@ -352,13 +355,20 @@ export function RoomHud({
           reactions={reactionKinds}
           onSelectBadge={onBadge}
           onReact={(reactionType) => {
-            if (!ownerId) return;
+            // 바는 누른 뒤에도 열려 있다 — 응답 전에 또 누르면 남기기 · 취소가 엇갈리므로 하나씩만
+            if (!ownerId || reacting.current) return;
+            reacting.current = true;
             const target = selected;
             // 1인 1개 — 서버가 준 개수 · 내 반응(교체 · 취소 반영)을 그대로 받는다. 로그인이 풀렸으면 로그인 창, 그 밖의 실패는 조용히(링에 안내 자리가 없음)
-            void api.reactToCharacter(ownerId, sel.stockId, reactionType).then(
-              (r) => setChars((list) => list.map((c) => (charIdOf(c) === target ? { ...c, receivedReactionCount: r.receivedReactionCount, myReaction: r.myReaction } : c))),
-              (e: unknown) => e instanceof api.AuthRequiredError && askLogin(),
-            );
+            void api
+              .reactToCharacter(ownerId, sel.stockId, reactionType)
+              .then(
+                (r) => setChars((list) => list.map((c) => (charIdOf(c) === target ? { ...c, receivedReactionCount: r.receivedReactionCount, receivedReactions: r.receivedReactions, myReaction: r.myReaction } : c))),
+                (e: unknown) => e instanceof api.AuthRequiredError && askLogin(),
+              )
+              .finally(() => {
+                reacting.current = false;
+              });
           }}
           onNeedLogin={askLogin}
         />

@@ -39,6 +39,16 @@ const REACTION_EMOJI = new Map<string, string>([
   ['SAD', '😢'],
 ]);
 export const reactionEmoji = (reactionType: string): string | null => REACTION_EMOJI.get(reactionType) ?? null;
+/** 가장 많이 받은 반응 — 같은 수면 위 표의 순서(👍 🔥 ❤️ 😢)상 앞의 것, 표에 없는 종류는 그 뒤. 하나도 안 받았으면 null */
+export function topReaction(counts: Record<string, number>): { reactionType: string; count: number } | null {
+  const order = [...REACTION_EMOJI.keys(), ...Object.keys(counts).filter((k) => !REACTION_EMOJI.has(k))];
+  let top: { reactionType: string; count: number } | null = null;
+  for (const reactionType of order) {
+    const count = counts[reactionType] ?? 0;
+    if (count > (top?.count ?? 0)) top = { reactionType, count };
+  }
+  return top;
+}
 /** 가구 3D 모델 — 없으면 3D 는 설치 영역 크기의 상자 + 이름 글자로 대신한다 */
 export const furnitureModelUrl = (furnitureId: number): string => `${BASE}furnitures/models/${furnitureId}.glb`;
 

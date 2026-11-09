@@ -71,7 +71,7 @@ describe('남의 거실 조회 (GET /rooms/:userId)', () => {
     expect(s.roomReactions).toEqual({ counts: { LIKE: 3, WOW: 1 }, mine: 'LIKE' });
     expect(s.characters[0]).toEqual({
       stockId: 5, stockCode: '005930', stockName: '삼성전자', returnRate: -21, affinityLevel: 2, affinityScore: 40,
-      affinityProgress: 30, ownedClothesId: null, receivedReactionCount: 2, myReaction: null,
+      affinityProgress: 30, ownedClothesId: null, receivedReactionCount: 2, receivedReactions: { LIKE: 2 }, myReaction: null,
     });
     expect(s.characters[0].quantity).toBeUndefined();
     expect(s.placements).toEqual([{ placementId: 11, furnitureId: 2, positionX: 8, positionY: 3, rotation: 90 }]);
@@ -197,11 +197,11 @@ describe('반응 — 1인 1개 (POST …/reactions)', () => {
     expect(await api.reactToRoom('22', 'WOW')).toEqual({ counts: { LIKE: 2 }, mine: null });
   });
 
-  it('캐릭터 반응 — 경로는 종목 번호, 받은 수는 종류 합', async () => {
+  it('캐릭터 반응 — 경로는 종목 번호, 받은 수는 종류 합 + 종류별', async () => {
     const calls = serve(() => ({ data: { stock_id: 5, received_reactions: [{ reaction_type: 'LIKE', count: 2 }, { reaction_type: 'WOW', count: 1 }], my_reaction: 'LIKE' } }));
     const r = await api.reactToCharacter('22', 5, 'LIKE');
     expect(calls[0].url).toBe('/rooms/22/characters/5/reactions');
-    expect(r).toEqual({ stockId: 5, receivedReactionCount: 3, myReaction: 'LIKE' });
+    expect(r).toEqual({ stockId: 5, receivedReactionCount: 3, receivedReactions: { LIKE: 2, WOW: 1 }, myReaction: 'LIKE' });
   });
 
   it('로그인 없이 누르면 보내지 않고 AuthRequiredError · 401 도 같은 에러', async () => {

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { R } from '../../stockDetail/radius';
 import { reactionEmoji } from '../catalog';
+import { reactionCountLabel } from './labels';
 import { C, accentBtn, ghostBtn } from './style';
 
 /** 거실 HUD 공용 컴포넌트 — 아이콘 · 모달 껍데기 */
@@ -161,4 +162,32 @@ export function ReactionFace({ kind, size = 16 }: { kind: { reactionType: string
   const emoji = reactionEmoji(kind.reactionType);
   if (emoji) return <span style={{ fontSize: size, lineHeight: 1 }}>{emoji}</span>;
   return <span style={{ fontSize: Math.max(11, size - 4), fontWeight: 700, whiteSpace: 'nowrap' }}>{kind.reactionType}</span>;
+}
+
+/** 반응 한 칸 — 얼굴 + 받은 수. 방명록 반응 줄과 스탯 링의 펼친 바가 같이 쓴다. 내가 남긴 것은 테두리, disabled 면 보기만 */
+export function ReactionChip({ kind, count, mine, disabled, ariaLabel, onClick }: {
+  kind: { reactionType: string };
+  count: number;
+  mine: boolean;
+  disabled: boolean;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-pressed={mine}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 9px', borderRadius: R.control,
+        border: mine ? `1px solid ${C.accent}` : '1px solid transparent', background: C.input, color: C.text, whiteSpace: 'nowrap',
+        fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
+      }}
+    >
+      <ReactionFace kind={kind} size={13} />
+      {reactionCountLabel(count)}
+    </button>
+  );
 }

@@ -210,7 +210,7 @@ function fakeEngine() {
 }
 
 const ch = (stockId: number): RoomCharacterDto => ({
-  stockId, stockCode: `C${stockId}`, stockName: `종목${stockId}`, affinityLevel: 0, affinityScore: 0, affinityProgress: 0, ownedClothesId: null, receivedReactionCount: 0,
+  stockId, stockCode: `C${stockId}`, stockName: `종목${stockId}`, affinityLevel: 0, affinityScore: 0, affinityProgress: 0, ownedClothesId: null, receivedReactionCount: 0, receivedReactions: {},
 });
 
 function setup(chars: RoomCharacterDto[] = [ch(1), ch(2)], mode: 'OWNER' | 'VISITOR' = 'OWNER') {

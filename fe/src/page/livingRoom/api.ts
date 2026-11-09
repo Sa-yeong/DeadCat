@@ -201,6 +201,7 @@ function myRoomSnapshot(d: MyRoomRes): RoomSnapshot {
       affinityProgress: c.affinity_progress,
       ownedClothesId: c.clothes_id,
       receivedReactionCount: sumCounts(c.received_reactions),
+      receivedReactions: countsOf(c.received_reactions),
     })),
     placements: d.placed_furniture.map(placementOf),
     roomReactions: { counts: countsOf(d.received_reactions), mine: null },
@@ -229,6 +230,7 @@ function visitorRoomSnapshot(d: VisitorRoomRes): RoomSnapshot {
       affinityProgress: c.affinity_progress,
       ownedClothesId: c.clothes_id,
       receivedReactionCount: sumCounts(c.received_reactions),
+      receivedReactions: countsOf(c.received_reactions),
       myReaction: c.my_reaction,
     })),
     placements: d.placed_furniture.map(placementOf),
@@ -502,7 +504,7 @@ export async function reactToCharacter(ownerId: string, stockId: number, reactio
     `/rooms/${encodeURIComponent(ownerId)}/characters/${stockId}/reactions`,
     { reaction_type: reactionType },
   );
-  return { stockId: r.stock_id, receivedReactionCount: sumCounts(r.received_reactions), myReaction: r.my_reaction };
+  return { stockId: r.stock_id, receivedReactionCount: sumCounts(r.received_reactions), receivedReactions: countsOf(r.received_reactions), myReaction: r.my_reaction };
 }
 
 /* ── Follow API ──────────────────────────────────────────────── */
