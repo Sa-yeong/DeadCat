@@ -328,3 +328,188 @@ describe('해외 분봉 채우기 (F8)', () => {
         expect(times).toContain(ny('09', '04:00').toISOString());
     });
 });
+
+describe('국내 분봉 하루치 (F9)', () => {
+    const kst = (d: string, hhmm: string) =>
+        new Date(`2026-11-${d}T${hhmm}:00+09:00`);
+    /** 그날 09:00 ~ 19:59 의 KIS 줄(최신이 앞) */
+    const dayRows = (ymd: string, upTo = 19 * 60 + 59) =>
+        Array.from({ length: upTo - 9 * 60 + 1 }, (_, i) => {
+            const m = upTo - i;
+            const hh = String(Math.floor(m / 60)).padStart(2, '0');
+            const mm = String(m % 60).padStart(2, '0');
+            return {
+                stck_bsop_date: ymd,
+                stck_cntg_hour: `${hh}${mm}00`,
+                stck_prpr: '70000',
+                stck_oprc: '70000',
+                stck_hgpr: '70000',
+                stck_lwpr: '70000',
+                cntg_vol: '5',
+            };
+        });
+    /** hour 이하 120 줄 — 일별 분봉과 같은 모양 */
+    const pageOf = (rows: ReturnType<typeof dayRows>, hour: string) =>
+        rows.filter((r) => r.stck_cntg_hour <= hour).slice(0, 120);
+
+    function setup(now: Date) {
+        jest.useFakeTimers({ now, doNotFake: ['nextTick', 'setImmediate'] });
+        const store = new Map<string, { write_time: string }[]>();
+        const getDailyMinuteChart = jest.fn();
+        const getMinuteChart = jest.fn().mockResolvedValue([]);
+        const replaceStockChart = jest.fn(
+            (code: string, _tf: string, list: { write_time: string }[]) => {
+                store.set(code, list);
+                return Promise.resolve();
+            },
+        );
+        const service = new StocksService(
+            {
+                readStockChart: jest.fn((code: string) =>
+                    Promise.resolve(store.get(code) ?? []),
+                ),
+                replaceStockChart,
+            } as never,
+            {} as never,
+            {
+                findStockByCode: jest.fn().mockResolvedValue({
+                    id: 1n,
+                    code: '005930',
+                    stock_type: 'DOMESTIC',
+                }),
+            } as never,
+            { getDailyMinuteChart, getMinuteChart } as never,
+            {} as never,
+        );
+        return {
+            chart: () => service.getStockChart('005930', '1M'),
+            getDailyMinuteChart,
+            getMinuteChart,
+            store,
+            advance: (ms: number) => jest.setSystemTime(Date.now() + ms),
+        };
+    }
+
+    afterEach(() => jest.useRealTimers());
+
+    it('장 전 — 어제 하루치를 09:00 까지 전부 (30개만 남던 증상)', async () => {
+        const f = setup(kst('10', '07:45'));
+        const rows = dayRows('20261109');
+        f.getDailyMinuteChart.mockImplementation(
+            (_c: string, _d: string, h: string) =>
+                Promise.resolve(pageOf(rows, h)),
+        );
+
+        const list = await f.chart();
+        expect(f.getDailyMinuteChart.mock.calls[0]).toEqual([
+            '005930',
+            '20261109',
+            '200000',
+        ]);
+        expect(list).toHaveLength(rows.length);
+        expect(list[0].write_time).toBe(kst('09', '09:00').toISOString());
+        expect(list[list.length - 1].write_time).toBe(
+            kst('09', '19:59').toISOString(),
+        );
+    });
+
+    it('저장돼 있어도 이 서버가 다 채운 적이 없으면 다시 거슬러 채우고, 옛 조각은 섞지 않는다', async () => {
+        const f = setup(kst('10', '07:45'));
+        f.store.set('005930', [
+            { write_time: kst('10', '10:00').toISOString() },
+        ]);
+        const rows = dayRows('20261109');
+        f.getDailyMinuteChart.mockImplementation(
+            (_c: string, _d: string, h: string) =>
+                Promise.resolve(pageOf(rows, h)),
+        );
+
+        const list = await f.chart();
+        expect(list).toHaveLength(rows.length);
+        expect(list[list.length - 1].write_time).toBe(
+            kst('09', '19:59').toISOString(),
+        );
+    });
+
+    it('장 끝나고 다 받은 날은 다시 부르지 않는다', async () => {
+        const f = setup(kst('10', '07:45'));
+        const rows = dayRows('20261109');
+        f.getDailyMinuteChart.mockImplementation(
+            (_c: string, _d: string, h: string) =>
+                Promise.resolve(pageOf(rows, h)),
+        );
+        await f.chart();
+        f.getDailyMinuteChart.mockClear();
+        f.advance(61_000);
+
+        await f.chart();
+        expect(f.getDailyMinuteChart).not.toHaveBeenCalled();
+    });
+
+    it('장중 — 오늘 하루치를 받고, 그 뒤로는 새로 생긴 쪽만', async () => {
+        const f = setup(kst('10', '11:00'));
+        let rows = dayRows('20261110', 10 * 60 + 59);
+        f.getDailyMinuteChart.mockImplementation(
+            (_c: string, _d: string, h: string) =>
+                Promise.resolve(pageOf(rows, h)),
+        );
+        expect(await f.chart()).toHaveLength(120);
+
+        f.getDailyMinuteChart.mockClear();
+        f.advance(61_000);
+        rows = dayRows('20261110', 11 * 60);
+        const list = await f.chart();
+        expect(f.getDailyMinuteChart).toHaveBeenCalledTimes(1);
+        expect(list).toHaveLength(121);
+    });
+
+    it('일별 분봉이 오늘을 안 주면 당일 분봉으로 받는다', async () => {
+        const f = setup(kst('10', '09:40'));
+        const rows = dayRows('20261110', 9 * 60 + 39);
+        f.getDailyMinuteChart.mockResolvedValue([]);
+        f.getMinuteChart.mockImplementation((_c: string, h: string) =>
+            Promise.resolve(
+                rows.filter((r) => r.stck_cntg_hour <= h).slice(0, 30),
+            ),
+        );
+
+        const list = await f.chart();
+        expect(list).toHaveLength(rows.length);
+        expect(list[0].write_time).toBe(kst('10', '09:00').toISOString());
+    });
+
+    it('평일 휴장일 — 거래량 0 인 채움 줄은 오늘로 치지 않고 앞 거래일을 준다', async () => {
+        const f = setup(kst('10', '10:00'));
+        const prev = dayRows('20261109');
+        f.getDailyMinuteChart.mockImplementation(
+            (_c: string, d: string, h: string) =>
+                Promise.resolve(d === '20261110' ? [] : pageOf(prev, h)),
+        );
+        f.getMinuteChart.mockResolvedValue(
+            dayRows('20261110', 10 * 60)
+                .slice(0, 30)
+                .map((r) => ({ ...r, cntg_vol: '0' })),
+        );
+
+        const list = await f.chart();
+        expect(list).toHaveLength(prev.length);
+
+        // 앞 거래일을 다 받아 뒀으니 매분 다시 거슬러 받지 않는다
+        f.getDailyMinuteChart.mockClear();
+        f.advance(61_000);
+        await f.chart();
+        expect(f.getDailyMinuteChart).toHaveBeenCalledTimes(1);
+    });
+
+    it('주말 — 쉬는 날을 넣으면 KIS 가 금요일을 준다', async () => {
+        const f = setup(kst('08', '12:00'));
+        const fri = dayRows('20261106');
+        f.getDailyMinuteChart.mockImplementation(
+            (_c: string, _d: string, h: string) =>
+                Promise.resolve(pageOf(fri, h)),
+        );
+        const list = await f.chart();
+        expect(f.getDailyMinuteChart.mock.calls[0][1]).toBe('20261107');
+        expect(list).toHaveLength(fri.length);
+    });
+});

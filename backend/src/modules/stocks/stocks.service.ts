@@ -21,6 +21,8 @@ import { quoteFromCloses, toKrwQuote } from '../../price/valuation';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
 import {
     isUsDayMarketTime,
+    kstDay,
+    kstHour,
     latestDayOnly,
     mergeCandles,
     usMinuteCandles,
@@ -55,8 +57,11 @@ const PERIOD_PAGES: Record<PeriodFrame, number> = {
 const PERIOD_CACHE_VER = 'v2';
 /** 분봉 — 이만큼(ms) 지나야 KIS 에서 최근 30분을 다시 받는다. 그사이는 Redis 그대로 */
 const MINUTE_REFRESH_MS = 60 * 1000;
-/** 분봉을 처음 채울 때 30분씩 거슬러 올라가는 횟수 — 09:00~15:30 이 13번 */
-const MINUTE_PAGES = 14;
+/** 국내 분봉을 거슬러 받는 최대 횟수 — 일별 분봉은 한 쪽 120개라 6번이면 되고, 당일 분봉(30개)으로 받을 때 22번 */
+const MINUTE_PAGES = 24;
+/** 국내 분봉이 있는 시각 — KIS 는 09:00 부터 시간외 20:00 까지 준다(2026-11-10 확인) */
+const KRX_MINUTE_START = '090000';
+const KRX_MINUTE_END = '200000';
 const MINUTE_TTL_SECONDS = 12 * 60 * 60;
 /** 해외 분봉 한 쪽의 줄 수 — 이보다 적게 오면 더 옛날 것이 없다 */
 const US_MINUTE_PAGE = 120;
@@ -490,47 +495,122 @@ export class StocksService {
         return job;
     }
 
+    /**
+     * 국내 1분봉 — 가장 최근 거래일 하루치(09:00 ~ KIS 가 주는 시간외 19:59 까지).
+     * 이 서버가 그날을 다 채운 적이 있으면 저장된 마지막 봉까지만 거슬러 받고, 아니면 09:00 까지 다시 받는다.
+     */
     private async loadMinutes(
         code: string,
         stored: StockChartItem[],
     ): Promise<StockChartItem[]> {
-        const pages = stored.length ? 1 : MINUTE_PAGES;
-        const rows: KisMinuteItem[] = [];
-        let hour = this.kstClock();
-        for (let i = 0; i < pages; i++) {
-            const page = await this.kisProvider.getMinuteChart(code, hour);
-            if (!page.length) break;
-            rows.push(...page);
-            const oldest = page.reduce(
-                (min, r) => (r.stck_cntg_hour < min ? r.stck_cntg_hour : min),
-                hour,
-            );
-            if (oldest <= '090000') break;
-            hour = this.minuteBefore(oldest);
+        const today = this.kstToday();
+        const clock = this.kstClock();
+        const live =
+            this.isWeekday(today) &&
+            clock >= KRX_MINUTE_START &&
+            clock < KRX_MINUTE_END;
+        const last = stored.length
+            ? stored[stored.length - 1].write_time
+            : undefined;
+        const lastDay = last ? kstDay(last) : '';
+        const state = this.minuteState.get(code);
+        const known = !!last && state?.day === lastDay;
+
+        // 장이 다 끝난 뒤에 받아 둔 날 — 다음 장이 열릴 때까지 더 올 것이 없다
+        if (known && state?.closed && !live) {
+            this.minuteFetchedAt.set(code, Date.now());
+            return stored;
         }
 
-        // 시각으로 겹치는 것은 새로 받은 것으로. 가장 최근 거래일 것만 남긴다
-        const byTime = new Map<string, StockChartItem>();
-        for (const c of stored) byTime.set(c.write_time, c);
-        for (const c of this.toMinuteCandles(rows)) byTime.set(c.write_time, c);
-        const all = [...byTime.values()].sort((a, b) =>
-            a.write_time.localeCompare(b.write_time),
+        // 그날 09:00 이 지났으면 오늘부터, 아니면 어제 날짜로 묻는다(쉬는 날이면 KIS 가 그 앞 거래일을 준다)
+        const afterOpen = this.isWeekday(today) && clock >= KRX_MINUTE_START;
+        const stop = known && lastDay === today ? kstHour(last) : undefined;
+        let rows = afterOpen
+            ? await this.walkDomesticMinutes(code, today, clock, stop)
+            : [];
+        if (!rows.length) {
+            // 평일 휴장일 — 앞 거래일을 이미 다 받아 뒀으면 매분 다시 받지 않는다
+            if (known && state?.closed) {
+                this.minuteFetchedAt.set(code, Date.now());
+                return stored;
+            }
+            rows = await this.walkDomesticMinutes(
+                code,
+                this.dayBefore(today),
+                KRX_MINUTE_END,
+            );
+        }
+
+        const fresh = this.toMinuteCandles(rows);
+        // 처음 채울 때는 Redis 의 옛 조각을 섞지 않는다 — 덧붙일 때만 합친다
+        const list = latestDayOnly(
+            mergeCandles(stop ? stored : [], fresh),
+            (iso) => kstDay(iso),
         );
-        const lastDay = all.length
-            ? this.kstDate(all[all.length - 1].write_time)
-            : '';
-        const list = all.filter((c) => this.kstDate(c.write_time) === lastDay);
 
         this.minuteFetchedAt.set(code, Date.now());
-        if (list.length) {
-            await this.price.replaceStockChart(
-                code,
-                '1M',
-                list,
-                MINUTE_TTL_SECONDS,
-            );
-        }
+        if (!list.length) return stored;
+        const filledDay = kstDay(list[list.length - 1].write_time);
+        this.minuteState.set(code, {
+            day: filledDay,
+            closed: !live || filledDay !== today,
+        });
+        await this.price.replaceStockChart(
+            code,
+            '1M',
+            list,
+            MINUTE_TTL_SECONDS,
+        );
         return list;
+    }
+
+    /** 국내 분봉을 hour 부터 거슬러 받는다. 멈추는 곳: 09:00 · stop(이 시각까지 받으면 끝) · 더 옛날로 못 감 */
+    private async walkDomesticMinutes(
+        code: string,
+        day: string,
+        from: string,
+        stop?: string,
+    ): Promise<KisMinuteItem[]> {
+        const rows: KisMinuteItem[] = [];
+        let hour = from;
+        let reached = '';
+        for (let i = 0; i < MINUTE_PAGES; i++) {
+            let page = await this.kisProvider.getDailyMinuteChart(
+                code,
+                day,
+                hour,
+            );
+            // 일별 분봉이 오늘 것을 안 주면 당일 분봉으로. 장 전 · 쉬는 날에는 거래량 0 인 채움 줄만 오므로 받지 않는다
+            if (!page.length && day === this.kstToday()) {
+                const todays = await this.kisProvider.getMinuteChart(code, hour);
+                const real = todays.filter((r) => r.stck_bsop_date === day);
+                page = real.some((r) => Number(r.cntg_vol) > 0) ? real : [];
+            }
+            if (!page.length) break;
+            const oldest = page.reduce(
+                (min, r) => (r.stck_cntg_hour < min ? r.stck_cntg_hour : min),
+                page[0].stck_cntg_hour,
+            );
+            if (reached && oldest >= reached) break;
+            reached = oldest;
+            rows.push(...page);
+            if (oldest <= KRX_MINUTE_START) break;
+            if (stop && oldest <= stop) break;
+            hour = this.minuteBefore(oldest);
+        }
+        return rows;
+    }
+
+    /** YYYYMMDD 가 평일인가 */
+    private isWeekday(yyyymmdd: string): boolean {
+        const day = new Date(
+            Date.UTC(
+                Number(yyyymmdd.slice(0, 4)),
+                Number(yyyymmdd.slice(4, 6)) - 1,
+                Number(yyyymmdd.slice(6, 8)),
+            ),
+        ).getUTCDay();
+        return day !== 0 && day !== 6;
     }
 
     /**
@@ -693,13 +773,13 @@ export class StocksService {
             });
     }
 
-    /** 지금 KST 시각 HHMMSS — 장 마감 뒤면 153000 */
+    /** 지금 KST 시각 HHMMSS — 시간외가 끝난 뒤면 KRX_MINUTE_END */
     private kstClock(): string {
         const t = new Date(Date.now() + 9 * 60 * 60 * 1000)
             .toISOString()
             .slice(11, 19)
             .replace(/:/g, '');
-        return t > '153000' ? '153000' : t;
+        return t > KRX_MINUTE_END ? KRX_MINUTE_END : t;
     }
 
     /** HHMMSS 의 1분 전(초는 00) */
@@ -707,13 +787,6 @@ export class StocksService {
         const m =
             Number(hhmmss.slice(0, 2)) * 60 + Number(hhmmss.slice(2, 4)) - 1;
         return `${String(Math.floor(m / 60)).padStart(2, '0')}${String(m % 60).padStart(2, '0')}00`;
-    }
-
-    /** UTC ISO → KST 날짜 YYYY-MM-DD */
-    private kstDate(iso: string): string {
-        return new Date(Date.parse(iso) + 9 * 60 * 60 * 1000)
-            .toISOString()
-            .slice(0, 10);
     }
 
     /** 오늘 날짜(KST) YYYYMMDD */
