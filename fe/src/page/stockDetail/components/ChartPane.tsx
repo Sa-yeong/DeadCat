@@ -15,6 +15,7 @@ import { stamp } from '../chart/time';
 import { IndicatorLayer, NO_INDICATORS, type IndicatorSet } from '../chart/indicatorLayer';
 import { DrawingPrimitive, drawingsOf, type Tool } from '../chart/drawings';
 import { DrawingController } from '../chart/drawingController';
+import { PanGesture } from '../chart/panGesture';
 import { DrawingToolbar } from './DrawingToolbar';
 
 type Main = ISeriesApi<'Line'> | ISeriesApi<'Candlestick'>;
@@ -220,17 +221,10 @@ export function ChartPane({
 
     // 사용자가 끈 이동만 알린다 — 누르고 있는 동안 + 놓은 뒤 관성(터치)으로 미끄러지는 잠깐
     const el = host.current;
-    let pressed = false;
-    let releasedAt = -Infinity;
+    const gesture = new PanGesture();
     let lastFrom: number | null = null;
-    const onPress = () => {
-      pressed = true;
-    };
-    const onRelease = () => {
-      if (!pressed) return;
-      pressed = false;
-      releasedAt = performance.now();
-    };
+    const onPress = () => gesture.press(listRef.current.length > 0);
+    const onRelease = () => gesture.release(performance.now());
     el.addEventListener('pointerdown', onPress);
     // 휠이 멈추면(0.15초) 보이는 범위를 알린다 — 그 사이에 주기를 바꾸면 깜빡인다
     let wheelTimer = 0;
@@ -273,8 +267,7 @@ export function ChartPane({
       if (performance.now() - resizedAt.current > RESIZE_SETTLE_MS) spanCb.current?.(r.to - r.from);
       const prev = lastFrom;
       lastFrom = r.from;
-      const byUser = pressed || performance.now() - releasedAt < 700;
-      if (prev === null || !byUser) return;
+      if (prev === null || !gesture.byUser(performance.now())) return;
       const dx = -(r.from - prev) * c.timeScale().options().barSpacing;
       if (Math.abs(dx) > 0.01) panCb.current?.(dx);
     };

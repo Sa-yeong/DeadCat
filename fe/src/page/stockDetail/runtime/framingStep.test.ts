@@ -24,6 +24,19 @@ describe('framingStep — 언제 캐릭터가 새 가운데로 가나', () => {
     expect(framingStep(at(821), at(661), false, false)).toBe('none');
   });
 
+  it('캐릭터가 아직 안 보일 때 칸 폭이 바뀌면(첫 측정의 스크롤바) 바로 맞춘다', () => {
+    expect(framingStep(at(813.5), at(821), false, false, false)).toBe('refit');
+  });
+
+  it('캐릭터가 아직 안 보일 때 사이드바를 여닫았으면 끝나고 걸어오지 않고 바로 맞춘다', () => {
+    expect(framingStep(at(821), at(661), true, true, false)).toBe('none');
+    expect(framingStep(at(821), at(661), false, true, false)).toBe('refit');
+  });
+
+  it('캐릭터가 보이는 동안은 칸 폭 변화에 그대로다', () => {
+    expect(framingStep(at(813.5), at(821), false, false, true)).toBe('none');
+  });
+
   it('사이드바를 여닫았으면 움직임이 끝난 뒤 새 가운데로 간다', () => {
     expect(framingStep(at(821), at(661), false, true)).toBe('home');
   });

@@ -118,6 +118,7 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
    *  · 글로벌 사이드바를 여닫아 창문 가운데만 옮겨 감 → 캔버스 · 카메라 · 바닥은 건드리지 않는다.
    *    창문만 움직이고, 움직임이 끝나고(sliding) HOME_SETTLE_MS 뒤에 캐릭터만 새 가운데로 걸어(뛰어) 온다.
    *  · 그 밖에 칸 폭만 바뀜(스크롤바가 생기고 없어짐) → 캐릭터는 그대로 둔다
+   *  · 캐릭터가 아직 안 보이면 위와 상관없이 바로 맞춘다(framingStep) — 들어오자마자 창문 가운데에 서 있게
    *
    * 끝난 뒤 조금 더 사이드바 몫으로 치는 이유: 프레임이 느리면 칸이 다 줄어들기 전에 sliding 이 끝나서,
    * 칸의 마지막 폭이 그 뒤에 도착한다.
@@ -131,7 +132,7 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
     const fromSidebar = performance.now() < slidUntil.current;
 
     const f = framingFor(L);
-    const step = framingStep(applied.current, f, sliding, fromSidebar);
+    const step = framingStep(applied.current, f, sliding, fromSidebar, ready);
     if (step === 'none') {
       // 사이드바와 상관없는 변화는 기다리던 이동을 끊지 않는다
       if (fromSidebar) window.clearTimeout(settle.current);
@@ -147,7 +148,7 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
     }
     applied.current = f;
     lp.setFraming(f);
-  }, [L, sliding]);
+  }, [L, sliding, ready]);
 
   return (
     <canvas
