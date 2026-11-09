@@ -35,6 +35,24 @@ export function headerPrice(b: {
   };
 }
 
+/**
+ * 호가창 가격 글자를 만드는 함수. 해외는 원화 정수 · 콤마, 국내는 지금 그대로.
+ * 환율은 서버가 준 머리 현재가의 원화 ÷ 달러 — 따로 받으면 머리 가격과 환율이 어긋날 수 있다.
+ * 글자만 바꾼다. 호가를 눌러 주문 칸에 들어가는 값은 달러 그대로다.
+ * 원화 칸이 없거나 0이면(옛 서버 · 시세 없음) 환율을 알 수 없어 달러로 보인다.
+ */
+export function bookPriceText(b: {
+  market: PriceMarket;
+  current_price: number;
+  current_price_krw?: number;
+}): (price: number) => string {
+  if (b.market === 'FOREIGN' && b.current_price > 0 && b.current_price_krw) {
+    const rate = b.current_price_krw / b.current_price;
+    return (price) => won(Math.round(price * rate));
+  }
+  return (price) => marketPrice(price, b.market);
+}
+
 /** 차트 축 · 십자선 · 그림 태그 글자 — 국내 원 정수 · 해외 달러 소수 2자리 */
 export const chartPriceText = (market: PriceMarket) => (p: number) =>
   market === 'FOREIGN' ? usd(p) : Math.round(p).toLocaleString('ko-KR');

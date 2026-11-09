@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { BLOCK_CHROME, useLayout } from '../layout';
 import { Block } from './Block';
 import { money } from '../../../common/notifications/orderNotices';
-import { centerTone, down, marketPrice, up, won, type PriceMarket } from '../format';
+import { bookPriceText, centerTone, down, up, won, type PriceMarket } from '../format';
 import { isBookHidden } from '../marketSession';
 import type { Tick } from '../QuoteSync';
 import { R } from '../radius';
@@ -15,6 +15,7 @@ import { R } from '../radius';
  * (넘칠 때만 스크롤바가 생긴다). 처음 열 때와 종목을 바꿀 때 현재가 줄을 가운데로 맞춘다.
  *
  * 호가를 누르면 그 가격이 주문 블럭 가격 칸에 들어간다(onPick) — 호가창의 본래 쓰임.
+ * 해외는 글자만 원화고 주문은 달러라서, onPick에는 늘 받은 달러 값을 그대로 넘긴다.
  *
  * 현재가는 같은 tick에서 꺼내 쓴다. 따로 받으면 가운데 줄과 헤더가 어긋난다.
  * {현재가 출처 미확정} — orderbook 응답에 현재가가 없어 종목 조회 값을 쓴다.
@@ -34,6 +35,7 @@ export function OrderBookBlock({
   const L = useLayout();
   const b = L.blocks.orderbook;
   const centerLook = centerTone(tick.basic.change_rate);
+  const priceText = bookPriceText(tick.basic);
 
   // 전부 그린다 — 위에서부터 매도(높은 값 → 현재가 쪽), 아래로 매수(현재가 쪽 → 낮은 값)
   // 해외 닫힌 시간에는 호가가 없다(서버가 비워서 준다) — 가운데 현재가 줄과 안내만
@@ -75,7 +77,7 @@ export function OrderBookBlock({
         }}
       >
         {asks.map((a) => (
-          <Row key={`a${a.price}`} price={a.price} market={tick.basic.market} qty={a.quantity} max={maxQty} side="ask" onPick={onPick} />
+          <Row key={`a${a.price}`} price={a.price} text={priceText(a.price)} market={tick.basic.market} qty={a.quantity} max={maxQty} side="ask" onPick={onPick} />
         ))}
         <button
           ref={center}
@@ -103,7 +105,7 @@ export function OrderBookBlock({
               color: centerLook.color,
             }}
           >
-            {marketPrice(tick.basic.current_price, tick.basic.market)}
+            {priceText(tick.basic.current_price)}
           </div>
           <div />
         </button>
@@ -113,7 +115,7 @@ export function OrderBookBlock({
           </p>
         )}
         {bids.map((x) => (
-          <Row key={`b${x.price}`} price={x.price} market={tick.basic.market} qty={x.quantity} max={maxQty} side="bid" onPick={onPick} />
+          <Row key={`b${x.price}`} price={x.price} text={priceText(x.price)} market={tick.basic.market} qty={x.quantity} max={maxQty} side="bid" onPick={onPick} />
         ))}
       </div>
     </Block>
@@ -125,13 +127,17 @@ const MAX_LEVELS = 10;
 
 function Row({
   price,
+  text,
   market,
   qty,
   max,
   side,
   onPick,
 }: {
+  /** 시장 통화 값 — 주문 칸에 들어가는 값 */
   price: number;
+  /** 화면에 보이는 글자 — 해외는 원화 */
+  text: string;
   market: PriceMarket;
   qty: number;
   max: number;
@@ -164,7 +170,7 @@ function Row({
           color: '#EDEDEA',
         }}
       >
-        {marketPrice(price, market)}
+        {text}
       </div>
       {side === 'bid' ? <Bar qty={qty} max={max} side="bid" /> : <div />}
     </button>

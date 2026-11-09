@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { availableLabel, centerTone, chartPriceFormat, chartPriceText, down, headerPrice, marketPrice, orderTime, tradingValueText, up, usd } from './format';
+import { availableLabel, bookPriceText, centerTone, chartPriceFormat, chartPriceText, down, headerPrice, marketPrice, orderTime, tradingValueText, up, usd } from './format';
 
 describe('거래량 블럭의 거래대금 글자', () => {
   it('해외 — 억 · 조 뒤에 달러', () => {
@@ -42,6 +42,30 @@ describe('머리 가격 글자', () => {
     expect(
       headerPrice({ market: 'DOMESTIC', current_price: 193500, change_price: -2750, current_price_krw: 193500, change_price_krw: -2750 }),
     ).toEqual({ main: '193,500', usd: null, change: '2,750' });
+  });
+});
+
+describe('호가창 가격 글자', () => {
+  const foreign = { market: 'FOREIGN' as const, current_price: 186.64, current_price_krw: 254390 };
+
+  it('해외 — 원화 정수 · 콤마, 환율은 머리 현재가의 원화 ÷ 달러', () => {
+    const text = bookPriceText(foreign);
+    expect(text(186.8)).toBe('254,608'); // 186.80 × (254390 ÷ 186.64)
+    expect(text(186.5)).toBe('254,199');
+  });
+  it('해외 — 현재가와 같은 가격은 머리 원화와 글자까지 같다', () => {
+    expect(bookPriceText(foreign)(186.64)).toBe('254,390');
+    // 나눴다 곱해도 부동소수 찌꺼기로 1원이 어긋나지 않는다
+    expect(bookPriceText({ market: 'FOREIGN', current_price: 0.07, current_price_krw: 95 })(0.07)).toBe('95');
+  });
+  it('해외인데 원화 칸이 없으면 달러 그대로', () => {
+    expect(bookPriceText({ market: 'FOREIGN', current_price: 186.64 })(186.8)).toBe('186.80');
+  });
+  it('해외인데 시세가 없으면(0) 달러 그대로 — 0으로 나누지 않는다', () => {
+    expect(bookPriceText({ market: 'FOREIGN', current_price: 0, current_price_krw: 0 })(186.8)).toBe('186.80');
+  });
+  it('국내는 그대로', () => {
+    expect(bookPriceText({ market: 'DOMESTIC', current_price: 193500, current_price_krw: 193500 })(193600)).toBe('193,600');
   });
 });
 
