@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLayout, useSliding, type Layout } from '../layout';
-import { StockScene, onlyCenterMoved, type Framing } from '../runtime/StockScene';
+import { StockScene, framingStep, type Framing } from '../runtime/StockScene';
 import { StockStageLoop } from '../runtime/StockStageLoop';
 import { characterOf, type CharacterInfo } from '../runtime/assets';
 
@@ -63,6 +63,8 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
   /** 3D 에 마지막으로 맞춰 둔 화면 좌표 · 캐릭터가 따라갈 때를 기다리는 타이머 */
   const applied = useRef<Framing | null>(null);
   const settle = useRef(0);
+  /** 이 시각(performance.now)까지의 창문 가운데 변화는 사이드바를 여닫아서 생긴 것으로 본다. 여닫는 중에는 Infinity */
+  const slidUntil = useRef(0);
   // 콜백은 마운트 때 한 번만 건다 — 바뀔 때마다 씬을 다시 만들지 않게. 캐릭터는 바뀌면 key 로 새로 뜬다
   const cb = useRef({ onLoop, onStatus });
   cb.current = { onLoop, onStatus };
@@ -113,25 +115,36 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
   /**
    * 레이아웃이 바뀌면 —
    *  · 창 크기가 바뀜(캔버스 크기 · 높이 쪽이 달라짐) → 카메라만 바로 다시 맞춘다. 씬은 다시 만들지 않는다
-   *  · 창문 가운데만 옮겨 감(글로벌 사이드바 여닫기) → 캔버스 · 카메라 · 바닥은 건드리지 않는다.
+   *  · 글로벌 사이드바를 여닫아 창문 가운데만 옮겨 감 → 캔버스 · 카메라 · 바닥은 건드리지 않는다.
    *    창문만 움직이고, 움직임이 끝나고(sliding) HOME_SETTLE_MS 뒤에 캐릭터만 새 가운데로 걸어(뛰어) 온다.
+   *  · 그 밖에 칸 폭만 바뀜(스크롤바가 생기고 없어짐) → 캐릭터는 그대로 둔다
+   *
+   * 끝난 뒤 조금 더 사이드바 몫으로 치는 이유: 프레임이 느리면 칸이 다 줄어들기 전에 sliding 이 끝나서,
+   * 칸의 마지막 폭이 그 뒤에 도착한다.
    */
   useEffect(() => {
     const lp = loop.current;
     if (!lp) return;
     lp.setVisibleWidth(L.viewWidth);
+    if (sliding) slidUntil.current = Infinity;
+    else if (slidUntil.current === Infinity) slidUntil.current = performance.now() + HOME_SETTLE_MS;
+    const fromSidebar = performance.now() < slidUntil.current;
+
     const f = framingFor(L);
-    const prev = applied.current;
-    if (prev && onlyCenterMoved(prev, f)) {
-      window.clearTimeout(settle.current);
-      if (sliding || prev.centerX === f.centerX) return; // 아직 움직이는 중 · 원래 자리로 돌아옴
+    const step = framingStep(applied.current, f, sliding, fromSidebar);
+    if (step === 'none') {
+      // 사이드바와 상관없는 변화는 기다리던 이동을 끊지 않는다
+      if (fromSidebar) window.clearTimeout(settle.current);
+      return;
+    }
+    window.clearTimeout(settle.current);
+    if (step === 'home') {
       settle.current = window.setTimeout(() => {
         applied.current = f;
         lp.moveHome(f.centerX);
       }, HOME_SETTLE_MS);
       return;
     }
-    window.clearTimeout(settle.current);
     applied.current = f;
     lp.setFraming(f);
   }, [L, sliding]);

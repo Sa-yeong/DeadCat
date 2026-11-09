@@ -49,6 +49,20 @@ export function onlyCenterMoved(a: Framing, b: Framing): boolean {
   );
 }
 
+/** 레이아웃이 바뀌었을 때 무대가 할 일 — 3D 를 다시 맞춘다 / 캐릭터가 새 가운데로 간다 / 아무것도 안 한다 */
+export type FramingStep = 'refit' | 'home' | 'none';
+
+/**
+ * 창문 가운데만 옮겨 갔을 때 캐릭터를 보내는 것은 글로벌 사이드바를 여닫았을 때뿐이다(fromSidebar).
+ * 스크롤바가 생기고 없어지는 것처럼 칸 폭만 바뀐 경우는 캐릭터를 건드리지 않는다.
+ * 다음에 여닫거나 창 크기가 바뀌면 그때 지금 가운데로 맞는다.
+ */
+export function framingStep(prev: Framing | null, next: Framing, sliding: boolean, fromSidebar: boolean): FramingStep {
+  if (!prev || !onlyCenterMoved(prev, next)) return 'refit';
+  if (sliding || !fromSidebar || prev.centerX === next.centerX) return 'none';
+  return 'home';
+}
+
 /** 지금 얹혀 있는 표정 한 겹. 모션이 바뀌면 이전 겹은 서서히 빠진다 */
 interface FaceLayer {
   tracks: FaceTrack[];
