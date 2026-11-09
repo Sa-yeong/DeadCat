@@ -42,6 +42,7 @@ function setup(
         closePendingOrder: jest.fn().mockResolvedValue(1),
     };
     const price = {
+        usdKrwForValuation: jest.fn().mockResolvedValue(1350),
         readPrices: jest.fn((codes: string[]) =>
             Promise.resolve(
                 new Map(
@@ -152,12 +153,13 @@ describe('OrderMatcher.sweep — 알림', () => {
                 price: 71000,
                 fill_price: 70000,
                 currency: 'KRW',
+                usd_krw: null,
                 reason: null,
             }),
         );
     });
 
-    it('해외 가격은 달러로 보낸다', async () => {
+    it('해외 가격은 달러로, 화면이 원화로 보일 환율과 함께 보낸다', async () => {
         const { matcher, notifications } = setup(
             ['FOREIGN'],
             [
@@ -178,6 +180,7 @@ describe('OrderMatcher.sweep — 알림', () => {
                 price: 229,
                 fill_price: 228.86,
                 currency: 'USD',
+                usd_krw: 1350,
             }),
         );
     });

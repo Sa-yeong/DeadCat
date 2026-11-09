@@ -7,6 +7,9 @@ jest.mock(
     () => ({ PrismaService: class {} }),
     { virtual: true },
 );
+jest.mock('src/price/price.service', () => ({ PriceService: class {} }), {
+    virtual: true,
+});
 
 import { NotificationsService } from './notifications.service';
 import { OrderNotification } from './dto/order-notification.dto';
@@ -22,6 +25,7 @@ const event = (orderId: string): OrderNotification => ({
     price: 71000,
     fill_price: 70000,
     currency: 'KRW',
+    usd_krw: null,
     reason: null,
     at: '2026-11-03T00:00:00.000Z',
 });
@@ -31,7 +35,12 @@ function setup() {
         findUnread: jest.fn().mockResolvedValue([]),
         markNotified: jest.fn().mockResolvedValue(0),
     };
-    return { service: new NotificationsService(repo as never), repo };
+    const price = { usdKrwForValuation: jest.fn().mockResolvedValue(1350) };
+    return {
+        service: new NotificationsService(repo as never, price as never),
+        repo,
+        price,
+    };
 }
 
 describe('NotificationsService 통로', () => {
@@ -100,6 +109,7 @@ describe('NotificationsService.listUnread', () => {
                 price: 229,
                 fill_price: 228.86,
                 currency: 'USD',
+                usd_krw: 1350,
                 reason: null,
                 at: '2026-11-03T01:00:00.000Z',
             },
@@ -107,15 +117,17 @@ describe('NotificationsService.listUnread', () => {
         expect(repo.findUnread).toHaveBeenCalledWith(7n, 20);
     });
 
-    it('거절은 이유 없이, 시각은 접수 시각으로', async () => {
-        const { service, repo } = setup();
+    it('거절은 이유 없이, 시각은 접수 시각으로 — 가격이 없어 환율은 받지 않는다', async () => {
+        const { service, repo, price } = setup();
         repo.findUnread.mockResolvedValue([
             { ...row, status: 'REJECTED', filled_price: null, filled_at: null },
         ]);
         const [n] = await service.listUnread(7n);
+        expect(price.usdKrwForValuation).not.toHaveBeenCalled();
         expect(n).toMatchObject({
             status: 'REJECTED',
             fill_price: null,
+            usd_krw: null,
             reason: null,
             at: '2026-11-02T01:00:00.000Z',
         });

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { filter, map, Observable, Subject } from 'rxjs';
 import { NotificationsRepository } from './notifications.repository';
+import { PriceService } from 'src/price/price.service';
+import { isForeignStock } from '../orders/order-rules';
 import {
     OrderNotification,
     notificationStatus,
@@ -23,7 +25,10 @@ export class NotificationsService {
         notification: OrderNotification;
     }>();
 
-    constructor(private readonly repo: NotificationsRepository) {}
+    constructor(
+        private readonly repo: NotificationsRepository,
+        private readonly price: PriceService,
+    ) {}
 
     stream(userId: bigint): Observable<{ data: OrderNotification }> {
         return this.events.pipe(
@@ -38,10 +43,18 @@ export class NotificationsService {
 
     async listUnread(userId: bigint): Promise<OrderNotification[]> {
         const rows = await this.repo.findUnread(userId, UNREAD_LIMIT);
+        const usdKrw = rows.some(
+            (o) =>
+                o.filled_price != null && isForeignStock(o.stocks.stock_type),
+        )
+            ? await this.price.usdKrwForValuation()
+            : null;
         return rows.map((o) =>
             toOrderNotification(
                 { ...o, status: notificationStatus(o.status) },
                 o.filled_at ?? o.create_at, // 거절 · 만료는 시각을 저장하지 않아 접수 시각
+                null,
+                usdKrw,
             ),
         );
     }

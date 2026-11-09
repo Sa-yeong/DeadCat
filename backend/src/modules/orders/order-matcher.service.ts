@@ -123,12 +123,17 @@ export class OrderMatcher {
 
                 // 나중에 난 결과를 화면에 알린다. 접수 순간의 결과는 응답으로 이미 알아서 여기(sweep)서만 보낸다
                 if (status !== 'PENDING') {
+                    const usdKrw =
+                        foreign && status === 'COMPLETED'
+                            ? await this.price.usdKrwForValuation()
+                            : null;
                     this.notifications.publish(
                         o.user_id,
                         toOrderNotification(
                             { ...o, status, filled_price: fillPrice },
                             new Date(),
                             reason ?? null,
+                            usdKrw,
                         ),
                     );
                 }

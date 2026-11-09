@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { krwRate } from './format';
-import { krwInputToUsd, orderMoney, usdToKrwInput } from './orderKrw';
+import { krwInputToUsd, usdToKrwInput } from './orderKrw';
+import { orderMoney } from '../../common/notifications/orderNotices';
 import { PendingOrderList } from './components/PendingOrders';
 import type { PendingOrder } from './api';
 

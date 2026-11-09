@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { down, up } from '../format';
 import { R } from '../radius';
-import { money } from '../../../common/notifications/orderNotices';
-import { orderMoney } from '../orderKrw';
+import { money, orderMoney } from '../../../common/notifications/orderNotices';
 
 /** 확인 창에 보이는 것이자 그대로 보낼 주문 — 창이 떠 있는 동안 시세가 움직여도 지정가는 그대로다. 해외 가격은 달러 */
 export interface OrderDraft {

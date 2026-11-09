@@ -18,6 +18,8 @@ export interface OrderNotification {
   price: number | null;
   fill_price: number | null;
   currency: Currency;
+  /** 해외 체결의 원/달러 — 없으면(옛 서버) 달러로 보인다 */
+  usd_krw?: number | null;
   reason: string | null;
   at: string;
 }
@@ -33,15 +35,22 @@ export interface OrderResultLike {
   price: number | null;
   fill_price: number | null;
   currency: Currency;
+  /** 해외의 원/달러 — 없으면(옛 서버) 달러로 보인다 */
+  usd_krw?: number | null;
 }
 
 /** 시장 통화 그대로 — 국내 71,400원 · 해외 $228.86 */
 export const money = (n: number, currency: Currency) =>
   currency === 'USD' ? `$${usd(n)}` : `${n.toLocaleString('ko-KR')}원`;
 
+/** 주문 화면 · 알림 카드의 금액 글자. 환율이 있는 해외는 원화(정수), 나머지는 시장 통화 그대로 */
+export function orderMoney(amount: number, currency: Currency, rate: number | null | undefined): string {
+  return currency === 'USD' && rate ? money(Math.round(amount * rate), 'KRW') : money(amount, currency);
+}
+
 /** 체결가를 모르면(옛 서버가 체결한 주문) 가격을 빼고 보인다 — 지정가를 체결가처럼 적지 않는다 */
-function filled(o: Pick<OrderResultLike, 'stock_code' | 'stock_name' | 'order_side' | 'quantity' | 'fill_price' | 'currency'>): NoticeInput {
-  const price = o.fill_price != null ? ` · ${money(o.fill_price, o.currency)}` : '';
+function filled(o: Pick<OrderResultLike, 'stock_code' | 'stock_name' | 'order_side' | 'quantity' | 'fill_price' | 'currency' | 'usd_krw'>): NoticeInput {
+  const price = o.fill_price != null ? ` · ${orderMoney(o.fill_price, o.currency, o.usd_krw)}` : '';
   return {
     tone: o.order_side,
     title: [{ side: o.order_side }, ' 체결'],
@@ -64,7 +73,7 @@ export const cancelFailedNotice = (message: string): NoticeInput => ({ tone: 'FA
 export function orderResultNotice(r: OrderResultLike): NoticeInput {
   if (r.status === 'COMPLETED') return filled(r);
   if (r.status === 'PENDING') {
-    const at = r.price != null ? ` · ${money(r.price, r.currency)}에` : '';
+    const at = r.price != null ? ` · ${orderMoney(r.price, r.currency, r.usd_krw)}에` : '';
     return {
       tone: r.order_side,
       title: [{ side: r.order_side }, ' 대기'],

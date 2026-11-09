@@ -142,6 +142,8 @@ export interface OrderResult {
   /** 체결가(시장 통화) — 체결됐을 때만 */
   fill_price: number | null;
   currency: 'KRW' | 'USD';
+  /** 해외의 원/달러 — 알림 카드를 원화로 보일 때 쓴다 */
+  usd_krw?: number | null;
 }
 
 /**

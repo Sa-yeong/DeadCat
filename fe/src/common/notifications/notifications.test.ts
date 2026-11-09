@@ -110,6 +110,13 @@ describe('주문 알림 문구', () => {
     expect(text(laterNotice(later({ currency: 'USD', stock_name: '애플', fill_price: 228.86 })).body)).toBe('애플 10주 · $228.86');
   });
 
+  it('해외 카드는 서버가 준 환율로 원화 — 체결 · 대기 접수 · 나중 체결', () => {
+    const usd = { currency: 'USD', stock_name: '애플', usd_krw: 1400 } as const;
+    expect(text(orderResultNotice(result({ ...usd, fill_price: 228.86 })).body)).toBe('애플 10주 · 320,404원');
+    expect(text(orderResultNotice(result({ ...usd, status: 'PENDING', price: 228.86, fill_price: null })).body)).toBe('애플 10주 · 320,404원에 대기 중');
+    expect(text(laterNotice(later({ ...usd, fill_price: 228.86 })).body)).toBe('애플 10주 · 320,404원');
+  });
+
   it('나중 거절 — 실시간은 실제 이유, 놓친 목록(reason null)은 정해진 문장. 회색 띠', () => {
     const live = laterNotice(later({ status: 'REJECTED', reason: '잔고가 부족합니다.' }));
     expect(live.tone).toBe('FAIL');

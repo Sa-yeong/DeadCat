@@ -1,16 +1,10 @@
-import { money } from '../../common/notifications/orderNotices';
 import { priceToInput, snapToTick } from './tick';
 
 /**
- * 해외 주문의 원화 표시 — 서버 · DB는 달러 그대로고 화면만 원화다.
+ * 해외 주문의 원화 입력 — 서버 · DB는 달러 그대로고 화면만 원화다.
  * 주문 상태는 늘 달러로 들고, 칸에 보일 때와 쳐 넣을 때만 이 함수들로 바꾼다.
- * rate는 format의 krwRate(호가창 · 머리 가격과 같은 값).
+ * rate는 format의 krwRate(호가창 · 머리 가격과 같은 값). 금액 글자는 orderNotices의 orderMoney.
  */
-
-/** 금액 글자. 환율이 있는 해외만 원화(정수)로, 나머지는 시장 통화 그대로 */
-export function orderMoney(amount: number, currency: 'KRW' | 'USD', rate: number | null): string {
-  return currency === 'USD' && rate ? money(Math.round(amount * rate), 'KRW') : money(amount, currency);
-}
 
 /** 쳐 넣은 원화(콤마 없는 글자) → 0.01달러 단위 달러 글자. 0달러가 되면 빈 글자(가격 없음) */
 export function krwInputToUsd(krwText: string, rate: number): string {

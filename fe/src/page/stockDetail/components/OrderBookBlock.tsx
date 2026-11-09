@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { BLOCK_CHROME, useLayout } from '../layout';
 import { Block } from './Block';
-import { orderMoney } from '../orderKrw';
+import { orderMoney } from '../../../common/notifications/orderNotices';
 import { bookPriceText, centerTone, down, krwRate, up, won } from '../format';
 import { isBookHidden } from '../marketSession';
 import type { Tick } from '../QuoteSync';

@@ -347,13 +347,13 @@ export class OrdersService {
     }
 
     /** fillPrice = 체결가(시장 통화 최소 단위). 응답의 가격은 전부 시장 통화로 내보낸다 */
-    private response(
+    private async response(
         orderId: bigint,
         status: string,
         stock: { code: string; name: string; stock_type: string },
         dto: CreateOrderDto,
         fillPrice: bigint | null,
-    ): CreateOrderResponseDto {
+    ): Promise<CreateOrderResponseDto> {
         const foreign = isForeignStock(stock.stock_type);
         const message =
             status === 'COMPLETED'
@@ -375,6 +375,7 @@ export class OrdersService {
             fill_price:
                 fillPrice != null ? fromMinor(fillPrice, foreign) : null,
             currency: foreign ? 'USD' : 'KRW',
+            usd_krw: foreign ? await this.funds.usdKrw() : null,
         });
     }
 }

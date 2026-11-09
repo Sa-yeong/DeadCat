@@ -141,6 +141,7 @@ describe('OrdersService.createOrder — 장 시간', () => {
         const res = await service.createOrder(1n, order({ price: 71000 }));
         expect(res.status).toBe('PENDING');
         expect(res.fill_price).toBeNull();
+        expect(res.usd_krw).toBeNull(); // 국내는 환율 없음
         expect(repo.createPendingOrder).toHaveBeenCalled();
         expect(matcher.fill).not.toHaveBeenCalled();
     });
@@ -247,7 +248,7 @@ describe('OrdersService.createOrder — 쓸 수 있는 양 검사', () => {
                 1n,
                 order({ stock_code: 'AAPL', price: 228.86, quantity: 1 }),
             ),
-        ).resolves.toMatchObject({ status: 'PENDING' });
+        ).resolves.toMatchObject({ status: 'PENDING', usd_krw: 1400 }); // 알림 카드를 원화로 보일 환율
 
         const short = setup({
             stock: APPLE,

@@ -24,6 +24,8 @@ export interface OrderNotification {
     /** 체결가 — COMPLETED일 때 */
     fill_price: number | null;
     currency: 'KRW' | 'USD';
+    /** 해외 체결 — 화면이 카드 가격을 원화로 보이는 원/달러(머리 원화와 같은 환율). 국내 · 가격 없는 알림은 null */
+    usd_krw: number | null;
     /** REJECTED일 때. 실시간 이벤트에는 실제 이유, 놓친 목록에는 null(DB에 저장 안 함) */
     reason: string | null;
     at: string;
@@ -44,6 +46,7 @@ export function toOrderNotification(
     o: OrderNotificationSource,
     at: Date,
     reason: string | null = null,
+    usdKrw: number | null = null,
 ): OrderNotification {
     const foreign = isForeignStock(o.stocks.stock_type);
     return {
@@ -58,6 +61,7 @@ export function toOrderNotification(
         fill_price:
             o.filled_price != null ? fromMinor(o.filled_price, foreign) : null,
         currency: foreign ? 'USD' : 'KRW',
+        usd_krw: foreign ? usdKrw : null,
         reason,
         at: at.toISOString(),
     };

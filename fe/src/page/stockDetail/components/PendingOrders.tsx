@@ -5,9 +5,8 @@ import { R } from '../radius';
 import { useAuthToken } from '../../../common/authToken';
 import { subscribeOrderEvents } from '../../../common/notifications/orderFeed';
 import { subscribeOrderChanges } from '../../../common/orders/orderChanges';
-import { cancelFailedNotice, cancelledNotice, money } from '../../../common/notifications/orderNotices';
+import { cancelFailedNotice, cancelledNotice, money, orderMoney } from '../../../common/notifications/orderNotices';
 import { notify } from '../../../common/notifications/store';
-import { orderMoney } from '../orderKrw';
 
 export interface PendingOrdersState {
   rows: PendingOrder[];
