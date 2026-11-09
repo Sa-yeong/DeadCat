@@ -19,6 +19,13 @@ import { CompanyInfoSummaryResponseDto } from './dto/company-info-summary-respon
 import { isForeignStock, marketOf, tickRuleOf } from '../orders/order-rules';
 import { quoteFromCloses, toKrwQuote } from '../../price/valuation';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
+import {
+    isUsDayMarketTime,
+    latestDayOnly,
+    mergeCandles,
+    usMinuteCandles,
+    usTradingDay,
+} from './minute-chart';
 
 /** KIS 호가 조회 결과(국내·해외 공통 모양) */
 type OrderbookData = {
@@ -51,6 +58,10 @@ const MINUTE_REFRESH_MS = 60 * 1000;
 /** 분봉을 처음 채울 때 30분씩 거슬러 올라가는 횟수 — 09:00~15:30 이 13번 */
 const MINUTE_PAGES = 14;
 const MINUTE_TTL_SECONDS = 12 * 60 * 60;
+/** 해외 분봉 한 쪽의 줄 수 — 이보다 적게 오면 더 옛날 것이 없다 */
+const US_MINUTE_PAGE = 120;
+/** 해외 분봉을 거슬러 받는 최대 횟수(코드 하나) — 프리 ~ 애프터 16시간이 8쪽, 데이마켓 8시간이 4쪽 */
+const US_MINUTE_MAX_PAGES = 10;
 
 @Injectable()
 export class StocksService {
@@ -222,17 +233,10 @@ export class StocksService {
             // KIS 가 실패했다 — 아래 DB 묶음으로 대신한다
         }
 
-        // 1. 1분봉(1M) 처리 — 국내는 KIS 당일 분봉으로 채운다
-        if (timeframe === '1M' && !this.isForeign(meta)) {
-            const list = await this.minuteChart(meta.code);
-            return list.map((item) => new StockChartResponseDto(item));
-        }
+        // 1. 1분봉(1M) 처리 — 국내 · 해외 모두 KIS 분봉으로 가장 최근 거래일 하루치를 채운다
         if (timeframe === '1M') {
-            const chartData = await this.price.readStockChart(
-                stockCode,
-                timeframe,
-            );
-            return chartData.map((item) => new StockChartResponseDto(item));
+            const list = await this.minuteChart(meta);
+            return list.map((item) => new StockChartResponseDto(item));
         }
 
         // 2. 해외주식 판단
@@ -440,17 +444,40 @@ export class StocksService {
     private readonly minuteLoads = new Map<string, Promise<StockChartItem[]>>();
 
     /**
-     * 국내 1분봉. Redis 에 오늘 분봉을 모아 두고, MINUTE_REFRESH_MS 마다 최근 30분만 더 받아 붙인다.
-     * 처음(또는 비었을 때)은 30분씩 거슬러 올라가 장 시작까지 채운다. 실패하면 갖고 있던 것을 준다.
+     * 종목별로 이 서버가 분봉을 어디까지 채웠는지 — day: 그 거래일을 앞에서부터 저장된 마지막 봉까지 빠짐없이 받았다,
+     * closed: 그날 장이 끝난 뒤에 받아서 더 올 것이 없다. 서버를 새로 켜면 비고, 그러면 하루치를 처음부터 다시 받는다
+     * (Redis 에 남아 있는 것이 하루치를 다 채운 것인지는 믿지 않는다)
      */
-    private async minuteChart(code: string): Promise<StockChartItem[]> {
+    private readonly minuteState = new Map<
+        string,
+        { day: string; closed: boolean }
+    >();
+
+    /**
+     * 1분봉 — 가장 최근 거래일 하루치. Redis 에 모아 두고 MINUTE_REFRESH_MS 마다 새로 생긴 만큼만 더 받아 붙인다.
+     * 이 서버가 그날 것을 다 채운 적이 없으면 장 시작까지 거슬러 올라가 채운다. 실패하면 갖고 있던 것을 준다.
+     */
+    private async minuteChart(meta: {
+        code: string;
+        stock_type: string | null;
+        exchange_code?: string | null;
+    }): Promise<StockChartItem[]> {
+        const code = meta.code;
         const stored = await this.price.readStockChart(code, '1M');
         const at = this.minuteFetchedAt.get(code) ?? 0;
         if (stored.length && Date.now() - at < MINUTE_REFRESH_MS) return stored;
 
         let job = this.minuteLoads.get(code);
         if (!job) {
-            job = this.loadMinutes(code, stored)
+            job = (
+                this.isForeign(meta)
+                    ? this.loadForeignMinutes(
+                          code,
+                          meta.exchange_code || 'NAS',
+                          stored,
+                      )
+                    : this.loadMinutes(code, stored)
+            )
                 .catch((err: unknown) => {
                     this.logger.warn(
                         `[${code}] 분봉을 KIS 에서 못 받음: ${err instanceof Error ? err.message : String(err)}`,
@@ -504,6 +531,136 @@ export class StocksService {
             );
         }
         return list;
+    }
+
+    /**
+     * 해외 1분봉 — 가장 최근 거래일(뉴욕 날짜) 하루치, 모든 장. 프리 · 정규 · 애프터는 정규 코드,
+     * 데이마켓은 주간거래 코드로 따로 받아 시각으로 잇는다(둘 다 실제 뉴욕 시각으로 온다).
+     */
+    private async loadForeignMinutes(
+        code: string,
+        exchange: string,
+        stored: StockChartItem[],
+    ): Promise<StockChartItem[]> {
+        const session = this.marketTime.foreignSession();
+        const last = stored.length
+            ? stored[stored.length - 1].write_time
+            : undefined;
+        const state = this.minuteState.get(code);
+        const known = !!last && state?.day === usTradingDay(last);
+
+        let fresh: StockChartItem[] = [];
+        if (known && state?.closed && session === 'CLOSED') {
+            // 닫힌 뒤에 다 받아 둔 날 — 다음 장이 열릴 때까지 더 올 것이 없다
+        } else if (last && known) {
+            // 저장된 마지막 봉까지만 거슬러 받는다. 데이마켓 봉에서 끊겼거나 거래일이 넘어갔으면 데이마켓도
+            const today = usTradingDay(new Date().toISOString());
+            if (
+                session === 'DAY' ||
+                isUsDayMarketTime(last) ||
+                usTradingDay(last) < today
+            ) {
+                fresh.push(
+                    ...(await this.walkUsMinutes(code, exchange, true, {
+                        stop: last,
+                    })),
+                );
+            }
+            if (session !== 'DAY') {
+                fresh.push(
+                    ...(await this.walkUsMinutes(code, exchange, false, {
+                        stop: last,
+                    })),
+                );
+            }
+        } else {
+            // 처음 — 지금 열린 장의 코드부터 받아 거래일을 정하고, 다른 코드는 그 거래일 것만
+            const dayFirst = session === 'DAY';
+            fresh = await this.walkUsMinutes(code, exchange, dayFirst, {});
+            const floorDay = fresh.length
+                ? usTradingDay(
+                      fresh.reduce(
+                          (max, c) => (c.write_time > max ? c.write_time : max),
+                          '',
+                      ),
+                  )
+                : undefined;
+            fresh.push(
+                ...(await this.walkUsMinutes(code, exchange, !dayFirst, {
+                    floorDay,
+                })),
+            );
+        }
+
+        const list = latestDayOnly(mergeCandles(stored, fresh), usTradingDay);
+        this.minuteFetchedAt.set(code, Date.now());
+        if (list.length) {
+            this.minuteState.set(code, {
+                day: usTradingDay(list[list.length - 1].write_time),
+                closed: session === 'CLOSED',
+            });
+            if (fresh.length) {
+                await this.price.replaceStockChart(
+                    code,
+                    '1M',
+                    list,
+                    MINUTE_TTL_SECONDS,
+                );
+            }
+        }
+        return list;
+    }
+
+    /**
+     * 해외 분봉을 가장 최근부터 거슬러 받는다. 멈추는 곳: stop(이 시각까지 받으면 끝) ·
+     * floorDay(없으면 받은 것 중 가장 최근 거래일)보다 앞 거래일로 넘어감 · 더 옛날 것이 없음
+     */
+    private async walkUsMinutes(
+        code: string,
+        exchange: string,
+        dayMarket: boolean,
+        opts: { stop?: string; floorDay?: string },
+    ): Promise<StockChartItem[]> {
+        const out: StockChartItem[] = [];
+        let keyb = '';
+        let floorDay = opts.floorDay;
+        let reached = '';
+        for (let i = 0; i < US_MINUTE_MAX_PAGES; i++) {
+            const rows = await this.kisProvider.getOverseasMinuteChart(
+                code,
+                exchange,
+                dayMarket,
+                keyb,
+            );
+            const page = usMinuteCandles(rows);
+            if (!page.length) break;
+            const oldest = page.reduce(
+                (min, c) => (c.write_time < min ? c.write_time : min),
+                page[0].write_time,
+            );
+            // 더 옛날로 못 갔다 — KIS 가 같은 곳을 다시 줬다(아래 keyb 설명). 여기까지가 받을 수 있는 전부
+            if (reached && oldest >= reached) break;
+            reached = oldest;
+            out.push(...page);
+            floorDay ??= usTradingDay(
+                page.reduce(
+                    (max, c) => (c.write_time > max ? c.write_time : max),
+                    '',
+                ),
+            );
+            if (rows.length < US_MINUTE_PAGE) break;
+            if (opts.stop && oldest <= opts.stop) break;
+            if (usTradingDay(oldest) < floorDay) break;
+            // 다음 쪽 열쇠는 「거래일(tymd) + 현지 시각」. 데이마켓의 자정 앞 줄은 현지 날짜(xymd)가 전날이라
+            // xymd 로 넘기면 KIS 가 그 앞 거래일로 건너뛴다(2026-11-10 확인).
+            // 한계: 뉴욕 자정이 지난 뒤에는 데이마켓 맨 앞 약 2시간(20:00 ~ 22:01)을 이 열쇠로도 못 받는다 —
+            // 시각만 비교해서 자정 뒤 줄이 다시 앞에 온다. 그때는 위의 「더 옛날로 못 갔다」에서 멈춘다
+            const tail = rows[rows.length - 1];
+            const next = `${tail.tymd || tail.xymd}${tail.xhms}`;
+            if (next === keyb) break;
+            keyb = next;
+        }
+        return out;
     }
 
     /** KIS 분봉 → 차트 봉. 시각은 KST 를 실제 순간(UTC ISO)으로 바꿔 둔다 */

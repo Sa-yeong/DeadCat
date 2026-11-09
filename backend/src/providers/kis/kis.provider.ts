@@ -251,6 +251,20 @@ export interface KisMinuteItem {
     cntg_vol: string; // 그 분의 체결량
 }
 
+// 해외 분봉 한 줄 (TR: HHDFS76950200) — 최신이 앞
+export interface KisUsMinuteItem {
+    tymd?: string; // 거래일 — 데이마켓의 자정 앞 줄은 xymd 보다 하루 뒤
+    xymd: string; // 현지(뉴욕) 날짜 YYYYMMDD
+    xhms: string; // 현지 시각 HHMMSS
+    kymd: string; // 한국 날짜
+    khms: string; // 한국 시각
+    open: string;
+    high: string;
+    low: string;
+    last: string; // 그 분의 마지막 가격
+    evol: string; // 그 분의 체결량
+}
+
 export interface KisDailyChartItem {
     stck_bsop_date: string; // 영업일자 (YYYYMMDD)
     stck_oprc: string; // 시가
@@ -1223,6 +1237,87 @@ export class KisProvider {
             return (data?.output2 ?? []).filter(
                 (r) => !!r?.stck_cntg_hour && Number(r.stck_prpr) > 0,
             );
+        });
+    }
+
+    /**
+     * 국내 일별 분봉 — 그 날짜의 hhmmss 시각 이전 120개(최신이 앞). 지난 거래일도 받을 수 있다.
+     * 확인(2026-11-10 장 전): 쉬는 날을 넣으면 그 앞의 마지막 거래일 것을 주고, 09:00 줄이 그날의 첫 줄,
+     * 15:30 뒤 시간외(~ 19:59)까지 들어 있다. 아직 장이 안 열린 오늘 날짜는 빈 배열
+     */
+    async getDailyMinuteChart(
+        stockCode: string,
+        yyyymmdd: string,
+        hhmmss: string,
+    ): Promise<KisMinuteItem[]> {
+        return this.withRateLimitRetry(async () => {
+            const headers = await this.authHeaders('FHKST03010230');
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice`;
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd?: string;
+                    msg_cd?: string;
+                    msg1?: string;
+                    output2?: KisMinuteItem[];
+                }>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                        FID_INPUT_HOUR_1: hhmmss,
+                        FID_INPUT_DATE_1: yyyymmdd,
+                        FID_PW_DATA_INCU_YN: 'N',
+                        FID_FAKE_TICK_INCU_YN: '',
+                    },
+                }),
+            );
+            if (data?.rt_cd && data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd ?? '', data.msg1 ?? '');
+            }
+            return (data?.output2 ?? []).filter(
+                (r) => !!r?.stck_cntg_hour && Number(r.stck_prpr) > 0,
+            );
+        });
+    }
+
+    /**
+     * 해외 분봉 한 쪽(120개, 최신이 앞). keyb 는 앞 쪽 마지막 줄의 `xymd + xhms` — 비우면 가장 최근부터.
+     * 정규 코드는 프리 · 정규 · 애프터(뉴욕 04:00 ~ 20:00)를, dayMarket 이면 주간거래 코드로 데이마켓(20:00 ~ 04:00)을 준다
+     */
+    async getOverseasMinuteChart(
+        symbol: string,
+        exchange: string,
+        dayMarket: boolean,
+        keyb = '',
+    ): Promise<KisUsMinuteItem[]> {
+        return this.withRateLimitRetry(async () => {
+            const headers = await this.authHeaders('HHDFS76950200');
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice`;
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd: string;
+                    msg_cd: string;
+                    msg1: string;
+                    output2?: KisUsMinuteItem[];
+                }>(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: overseasExcd(exchange || 'NAS', dayMarket),
+                        SYMB: KIS_SYMBOL[symbol] ?? symbol,
+                        NMIN: '1',
+                        PINC: '1',
+                        NEXT: keyb ? '1' : '',
+                        NREC: '120',
+                        KEYB: keyb,
+                        FILL: '',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            return (data.output2 ?? []).filter((r) => !!r?.xymd && !!r?.xhms);
         });
     }
 
