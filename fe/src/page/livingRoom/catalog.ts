@@ -31,8 +31,14 @@ export function modelUrlsOf(stockId: number, look: Look): string[] {
  */
 export const itemImgUrl = (itemId: number): string => `${BASE}items/${itemId}.png`;
 export const furnitureImgUrl = (furnitureId: number): string => `${BASE}furnitures/${furnitureId}.png`;
-/** 반응 그림 — 서버 img 는 쓰지 않고 종류 이름으로 조립한다. 없으면 종류 이름을 글자로(hud/ui.tsx ReactionFace) */
-export const reactionImgUrl = (reactionType: string): string => `${BASE}reactions/${reactionType}.png`;
+/** 반응 이모지 — 서버 img 는 쓰지 않고 종류 이름으로 고른다. 없는 종류는 null → 종류 이름을 글자로(hud/ui.tsx ReactionFace) */
+const REACTION_EMOJI = new Map<string, string>([
+  ['THUMBS_UP', '👍'],
+  ['FIRE', '🔥'],
+  ['HEART', '❤️'],
+  ['SAD', '😢'],
+]);
+export const reactionEmoji = (reactionType: string): string | null => REACTION_EMOJI.get(reactionType) ?? null;
 /** 가구 3D 모델 — 없으면 3D 는 설치 영역 크기의 상자 + 이름 글자로 대신한다 */
 export const furnitureModelUrl = (furnitureId: number): string => `${BASE}furnitures/models/${furnitureId}.glb`;
 

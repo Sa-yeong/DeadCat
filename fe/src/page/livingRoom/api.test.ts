@@ -1,8 +1,11 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api as http } from '../../api/axios';
 import * as api from './api';
-import { reactionImgUrl } from './catalog';
+import { reactionEmoji } from './catalog';
+import { ReactionFace } from './hud/ui';
 
 // 남의 거실 REST 어댑터(S8) — 서버 칸 이름(snake_case) → 화면 이름(camelCase), 거절 응답 처리. 서버는 http.request 를 흉내 낸다
 
@@ -150,10 +153,24 @@ describe('가구 — 놓인 것 · 보관함 · 저장', () => {
   });
 });
 
-describe('반응 그림 — 서버 img 대신 프론트가 조립', () => {
-  it('종류 이름 그대로 public/reactions/{type}.png', () => {
-    expect(reactionImgUrl('THUMBS_UP').endsWith('reactions/THUMBS_UP.png')).toBe(true);
-    expect(reactionImgUrl('FIRE').endsWith('reactions/FIRE.png')).toBe(true);
+describe('반응 이모지 — 서버 img 대신 종류 이름으로', () => {
+  it('네 종류는 정해진 이모지', () => {
+    expect(reactionEmoji('THUMBS_UP')).toBe('👍');
+    expect(reactionEmoji('FIRE')).toBe('🔥');
+    expect(reactionEmoji('HEART')).toBe('❤️');
+    expect(reactionEmoji('SAD')).toBe('😢');
+  });
+
+  it('모르는 종류는 이모지가 없다 — 객체 기본 속성 이름이어도', () => {
+    expect(reactionEmoji('WOW')).toBeNull();
+    expect(reactionEmoji('constructor')).toBeNull();
+  });
+
+  it('ReactionFace — 아는 종류는 이모지, 모르는 종류는 이름 글자', () => {
+    const fire = renderToStaticMarkup(createElement(ReactionFace, { kind: { reactionType: 'FIRE' } }));
+    expect(fire).toContain('🔥');
+    expect(fire).not.toContain('FIRE');
+    expect(renderToStaticMarkup(createElement(ReactionFace, { kind: { reactionType: 'WOW' } }))).toContain('WOW');
   });
 
   it('GET /rooms/reaction-types 는 종류 이름만 쓴다', async () => {
