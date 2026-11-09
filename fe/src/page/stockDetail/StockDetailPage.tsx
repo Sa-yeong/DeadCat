@@ -17,6 +17,7 @@ import { SolidBatchToggle } from './components/SolidBatchToggle';
 import { Block } from './components/Block';
 import { EmotionTestPanel } from './components/EmotionTestPanel';
 import { useEmotionFeed } from './useEmotionFeed';
+import { subscribeOrderChanges } from '../../common/orders/orderChanges';
 
 /** 감정 테스트 패널을 띄우는가 — 개발 서버와 미리보기에서만(미리보기 표시는 렌더 직전에 붙으므로 그때 본다) */
 const emotionTestOn = () =>
@@ -118,6 +119,9 @@ export function StockDetailPage() {
   useEffect(() => {
     sync.current?.setTimeframe(timeframe);
   }, [timeframe]);
+
+  // 주문 · 대기 취소 직후(이 화면이든 사이드바든) 시세 · 호가를 다음 주기 전에 한 번 바로 받는다
+  useEffect(() => subscribeOrderChanges(() => sync.current?.refreshFastNow()), []);
 
   // 캔들 전체 — 종목·주기가 바뀔 때만. 늦게 온 옛 요청은 key로 걸러낸다
   const candleKey = `${stockCode}|${timeframe}`;

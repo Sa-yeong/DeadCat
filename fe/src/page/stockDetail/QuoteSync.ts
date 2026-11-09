@@ -42,6 +42,12 @@ export class QuoteSync {
   private epoch = 0;
   private stockCode = '';
   private timers: number[] = [];
+  private fastTimer: number | null = null;
+  /** 지금 세대에서 아직 안 돌아온 빠른 주기 요청 수 */
+  private fastBusy = 0;
+  /** 빠른 주기 요청 순번 — 늦게 돌아온 앞 요청이 뒤 요청의 값을 덮지 않게 */
+  private fastSeq = 0;
+  private fastShown = 0;
   private timeframe: Timeframe = 'DAY';
   /** 느린 주기로 받아 둔 마지막 봉 — 빠른 주기는 여기에 현재가만 덮는다 */
   private base: { tf: Timeframe; candle: Candle | null } | null = null;
@@ -61,13 +67,19 @@ export class QuoteSync {
     this.timeframe = timeframe;
     this.base = null;
     this.dayCloses = [];
+    this.fastBusy = 0;
     const gen = this.epoch;
     void this.fastTick(gen);
     void this.slowTick(gen);
-    this.timers.push(
-      window.setInterval(() => void this.fastTick(gen), FAST_MS),
-      window.setInterval(() => void this.slowTick(gen), SLOW_MS),
-    );
+    this.armFast();
+    this.timers.push(window.setInterval(() => void this.slowTick(gen), SLOW_MS));
+  }
+
+  /** 빠른 주기를 지금부터 다시 센다 */
+  private armFast() {
+    if (this.fastTimer !== null) window.clearInterval(this.fastTimer);
+    const gen = this.epoch;
+    this.fastTimer = window.setInterval(() => void this.fastTick(gen), FAST_MS);
   }
 
   setTimeframe(tf: Timeframe) {
@@ -76,8 +88,14 @@ export class QuoteSync {
     void this.fastTick(this.epoch); // 새 주기의 마지막 봉을 다음 주기까지 기다리지 않는다
   }
 
-  /** 주문 직후처럼 즉시 한 번 다시 받아야 할 때 */
+  /**
+   * 주문 · 취소 직후 — 다음 주기를 기다리지 않고 시세 · 호가를 한 번 바로 받는다.
+   * 이미 가고 있는 요청이 있으면 그걸로 갈음하고, 당긴 뒤에는 주기를 여기서부터 다시 세어
+   * 같은 요청이 연달아 나가지 않게 한다.
+   */
   refreshFastNow() {
+    if (this.fastTimer === null || this.fastBusy > 0) return;
+    this.armFast();
     void this.fastTick(this.epoch);
   }
 
@@ -85,10 +103,14 @@ export class QuoteSync {
     this.epoch += 1;
     this.timers.forEach((t) => window.clearInterval(t));
     this.timers = [];
+    if (this.fastTimer !== null) window.clearInterval(this.fastTimer);
+    this.fastTimer = null;
   }
 
   private async fastTick(gen: number) {
     const tf = this.timeframe;
+    const seq = ++this.fastSeq;
+    this.fastBusy += 1;
     try {
       // 종목 조회와 호가 조회는 명세상 별개 엔드포인트라 한 번의 호출로 묶을 수 없다.
       // 그래서 병렬로 부르고 **둘 다 도착했을 때** 한꺼번에 반영한다.
@@ -98,6 +120,8 @@ export class QuoteSync {
         this.lastBase(tf, gen),
       ]);
       if (gen !== this.epoch) return; // 종목이 바뀐 뒤 도착한 응답 — 버린다
+      if (seq < this.fastShown) return; // 더 나중에 보낸 요청이 먼저 돌아와 있다
+      this.fastShown = seq;
       const basic: StockBasic = {
         ...raw,
         change_price: raw.change_price ?? changeFrom(raw.current_price, raw.change_rate, this.dayCloses),
@@ -105,6 +129,8 @@ export class QuoteSync {
       this.h.onTick({ basic, orderbook, lastCandle: alignLastCandle(lastCandle, basic, tf), timeframe: tf });
     } catch (e) {
       if (gen === this.epoch) this.h.onError?.(e);
+    } finally {
+      if (gen === this.epoch) this.fastBusy -= 1;
     }
   }
 
