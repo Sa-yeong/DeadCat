@@ -50,7 +50,7 @@ export interface RoomRenderer {
    * 파일이 없으면 기본 자세(idle_chibi · walk_chibi)로 둔다. 감정으로 분기하지 않는다 — 받은 이름을 틀 뿐
    */
   setBasePose(charId: string, pose: { idle: string | null; walk: string | null }): void;
-  /** 얼굴 표정 — 엔진 emotion 명령의 감정을 그대로 보인다(지시서 1-1). 표정 데이터가 아직 없어 창구만 있다 */
+  /** 얼굴 표정 — 엔진 emotion 명령의 감정을 표정으로 보인다(짝 표는 motionTable CHIBI_FACE). 평면 더미는 그리지 않는다 */
   setExpression(charId: string, emotion: string): void;
   /**
    * 개발 모드(지시서 1-3) — 파일 없는 클립 단계를 ms 동안 대기 자세로 채운다(반복 마지막 단계는 cancel 까지).

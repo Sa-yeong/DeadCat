@@ -120,6 +120,45 @@ export const CROSSFADE_S = 0.6;
 /** 표정이 0에서 목표 세기까지 올라가는 시간 — 동작 테스트용 HTML 기본값 */
 export const FACE_RISE_S = 0.3;
 
+/** 표정 이름 → 세기 */
+export type FaceLevels = Readonly<Record<string, number>>;
+
+/** 치비 모델에 없는 표정(개별종목 전용 눈 밑 그늘 · 얼굴 그늘) — 치비 표에서 뺀다 */
+const NOT_ON_CHIBI: ReadonlySet<string> = new Set(['darkcircle', 'shade']);
+
+const idleFace = (e: EmotionName): FaceLevels => ({ [IDLE_FACE[e]!]: 1 });
+
+const motionFace = (m: MotionName): FaceLevels =>
+  Object.fromEntries((MOTIONS[m]?.face ?? []).filter((t) => !NOT_ON_CHIBI.has(t.expr)).map((t) => [t.expr, t.value ?? 0]));
+
+/**
+ * 거실 치비의 감정 → 표정. 값을 따로 적지 않고 개별종목의 표(MOTIONS · IDLE_FACE)에서 끌어 온다 — 두 화면의 짝이 어긋나지 않게.
+ * 개별종목은 감정이 모션을 고르고 모션이 표정을 주는데, 거실은 모션과 상관없이 감정만으로 표정을 준다(들기 · 걷기 중에도 유지)
+ */
+export const CHIBI_FACE: Readonly<Record<EmotionName, FaceLevels>> = {
+  happy: idleFace('happy'),
+  sad: idleFace('sad'),
+  euphoria: idleFace('euphoria'),
+  panic: idleFace('panic'),
+  tired: motionFace('tired'),
+  depress: motionFace('depression'),
+  anxious: motionFace('anxious'),
+  sleepy: motionFace('sleep'),
+};
+
+/**
+ * 표정 세기를 dt 만큼 목표로 옮긴다(levels 를 고침). 개별종목과 같은 빠르기 — 올라갈 땐 FACE_RISE_S 만에 목표까지, 내려갈 땐 CROSSFADE_S.
+ * 표정별로 세기를 하나씩 들고 있어서 감정이 바뀌어도 같은 표정(tired → depress 의 sad)은 그대로 이어진다.
+ * 0이 된 표정도 지우지 않는다 — 부르는 쪽이 모델에 0을 써 줘야 이전 표정이 남지 않는다
+ */
+export function stepFaceLevels(levels: Map<string, number>, target: FaceLevels, dt: number): void {
+  for (const expr of Object.keys(target)) if (!levels.has(expr)) levels.set(expr, 0);
+  for (const [expr, level] of levels) {
+    const goal = target[expr] ?? 0;
+    levels.set(expr, level < goal ? Math.min(goal, level + (goal * dt) / FACE_RISE_S) : Math.max(goal, level - dt / CROSSFADE_S));
+  }
+}
+
 export function faceValue(track: FaceTrack, t: number): number {
   const k = track.keys;
   if (!k || !k.length) return track.value ?? 0;

@@ -14,6 +14,7 @@ import { CHAR } from './characterSize';
 import { Swing } from './swing';
 import { ROOM_ASSETS } from './roomAssets';
 import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
+import { CHIBI_FACE, stepFaceLevels, type EmotionName, type FaceLevels } from '../../stockDetail/runtime/motionTable';
 
 /**
  * **3D 렌더러** — three.js 로 아트보드 H안을 그대로 세운다. RoomRenderer 의 두 번째 구현.
@@ -239,6 +240,9 @@ interface CharNode {
   /** 모델·기본 동작을 다 받았는가(true) / 못 받았거나 치워졌는가(false). 그 전에 온 엔진 요청은 이걸 기다린다 */
   whenReady: Promise<boolean>;
   setReady: (ok: boolean) => void;
+  /** 지금 감정의 표정(목표) · 표정별 지금 세기 — 세기는 캐릭터에 두어 모델을 갈아 끼워도 이어진다 */
+  faceTarget: FaceLevels;
+  faceLevels: Map<string, number>;
   /** 들고 있을 때 대롱대롱(swing.ts) — VRMA 자세 위에 얹는 기울기 */
   swing: Swing;
   /** VRM 테두리 — 메시마다 같은 뼈를 쓰는 복제본 하나씩(선택 = 강조색, 드롭 하이라이트 = 흰색) */
@@ -921,7 +925,7 @@ export class RoomScene implements RoomRenderer {
     const whenReady = new Promise<boolean>((ok) => (setReady = ok));
     const c: CharNode = {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
-      holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
+      holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false,
     };
     this.chars.set(charId, c);
@@ -1283,8 +1287,18 @@ export class RoomScene implements RoomRenderer {
     this.invalidate();
   }
 
-  /** 표정 — 표정 데이터(블렌드셰이프 표)가 아직 없어 창구만 둔다(지시서 1-1) */
-  setExpression(): void {}
+  /** 표정 — 목표만 바꿔 두고, 세기는 매 프레임 animate 가 옮긴다. 모델을 받기 전에 와도 받은 뒤 올라온다 */
+  setExpression(charId: string, emotion: string): void {
+    const c = this.chars.get(charId);
+    if (c) c.faceTarget = CHIBI_FACE[emotion as EmotionName] ?? {};
+  }
+
+  private applyFace(c: CharNode, dt: number): void {
+    const em = c.vrm?.expressionManager;
+    if (!em) return;
+    stepFaceLevels(c.faceLevels, c.faceTarget, dt);
+    for (const [name, level] of c.faceLevels) em.setValue(name, level);
+  }
 
   holdMissingClips(ms: number | null): void {
     this.holdMs = ms;
@@ -1425,6 +1439,7 @@ export class RoomScene implements RoomRenderer {
     // 대롱대롱 → 골반 맞추기 → 흔들림(spring bone) 순서 — 골반을 먼저 맞춰야 머리카락이 매 프레임 튀지 않는다
     const swung = c.lifted ? this.applySwing(c, dt) : [];
     if (c.lifted) this.pinGrab(c);
+    this.applyFace(c, dt); // vrm.update 가 표정 값을 모델에 옮긴다 — 그 전에
     c.vrm!.update(dt);
     // 대롱대롱으로 더한 뼈 각을 원래대로 — 이번 프레임 모양은 이미 실제 뼈에 옮겨졌다(vrm.update).
     // 믹서는 값이 안 바뀌면(끝나서 멈춘 pickup) 뼈를 다시 쓰지 않아서, 안 되돌리면 더한 각이 프레임마다 쌓여 꺾인 채 남는다
