@@ -36,20 +36,24 @@ export function headerPrice(b: {
 }
 
 /**
+ * 해외 호가 · 주문 화면에 쓰는 환율 — 서버가 준 머리 현재가의 원화 ÷ 달러. 따로 받으면 머리 가격과 환율이 어긋날 수 있다.
+ * 국내이거나 원화 칸이 없거나 0이면(옛 서버 · 시세 없음) null — 그때 해외는 달러로 보인다.
+ */
+export function krwRate(b: { market: PriceMarket; current_price: number; current_price_krw?: number }): number | null {
+  return b.market === 'FOREIGN' && b.current_price > 0 && b.current_price_krw ? b.current_price_krw / b.current_price : null;
+}
+
+/**
  * 호가창 가격 글자를 만드는 함수. 해외는 원화 정수 · 콤마, 국내는 지금 그대로.
- * 환율은 서버가 준 머리 현재가의 원화 ÷ 달러 — 따로 받으면 머리 가격과 환율이 어긋날 수 있다.
- * 글자만 바꾼다. 호가를 눌러 주문 칸에 들어가는 값은 달러 그대로다.
- * 원화 칸이 없거나 0이면(옛 서버 · 시세 없음) 환율을 알 수 없어 달러로 보인다.
+ * 글자만 바꾼다. 호가를 누르면 달러 값이 주문 블럭으로 가고, 주문 블럭이 같은 환율의 원화로 보인다.
  */
 export function bookPriceText(b: {
   market: PriceMarket;
   current_price: number;
   current_price_krw?: number;
 }): (price: number) => string {
-  if (b.market === 'FOREIGN' && b.current_price > 0 && b.current_price_krw) {
-    const rate = b.current_price_krw / b.current_price;
-    return (price) => won(Math.round(price * rate));
-  }
+  const rate = krwRate(b);
+  if (rate) return (price) => won(Math.round(price * rate));
   return (price) => marketPrice(price, b.market);
 }
 

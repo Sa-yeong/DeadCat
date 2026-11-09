@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { down, up } from '../format';
 import { R } from '../radius';
 import { money } from '../../../common/notifications/orderNotices';
+import { orderMoney } from '../orderKrw';
 
-/** 확인 창에 보이는 것이자 그대로 보낼 주문 — 창이 떠 있는 동안 시세가 움직여도 지정가는 그대로다 */
+/** 확인 창에 보이는 것이자 그대로 보낼 주문 — 창이 떠 있는 동안 시세가 움직여도 지정가는 그대로다. 해외 가격은 달러 */
 export interface OrderDraft {
   stockName: string;
   side: 'BUY' | 'SELL';
@@ -41,12 +42,15 @@ function rememberSkipConfirm() {
 export function OrderConfirmDialog({
   draft,
   currentPrice,
+  krwRate,
   onCancel,
   onConfirm,
 }: {
   draft: OrderDraft;
   /** 시장가의 예상 금액 — 창이 떠 있는 동안 시세를 따라간다 */
   currentPrice: number;
+  /** 해외 종목의 환율 — 있으면 금액을 원화로, 실제로 나가는 달러를 옆에 작게 보인다 */
+  krwRate: number | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -68,6 +72,7 @@ export function OrderConfirmDialog({
 
   const sideLabel = draft.side === 'BUY' ? '매수' : '매도';
   const unit = draft.price ?? currentPrice;
+  const usdNote = (n: number) => (krwRate ? money(n, draft.currency) : undefined);
 
   return createPortal(
     <div
@@ -104,8 +109,17 @@ export function OrderConfirmDialog({
           <Row label="주문" value={sideLabel} color={draft.side === 'BUY' ? up : down} />
           <Row label="종류" value={draft.type === 'MARKET' ? '시장가' : '지정가'} />
           <Row label="수량" value={`${draft.quantity.toLocaleString('ko-KR')}주`} />
-          <Row label="가격" value={draft.price == null ? '현재가' : money(draft.price, draft.currency)} />
-          <Row label="예상 금액" value={unit > 0 ? money(unit * draft.quantity, draft.currency) : '—'} strong />
+          <Row
+            label="가격"
+            value={draft.price == null ? '현재가' : orderMoney(draft.price, draft.currency, krwRate)}
+            note={draft.price == null ? undefined : usdNote(draft.price)}
+          />
+          <Row
+            label="예상 금액"
+            value={unit > 0 ? orderMoney(unit * draft.quantity, draft.currency, krwRate) : '—'}
+            note={unit > 0 ? usdNote(unit * draft.quantity) : undefined}
+            strong
+          />
         </dl>
 
         <label className="flex items-center" style={{ gap: 6, fontSize: 12.5, color: '#A5A59C', cursor: 'pointer' }}>
@@ -157,11 +171,12 @@ export function OrderConfirmDialog({
   );
 }
 
-function Row({ label, value, color, strong }: { label: string; value: string; color?: string; strong?: boolean }) {
+function Row({ label, value, note, color, strong }: { label: string; value: string; note?: string; color?: string; strong?: boolean }) {
   return (
     <div className="flex items-center justify-between" style={{ gap: 12 }}>
       <dt style={{ color: '#A5A59C' }}>{label}</dt>
       <dd className="truncate" style={{ margin: 0, minWidth: 0, fontWeight: strong || color ? 700 : 500, color }}>
+        {note && <span style={{ marginRight: 6, fontSize: 11.5, fontWeight: 400, color: '#8F8F88' }}>{note}</span>}
         {value}
       </dd>
     </div>

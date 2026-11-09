@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLayout } from '../layout';
 import { Block, TabChip } from './Block';
-import { availableLabel, up, won } from '../format';
+import { availableLabel, krwRate, up, won } from '../format';
 import { isMarketClosed } from '../marketSession';
+import { krwInputToUsd, usdToKrwInput } from '../orderKrw';
 import { R } from '../radius';
 import { createOrder, errorMessage } from '../api';
 import type { StockBasic } from '../types';
@@ -21,6 +22,10 @@ import { failedNotice, money, orderResultNotice } from '../../../common/notifica
  * 시장가 — 가격 칸은 현재가를 흐리게 보여주기만 한다. 장외에는 고를 수 없다.
  * 지정가 — 가격 칸이 시세를 따라간다. 직접 입력 · ± · 호가 누르기 중 하나를 하면 그때부터 고정,
  *          「현재가」를 누르면 다시 따라간다. 낡은 가격으로 주문이 나가지 않게 하려는 것이다.
+ *
+ * 해외 — 화면(가격 칸 · 총액 · 확인 창 · 대기 목록)은 원화, 서버로 나가는 값은 달러다. pinned는 늘 달러로 들고,
+ *        칸에 칠 때만 원화를 그대로 보이다가(typing) 칸을 떠나면 실제로 나갈 달러의 원화로 바꿔 보인다.
+ *        환율은 호가창 · 머리 가격과 같은 값. 환율을 모르면(옛 서버 · 시세 없음) 달러로 받는다.
  *
  * 머리 줄 탭 「주문 | 대기」 — 대기 탭은 지금 종목의 대기 주문 목록. 탭을 오가도 입력은 그대로 남는다.
  *
@@ -53,6 +58,7 @@ export function OrderBlock({
   const b = L.blocks.order;
   const rule = basic?.tick_rule ?? 'KRX_STOCK';
   const currency = basic?.market === 'FOREIGN' ? 'USD' : 'KRW';
+  const rate = basic ? krwRate(basic) : null;
   const currentPrice = basic?.current_price ?? 0;
   const marketClosed = basic ? isMarketClosed(basic) : false;
 
@@ -61,8 +67,10 @@ export function OrderBlock({
   const { available, reload: reloadAvailable } = useOrderAvailable(stockCode);
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [type, setType] = useState<'MARKET' | 'LIMIT'>(marketClosed ? 'LIMIT' : 'MARKET');
-  /** 사용자가 고정한 지정가(콤마 없는 글자) — null이면 시세를 따라간다 */
+  /** 사용자가 고정한 지정가(콤마 없는 글자, 해외는 달러) — null이면 시세를 따라간다 */
   const [pinned, setPinned] = useState<string | null>(null);
+  /** 해외 — 칸에 치는 중인 원화(콤마 없는 글자). 치는 동안 되돌림 없이 그대로 보이려고 따로 든다 */
+  const [typing, setTyping] = useState<string | null>(null);
   const [qty, setQty] = useState('10');
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState<OrderDraft | null>(null);
@@ -79,6 +87,12 @@ export function OrderBlock({
     if (marketClosed) setType((t) => (t === 'MARKET' ? 'LIMIT' : t));
   }, [marketClosed]);
 
+  /** 치는 중이 아닌 쪽의 가격 정하기 — 호가 누르기 · ± · 현재가 · 칸 떠나기 */
+  const pin = (value: string | null) => {
+    setTyping(null);
+    setPinned(value);
+  };
+
   // 호가를 누르면 시장가 상태여도 지정가로 바꾸고 그 가격으로 고정.
   // 이 종목을 떠나기 전에 눌렀던 값이 다시 들어올 때 되살아나지 않게 처음 본 순번은 건너뛴다
   const seenPick = useRef(picked?.n);
@@ -88,7 +102,7 @@ export function OrderBlock({
     seenPick.current = picked.n;
     setTab('order'); // 대기 탭을 보고 있어도 누른 결과가 보이게
     setType('LIMIT');
-    setPinned(priceToInput(snapToTick(picked.price, rule), rule));
+    pin(priceToInput(snapToTick(picked.price, rule), rule));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickedN]);
 
@@ -96,6 +110,9 @@ export function OrderBlock({
   const livePrice = currentPrice > 0 ? priceToInput(snapToTick(currentPrice, rule), rule) : '';
   const priceText = following ? livePrice : pinned;
   const total = (Number(priceText) || 0) * (Number(qty) || 0);
+  /** 칸에 보일 글자(콤마 전) — 해외는 치는 중인 원화, 아니면 실제로 나갈 달러의 원화 */
+  const fieldText = !rate ? priceText : !following && typing !== null ? typing : usdToKrwInput(priceText, rate);
+  const totalText = rate ? won(Math.round(total * rate)) : currency === 'USD' ? money(total, 'USD') : won(total);
 
   const chooseSide = (next: 'BUY' | 'SELL') => {
     setSide(next);
@@ -106,18 +123,28 @@ export function OrderBlock({
     if (next === 'MARKET' && marketClosed) return;
     setType(next);
     // 시장가로 갔다 돌아오면 그 사이 낡았을 값 대신 다시 시세를 따라간다
-    if (next === 'MARKET') setPinned(null);
+    if (next === 'MARKET') pin(null);
   };
 
   const step = (move: typeof tickUp) => {
     const now = Number(priceText);
-    if (now > 0) setPinned(priceToInput(move(now, rule), rule));
+    if (now > 0) pin(priceToInput(move(now, rule), rule));
   };
 
   const snapPinned = () => {
     if (pinned === null) return;
     const snapped = snapToTick(Number(pinned), rule);
-    setPinned(snapped ? priceToInput(snapped, rule) : '');
+    pin(snapped ? priceToInput(snapped, rule) : '');
+  };
+
+  const typePrice = (text: string) => {
+    if (!rate) {
+      setPinned(cleanPriceInput(text, rule));
+      return;
+    }
+    const krw = cleanPriceInput(text, 'KRX_STOCK'); // 원화는 숫자만
+    setTyping(krw);
+    setPinned(krwInputToUsd(krw, rate));
   };
 
   const send = async (d: OrderDraft) => {
@@ -192,7 +219,7 @@ export function OrderBlock({
         }
       >
         {tab === 'pending' ? (
-          <PendingOrderList orders={pending} onChanged={afterCancel} />
+          <PendingOrderList orders={pending} krwRate={rate} onChanged={afterCancel} />
         ) : (
           <div className="flex flex-col" style={{ gap: 8 }}>
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 6 }}>
@@ -219,15 +246,15 @@ export function OrderBlock({
                   </div>
                   {!following && (
                     <span style={{ marginLeft: 'auto' }}>
-                      <MiniButton label="현재가" title="다시 현재가를 따라가요" onClick={() => setPinned(null)} />
+                      <MiniButton label="현재가" title="다시 현재가를 따라가요" onClick={() => pin(null)} />
                     </span>
                   )}
                 </div>
                 <PriceInput
-                  value={formatPriceInput(priceText)}
-                  decimal={rule === 'USD_CENT'}
+                  value={formatPriceInput(fieldText)}
+                  decimal={rule === 'USD_CENT' && !rate}
                   locked={type === 'MARKET'}
-                  onChange={(v) => setPinned(cleanPriceInput(v, rule))}
+                  onChange={typePrice}
                   onBlur={snapPinned}
                   onUp={() => step(tickUp)}
                   onDown={() => step(tickDown)}
@@ -259,7 +286,7 @@ export function OrderBlock({
                 <span style={{ color: '#A5A59C' }}>{type === 'MARKET' ? '주문 총액(예상)' : '주문 총액'}</span>
               )}
               <span style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 14, fontWeight: 700 }}>
-                {currency === 'USD' ? money(total, 'USD') : won(total)}
+                {totalText}
               </span>
             </div>
 
@@ -289,6 +316,7 @@ export function OrderBlock({
         <OrderConfirmDialog
           draft={draft}
           currentPrice={currentPrice}
+          krwRate={rate}
           onCancel={closeDraft}
           onConfirm={() => {
             closeDraft();

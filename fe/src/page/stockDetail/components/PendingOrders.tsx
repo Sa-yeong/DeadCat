@@ -7,6 +7,7 @@ import { subscribeOrderEvents } from '../../../common/notifications/orderFeed';
 import { subscribeOrderChanges } from '../../../common/orders/orderChanges';
 import { cancelFailedNotice, cancelledNotice, money } from '../../../common/notifications/orderNotices';
 import { notify } from '../../../common/notifications/store';
+import { orderMoney } from '../orderKrw';
 
 export interface PendingOrdersState {
   rows: PendingOrder[];
@@ -61,7 +62,16 @@ export function usePendingOrders(stockCode: string) {
 }
 
 /** 대기 탭 본문 — 블럭 높이 안에서 스크롤 */
-export function PendingOrderList({ orders, onChanged }: { orders: PendingOrdersState; onChanged: () => Promise<void> }) {
+export function PendingOrderList({
+  orders,
+  krwRate,
+  onChanged,
+}: {
+  orders: PendingOrdersState;
+  /** 해외 종목의 환율 — 있으면 가격을 원화로 보인다 */
+  krwRate: number | null;
+  onChanged: () => Promise<void>;
+}) {
   if (orders.rows.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center" style={{ fontSize: 12.5, color: '#A5A59C' }}>
@@ -72,17 +82,19 @@ export function PendingOrderList({ orders, onChanged }: { orders: PendingOrdersS
   return (
     <ul className="dc-scroll m-0 flex min-h-0 flex-1 list-none flex-col overflow-y-auto" style={{ padding: 0, gap: 2 }}>
       {orders.rows.map((o) => (
-        <PendingRow key={o.order_id} order={o} onChanged={onChanged} />
+        <PendingRow key={o.order_id} order={o} krwRate={krwRate} onChanged={onChanged} />
       ))}
     </ul>
   );
 }
 
-function PendingRow({ order: o, onChanged }: { order: PendingOrder; onChanged: () => Promise<void> }) {
+function PendingRow({ order: o, krwRate, onChanged }: { order: PendingOrder; krwRate: number | null; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const side = o.order_side === 'BUY' ? '매수' : '매도';
   const qty = `${o.quantity.toLocaleString('ko-KR')}주`;
-  const price = o.price == null ? '–' : money(o.price, o.currency);
+  const price = o.price == null ? '–' : orderMoney(o.price, o.currency, krwRate);
+  /** 실제로 걸린 시장 통화 값 — 마우스를 올리면 보인다 */
+  const exact = o.price == null ? '–' : money(o.price, o.currency);
 
   const cancel = async () => {
     setBusy(true);
@@ -106,7 +118,7 @@ function PendingRow({ order: o, onChanged }: { order: PendingOrder; onChanged: (
       <span className="truncate" title={qty} style={{ color: '#EDEDEA' }}>
         {qty}
       </span>
-      <span className="truncate" title={price} style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 13, fontWeight: 700, color: '#EDEDEA' }}>
+      <span className="truncate" title={exact} style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 13, fontWeight: 700, color: '#EDEDEA' }}>
         {price}
       </span>
       <span style={{ fontFamily: "'Space Grotesk', monospace", fontSize: 11.5, color: '#A5A59C' }}>{orderTime(o.created_at)}</span>
