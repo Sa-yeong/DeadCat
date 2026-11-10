@@ -19,7 +19,7 @@ import { RoomFeed } from './runtime/RoomFeed';
 import { createRoomEngine, ROOM_MOTIONS } from './runtime/roomEngine';
 import { RoomLoop } from './runtime/RoomLoop';
 import type { RoomRenderer } from './runtime/RoomRenderer';
-import { encodePreview, encodeThumb, UPLOAD_MAX_W } from './runtime/thumbImage';
+import { encodeThumb } from './runtime/thumbImage';
 import { charIdOf, type OwnedStock, type Quote, type ReactionKind, type RoomSnapshot, type RoomThumbnail } from './types';
 
 /** 개발 모드(?debug=motion) — 파일 없는 모션 단계를 이만큼 대기 자세로 채운다(지시서 1-3, 글자를 읽기 편하게) */
@@ -493,17 +493,16 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       )}
       {camera && rt?.renderer.capture && (
         <CameraMode
+          width={L.width}
           stageHeight={L.stageHeight}
-          capture={async () => {
-            // 화면 전체를 화면 해상도 그대로 — 미리보기는 원본(png), 올리는 파일은 가로 UPLOAD_MAX_W 까지 줄인 webp
+          capture={() => {
+            // 화면 전체를 화면 해상도 그대로 — 미리보기는 이 캔버스를 그대로 붙이고, 올릴 파일은 CameraMode 가 줄여 만든다
             const dpr = window.devicePixelRatio || 1;
-            const c = rt.renderer.capture!(
+            return rt.renderer.capture!(
               { scale: P.scale, ox: P.ox, oy: P.oy },
               { x: 0, y: 0, w: L.width, h: L.stageHeight },
               { w: Math.round(L.width * dpr), h: Math.round(L.stageHeight * dpr) },
             );
-            const [preview, upload] = await Promise.all([encodePreview(c), encodeThumb(c, UPLOAD_MAX_W)]);
-            return { preview, upload };
           }}
           onCancel={() => setCamera(false)}
           onSaved={(t) => {

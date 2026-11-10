@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { encodeThumb, UPLOAD_MAX_W } from '../runtime/thumbImage';
 import * as api from '../api';
 import type { RoomThumbnail } from '../types';
 import { C, accentBtn, floatBar, solidBtn } from './style';
@@ -80,11 +81,38 @@ function Viewfinder() {
   );
 }
 
+/** 「사진 출력 중...」을 적어도 이만큼은 보인다 — 바로 끝나도 찍혔다는 느낌이 들게 */
+const PRINT_MIN_MS = 700;
+/** 미리보기 박스 — 무대 가로의 이 비율(최소 · 최대 px), 좌하단에서 띄운 거리 */
+const BOX_RATIO = 0.34;
+const BOX_MIN = 240;
+const BOX_MAX = 440;
+const BOX_GAP = 16;
+
+/** 찍은 캔버스를 그대로 붙인다 — 파일로 바꾸지 않아 바로 보이고, 화면 해상도 그대로라 흐려지지 않는다 */
+function ShotCanvas({ canvas }: { canvas: HTMLCanvasElement }) {
+  const host = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block' });
+    el.appendChild(canvas);
+    return () => {
+      canvas.remove();
+    };
+  }, [canvas]);
+  return <div ref={host} role="img" aria-label="찍은 거실 사진" style={{ position: 'absolute', inset: 0 }} />;
+}
+
+type Shot = { canvas: HTMLCanvasElement; upload: Promise<Blob>; ready: boolean };
+
 /**
- * 카메라 모드 — 화면 전체가 촬영 범위(뷰파인더 선만), 위 [✕ 취소] · 아래 [촬영]. 촬영 → 미리보기 → [다시 찍기] / [썸네일로 설정].
- * 덮개 자체는 포인터를 통과시킨다(휠 줌 · 끌기는 페이지가 받는다). 미리보기는 찍은 원본을 화면 전체에 깔고 아래를 막는다
+ * 카메라 모드 — 화면 전체가 촬영 범위(뷰파인더 선만), 위 [✕ 취소] · 아래 [촬영].
+ * 촬영하면 좌하단에 작은 미리보기 박스(「사진 출력 중...」 → 사진, [다시 찍기] / [썸네일로 설정], 우상단 ✕).
+ * 뒤 거실은 그대로 움직인다. 덮개는 포인터를 통과시키고(휠 줌 · 끌기는 페이지가 받는다) 버튼 · 박스만 받는다
  */
 export function CameraMode({
+  width,
   stageHeight,
   capture,
   onCancel,
@@ -92,47 +120,60 @@ export function CameraMode({
   onNeedLogin,
   loginOpen,
 }: {
+  width: number;
   stageHeight: number;
-  /** 지금 화면 전체 — 미리보기(원본)와 올릴 파일 */
-  capture: () => Promise<{ preview: Blob; upload: Blob }>;
+  /** 지금 화면 전체를 화면 해상도로 찍은 캔버스 */
+  capture: () => HTMLCanvasElement;
   onCancel: () => void;
   /** 설정 성공 — 안내를 잠깐 보인 뒤 페이지가 카메라 모드를 끝낸다 */
   onSaved: (t: RoomThumbnail) => void;
   onNeedLogin: () => void;
   loginOpen: boolean;
 }) {
-  const [shot, setShot] = useState<{ blob: Blob; url: string } | null>(null);
+  const [shot, setShot] = useState<Shot | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  useEffect(() => () => {
-    if (shot) URL.revokeObjectURL(shot.url);
-  }, [shot]);
-
   useEscape(loginOpen ? null : onCancel);
 
-  const take = async () => {
-    if (busy) return;
-    setBusy(true);
+  const take = () => {
+    if (busy || shot) return;
     setMessage(null);
+    let canvas: HTMLCanvasElement;
     try {
-      const { preview, upload } = await capture();
-      setShot({ blob: upload, url: URL.createObjectURL(preview) });
+      canvas = capture(); // 누른 그 순간 화면
     } catch (e) {
       console.warn('[거실 썸네일] 촬영 실패', e);
       setMessage('사진을 찍지 못했어요');
-    } finally {
-      setBusy(false);
+      return;
     }
+    // 올릴 파일은 뒤에서 만든다 — 다 될 때까지(적어도 PRINT_MIN_MS) 「사진 출력 중...」
+    const upload = encodeThumb(canvas, UPLOAD_MAX_W);
+    setShot({ canvas, upload, ready: false });
+    Promise.all([upload, new Promise((ok) => window.setTimeout(ok, PRINT_MIN_MS))]).then(
+      () => setShot((s) => (s && s.canvas === canvas ? { ...s, ready: true } : s)),
+      (e) => {
+        console.warn('[거실 썸네일] 사진 만들기 실패', e);
+        setShot((s) => (s && s.canvas === canvas ? null : s));
+        setMessage('사진을 찍지 못했어요');
+      },
+    );
+  };
+
+  /** 박스 닫기 · 다시 찍기 — 뷰파인더로 돌아간다 */
+  const discard = () => {
+    if (busy) return;
+    setShot(null);
+    setMessage(null);
   };
 
   const save = async () => {
-    if (!shot || busy) return;
+    if (!shot?.ready || busy) return;
     setBusy(true);
     setMessage(null);
     try {
-      const r = await api.uploadRoomThumbnail(shot.blob, false);
+      const r = await api.uploadRoomThumbnail(await shot.upload, false);
       setDone(true);
       window.setTimeout(() => onSaved(r.thumbnail), DONE_MS);
     } catch (e) {
@@ -142,15 +183,13 @@ export function CameraMode({
     }
   };
 
-  const bottom = stageHeight - 64;
+  const boxW = Math.round(Math.max(BOX_MIN, Math.min(BOX_MAX, width * BOX_RATIO)));
+  const imgH = Math.round((boxW * stageHeight) / Math.max(1, width));
+  const note: React.CSSProperties = { padding: '4px 10px', borderRadius: 6, background: C.glass, border: '1px solid rgba(255,255,255,0.14)', fontSize: 12, fontWeight: 700 };
+
   return (
-    <div style={{ position: 'absolute', inset: 0, zIndex: 9, pointerEvents: shot ? 'auto' : 'none' }}>
-      {shot ? (
-        // 찍은 그대로(화면 해상도) — 화면과 같은 크기 · 비율이라 늘리거나 줄이지 않는다
-        <img src={shot.url} alt="찍은 거실 사진" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }} />
-      ) : (
-        <Viewfinder />
-      )}
+    <div style={{ position: 'absolute', inset: 0, zIndex: 9, pointerEvents: 'none' }}>
+      {!shot && <Viewfinder />}
 
       <div style={{ position: 'absolute', left: 0, right: 0, top: 20, display: 'flex', justifyContent: 'center' }}>
         <button type="button" onClick={onCancel} style={{ ...solidBtn, height: 34, pointerEvents: 'auto' }}>
@@ -158,32 +197,57 @@ export function CameraMode({
         </button>
       </div>
 
-      {message && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: bottom - 40, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-          <span style={{ padding: '4px 10px', borderRadius: 6, background: C.glass, border: '1px solid rgba(255,255,255,0.14)', fontSize: 12, fontWeight: 700 }}>{message}</span>
+      {shot ? (
+        // 미리보기 박스 — 좌하단
+        <div style={{ position: 'absolute', left: BOX_GAP, bottom: BOX_GAP, width: boxW, padding: 8, borderRadius: 10, background: C.glass, border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', pointerEvents: 'auto' }}>
+          <div style={{ position: 'relative', width: '100%', height: imgH, borderRadius: 6, overflow: 'hidden', background: '#19191C' }}>
+            {shot.ready ? (
+              <ShotCanvas canvas={shot.canvas} />
+            ) : (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.text2, fontSize: 13, fontWeight: 700 }}>
+                사진 출력 중...
+              </div>
+            )}
+            <button
+              type="button"
+              aria-label="미리보기 닫기"
+              disabled={busy}
+              onClick={discard}
+              style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, border: '1px solid rgba(255,255,255,0.14)', background: C.glass, color: C.text, cursor: 'pointer' }}
+            >
+              <Icon name="close" />
+            </button>
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, minHeight: 34 }}>
+            {done ? (
+              <span style={{ ...note, fontSize: 13 }}>거실 썸네일을 설정했어요</span>
+            ) : (
+              <>
+                {message && <span style={{ ...note, marginRight: 'auto' }}>{message}</span>}
+                <button type="button" disabled={busy} onClick={discard} style={{ ...solidBtn, height: 34 }}>
+                  다시 찍기
+                </button>
+                <button type="button" disabled={busy || !shot.ready} onClick={() => void save()} style={{ ...accentBtn, height: 34, opacity: busy || !shot.ready ? 0.6 : 1 }}>
+                  썸네일로 설정
+                </button>
+              </>
+            )}
+          </div>
         </div>
+      ) : (
+        <>
+          {message && (
+            <div style={{ position: 'absolute', left: 0, right: 0, top: stageHeight - 104, display: 'flex', justifyContent: 'center' }}>
+              <span style={note}>{message}</span>
+            </div>
+          )}
+          <div style={{ position: 'absolute', left: 0, right: 0, top: stageHeight - 64, display: 'flex', justifyContent: 'center' }}>
+            <button type="button" onClick={take} style={{ ...accentBtn, height: 38, pointerEvents: 'auto' }}>
+              <Icon name="camera" />촬영
+            </button>
+          </div>
+        </>
       )}
-
-      <div style={{ position: 'absolute', left: 0, right: 0, top: bottom, display: 'flex', justifyContent: 'center', gap: 8 }}>
-        {done ? (
-          <span style={{ height: 38, display: 'inline-flex', alignItems: 'center', padding: '0 16px', borderRadius: 8, background: C.glass, border: '1px solid rgba(255,255,255,0.14)', fontSize: 13, fontWeight: 700 }}>
-            거실 썸네일을 설정했어요
-          </span>
-        ) : shot ? (
-          <>
-            <button type="button" disabled={busy} onClick={() => { setShot(null); setMessage(null); }} style={{ ...solidBtn, height: 38, pointerEvents: 'auto' }}>
-              다시 찍기
-            </button>
-            <button type="button" disabled={busy} onClick={() => void save()} style={{ ...accentBtn, height: 38, pointerEvents: 'auto', opacity: busy ? 0.6 : 1 }}>
-              썸네일로 설정
-            </button>
-          </>
-        ) : (
-          <button type="button" disabled={busy} onClick={() => void take()} style={{ ...accentBtn, height: 38, pointerEvents: 'auto' }}>
-            <Icon name="camera" />촬영
-          </button>
-        )}
-      </div>
     </div>
   );
 }

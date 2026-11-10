@@ -30,9 +30,3 @@ export async function encodeThumb(c: HTMLCanvasElement, maxW = Infinity): Promis
   return jpeg;
 }
 
-/** 미리보기 — 찍은 그대로(무손실 png, 줄이지 않음) */
-export async function encodePreview(c: HTMLCanvasElement): Promise<Blob> {
-  const png = await toBlob(c, 'image/png');
-  if (!png) throw new Error('미리보기를 만들지 못했어요');
-  return png;
-}
