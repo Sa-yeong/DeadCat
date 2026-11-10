@@ -53,10 +53,6 @@ export function Tab1(){
     return <div  className='tab1'>
         <span className='assetInfo'>
             <AssetInfo token={token} />
-            <button onClick={()=>{
-                localStorage.removeItem('token');
-                navigate('/')
-            }}>로그아웃</button>
         </span>
         <span className='charac'> 
             <Represent token={token} mydata={mydata} setMydata={setMydata} /> 
@@ -192,16 +188,10 @@ function AssetInfo({token}: any){
         <div className='asset-body'>
             <div>
                 <span className='data-label'>
-                    총 자산
-                </span>
-                <span>{Number(myAsset?.available_cash).toLocaleString()}</span>
-            </div>
-            {/* <div className='asset-row'>
-                <span className='data-label'>
                     총 주문 가능 금액
                 </span>
                 <span>{Number(myAsset?.available_cash).toLocaleString()}</span>
-            </div> */}
+            </div>
             <div className='asset-row'>
                 <span className='data-label'>
                     총 투자 금액

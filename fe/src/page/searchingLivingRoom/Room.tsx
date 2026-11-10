@@ -13,7 +13,7 @@ export function Room({img, nickname, profit, tags, onClick, isMine}: any){
         <div className="room-footer">
             <div className='first-line'>
                 <span>{nickname}</span>
-                <span style={{color: profit===0? '#9c9c9c' : profit>0? '#f04452':'#5c96f5'}}>{profit}</span>
+                <span style={{color: profit===0? '#9c9c9c' : profit>0? '#f04452':'#5c96f5'}}>{profit}%</span>
             </div>
             <div className='tag-list'>
                 {
