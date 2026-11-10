@@ -1,3 +1,4 @@
+import './Signup.css'
 import { useState } from "react";
 import { api } from "../api/axios";
 
@@ -37,13 +38,22 @@ export function SignUp(){
         }
     }
 
-    return <>
-        <>아이디를 입력하세요</>
-        <input onChange={(e) => {setId(e.target.value)}} />
-        <>비밀 번호를 입력하세요</>
-        <input onChange={(e) => {setPw(e.target.value)}} />
-        <>닉네임을 입력하세요</>
-        <input onChange={(e) => {setName(e.target.value)}} />
+    return <div className='signup-container'>
+        <div className='signup-content'>
+            <div>
+                <>아이디를 입력하세요</>
+                <input onChange={(e) => {setId(e.target.value)}} />
+            </div>
+            <div>
+                <>비밀번호를 입력하세요</>
+                <input onChange={(e) => {setPw(e.target.value)}} />
+            </div>
+            <div>
+                <>닉네임을 입력하세요</>
+                <input onChange={(e) => {setName(e.target.value)}} />
+            </div>
+        </div>
+        
         <button onClick={signup}>회원가입</button>
-    </>;
+    </div>;
 }

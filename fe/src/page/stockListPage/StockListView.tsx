@@ -73,7 +73,7 @@ function IndicesCarousel(){
     return <div className='index'>
             <Carousel arrows infinite={false}>
             {
-                indices.map((index) =>{
+                indices?.map((index) =>{
                     return <div className='carousel-slide'>
                         <IndicesCarouselLayout key={index.index_code} 
                         i_name={index.index_name} price={index.current_value} 

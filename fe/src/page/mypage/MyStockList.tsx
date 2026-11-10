@@ -15,20 +15,21 @@ interface Holdings{
     market: string;
 }
 
-export function MyStockList() {
+export function MyStockList({token}:any) {
     const [myHoldings, setMyHoldings] = useState<Holdings[]>([]);
     const navigate = useNavigate();
 
     useEffect(() => {
         const fetchHoldings = async () => {
             try{
-                const token = localStorage.getItem('token');
+                if(!token)
+                    return null;
+                
                 const response = await api.get('/holdings', {
                     headers: {Authorization: `Bearer ${token}`}
                 })
 
                 setMyHoldings(response.data.data);
-                console.log('보유 종목 리스트 조회 성공!');
             }catch(e){console.error('보유 종목 리스트 조회 실패: ', e)}
         };
 
@@ -42,7 +43,7 @@ export function MyStockList() {
         </div>
         <div className='stock-list-body'>
             {
-                myHoldings.map((myStock) =>
+                myHoldings?.map((myStock) =>
                     <MyStock key={myStock.stock_code}
                         s_name={myStock.stock_name} 
                         s_img={myStock.stock_img}
@@ -84,10 +85,10 @@ function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, mark
             {formatComma(market, mean_price)}
         </span>
         <span className='quantity'>{quantity}</span>
-        <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}>
+        <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'#566072':((rate>0) ?'#f04452':'#5c96f5')}}>
             {(typeof rate =='string')?rate:rate + '%'}
         </span>
-        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}>
+        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'#566072':((rate>0) ?'#f04452':'#5c96f5')}}>
             {formatComma(market, profit)}
         </span>
     </div>

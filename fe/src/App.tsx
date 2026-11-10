@@ -18,6 +18,7 @@ import { LivingRoomPage } from './page/livingRoom/LivingRoomPage';
 import { SearchingView } from './page/searchingLivingRoom/SearchingView';
 import { RoomList } from './page/searchingLivingRoom/RoomsList';
 import { SearchedRooms } from './page/searchingLivingRoom/SearchedRooms';
+import { Follower, Followee } from './modal/Follow';
 
 const router = createBrowserRouter([
   {
@@ -35,7 +36,11 @@ const router = createBrowserRouter([
       {path: 'room/:userId', element: <LivingRoomPage />},
       {path: 'mypage', element: <MyPageLayout />, children: [
         {index: true, element: <Navigate to='assets' replace />},
-        {path: 'assets', element: <Tab1 />},
+        {path: 'assets', element: <Tab1 />, children: [
+          {index: true, element: <Navigate to='follower' />},
+          {path: 'follower', element: <Follower />},
+          {path: 'followee', element: <Followee />}
+        ]},
         {path: 'history', element: <Tab2 />},
         {path: 'community', element: <Tab3 />, children: [
           {index: true, element: <Navigate to='myPosts' />},

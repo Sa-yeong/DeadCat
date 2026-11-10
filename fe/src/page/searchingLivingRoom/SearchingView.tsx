@@ -1,12 +1,13 @@
 import './SearchingView.css'
 import { SearchBar } from '../../common/SearchBar';
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Dropdown, Space, Popover, type MenuProps } from 'antd';
 import { FaAngleDown, FaPlus, FaCheck } from 'react-icons/fa6';
 import { LuSparkles, LuArrowUpDown } from 'react-icons/lu';
 import { GoMirror } from 'react-icons/go';
 import { api } from '../../api/axios';
+import { LoginModal } from '../../modal/LoginModal';
 
 
 interface RoomDetail{
@@ -17,15 +18,24 @@ interface RoomDetail{
     tags: string[];
 }
 
+interface StockInfo{
+    stock_id: number;
+    stock_code: string;
+    stock_name: string;
+}
+
 export function SearchingView(){
     const navigate = useNavigate();
+    const token = localStorage.getItem('token');
 
     const [tags, setTags] = useState<{ tag_id: number, name: string }[]>([]);
+    const [searchedKeyword, setSearchedKeyword] = useState<StockInfo[]>([]);
     const [order, setOrder] = useState<string>('DEFAULT');
     const [selectedTags, setSeletedTags] = useState<string[]>([]);
     const [keywords, setKeywords] = useState<string[]>([]);
     const [clickSim, setClickSim] = useState<boolean>(false);
     const [clickOpp, setClickOpp] = useState<boolean>(false);
+    const [currentUser, setCurrentUser] = useState<number|null>(null);
     const [rooms, setRooms] = useState<RoomDetail[]>([]);
     const [riseRooms, setRiseRooms] = useState<RoomDetail[]>([]);
     const [fallRooms, setFallRooms] = useState<RoomDetail[]>([]);
@@ -73,11 +83,37 @@ export function SearchingView(){
             setKeywords(prev => prev.filter(keyword => keyword !== current));
     }
 
+    // 종목 검색
+    const searchStock = async(input: string) => {
+        if(!input.trim()){
+            setSearchedKeyword([]);
+            return;
+        }
+
+        try{
+            let response;
+
+            if(token){
+                response = await api.get('/home/stocks/search',{
+                    headers: {Authorization: `Bearer ${token}`},
+                    params: {keyword: input}
+                })
+            }else{
+                response = await api.get('/home/stocks/search',{
+                    params: {keywords: input}
+                })
+            }
+            
+            setSearchedKeyword(response.data.data.stocks);
+            console.log('종목 검색 성공: ', response.data.data.stocks);
+        }catch(e){console.error('종목 검색 실패: ', e)}
+    }
+
     // 처음 렌더링 시
     useEffect(() => {
         const fetchTags = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
                 let response;
                 if(token){
                     response = await api.get('/home/rooms/tags',
@@ -87,13 +123,12 @@ export function SearchingView(){
                 }
 
                 setTags(response.data.data.data.tags);
-                console.log(response.data.data.data.tags);
             }catch(e){console.error(`전체 태그 목록 조회 실패: `, e)}
         }
         
         const fetchRooms = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 let response;
                 if(token){
@@ -102,9 +137,9 @@ export function SearchingView(){
                     )
                 }else{response = await api.get('/home/rooms/explore')}
 
-                setRiseRooms(response.data.data.data.soaring_rooms);
-                setFallRooms(response.data.data.data.plummeting_rooms);
-                console.log(response.data.data.data);
+                setCurrentUser(response.data.data.user_id);
+                setRiseRooms(response.data.data.soaring_rooms);
+                setFallRooms(response.data.data.plummeting_rooms);
             }catch(e){console.error('급등 / 급락 거실 조회 실패: ', e);}
         }
 
@@ -116,7 +151,7 @@ export function SearchingView(){
     useEffect(() => {
         const fetchSim = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 if(!token) {
                     // 로그인 모달 창 띄우기
@@ -129,13 +164,13 @@ export function SearchingView(){
 
                 setRooms(response.data.data.data.rooms);
                 setSeletedTags(response.data.data.data.reference_tags)
-                console.log('유사한 거실 조회 성공 ', response.data.data.data)
+                console.log('유사한 거실 조회 성공 ', response.data.data)
             }catch(e){console.error('유사한 거실 조회 실패: ', e);}
         }
 
         const fetchOpp = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 if(!token) {
                     // 로그인 모달 창 띄우기
@@ -148,7 +183,7 @@ export function SearchingView(){
 
                 setRooms(response.data.data.data.rooms);
                 setSeletedTags(response.data.data.data.reference_tags)
-                console.log('정반대 거실 조회 성공 ', response.data.data.data)
+                console.log('정반대 거실 조회 성공 ', response.data.data)
             }catch(e){console.error('정반대 거실 조회 실패: ', e);}
         }
 
@@ -170,7 +205,7 @@ export function SearchingView(){
 
         const fetchRoomsList = async () => {
             try{
-                const token = localStorage.getItem('token');
+                // const token = localStorage.getItem('token');
 
                 let response;
                 if(token){
@@ -185,7 +220,6 @@ export function SearchingView(){
                 }
 
                 setRooms(response.data.data.data.rooms);
-                console.log(response.data.data.data);
             }catch(e){console.error('거실 리스트 조회 실패: ', e)}
         };
 
@@ -234,22 +268,29 @@ export function SearchingView(){
         <div className='rooms-content'>
             <Header tags={tags} order={order} setOrder={setOrder} setSelectedTags={setSeletedTags}
             setKeywords={setKeywords} setClickSim={setClickSim} setClickOpp={setClickOpp}
-            findTag={findTag} findKeyword={findKeyword} />
+            findTag={findTag} findKeyword={findKeyword}
+            searchedKeyword={searchedKeyword} token={token}
+            setSearchedKeyword={setSearchedKeyword} searchStock={searchStock} />
             <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, 
                 setClickOpp, setClickSim,
-                riseRooms, fallRooms, rooms}} />
+                riseRooms, fallRooms, rooms, currentUser}} />
         </div>
     </div>
     ;
 }
 
-function Header({tags, order, setOrder, setSelectedTags, setKeywords,
-    setClickSim, setClickOpp, findTag, findKeyword}:any){  
+function Header({token, tags, order, setOrder, setSelectedTags, setKeywords,
+    setClickSim, setClickOpp, findTag, findKeyword, searchedKeyword,
+    setSearchedKeyword, searchStock}:any){  
+    
+    const [searchText, setSearchText] = useState<string>("");
+    const [isOpen, setIsOpen] = useState<boolean>(false);
+
     // 태그 종류
     const content = (
         <div style={{display: 'flex', gap: '8px'}}>
             {
-                tags.map((tag: { tag_id: number, name: string }) => {
+                tags?.map((tag: { tag_id: number, name: string }) => {
                     return <p onClick={() => {if(!findTag(tag.name))
                         setSelectedTags((prev: string[]) => [...prev, tag.name])
                         setClickOpp(false); setClickSim(false);
@@ -259,6 +300,19 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             }
         </div>
     )
+
+    const clickButton = (type: string) => {
+        if(token){ // 로그인 상태인 경우
+            if(type === "Sim"){
+                setClickSim(true);
+                setClickOpp(false);
+            }else{
+                setClickOpp(true);
+                setClickSim(false);
+            }
+        } else
+            setIsOpen(true);
+    }
 
     const items: MenuProps['items'] = [
         {
@@ -299,7 +353,34 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
             <SearchBar onAdd={(keyword: string) => { 
                 if(!findKeyword(keyword))
                     setKeywords((prev: string[]) => [...prev, keyword])
-                setClickOpp(false); setClickSim(false);}} />
+                setClickOpp(false); setClickSim(false);
+                setSearchedKeyword([])}}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {searchStock(e.target.value);
+                    setSearchText(e.target.value);
+                }} value={searchText} />
+            {
+                searchedKeyword.length === 0 ?
+                null :
+                <div className='result-stocks'>
+                    {
+                        (searchedKeyword as StockInfo[])?.map((keyword, index, arr) => {
+                            const isLast = index === arr.length - 1;
+                            return (
+                                <div className={isLast? 'last-row' : 'row'}
+                                onClick={() => {
+                                    if(!findKeyword(keyword))
+                                        setKeywords((prev: string[]) => [...prev, keyword.stock_name])
+                                    setSearchedKeyword([]);
+                                    setSearchText("");
+                                }}>
+                                    {keyword.stock_name}</div>
+                            )
+                        }
+                        )
+                    }
+                </div>
+            }
+
             <Popover content={content} trigger={"click"} arrow={false} placement='bottomLeft'
             title='태그 목록'>
                 <button>
@@ -319,9 +400,10 @@ function Header({tags, order, setOrder, setSelectedTags, setKeywords,
                 </span>
             </Dropdown>
             <button style={{color: '#528bff', borderColor: '#1c2f56'}}
-            onClick={()=>{setClickSim(true); setClickOpp(false);}}> <LuSparkles /> 나와 유사한 거실</button>
+            onClick={()=>clickButton('Sim')}> <LuSparkles /> 나와 유사한 거실</button>
             <button style={{color: '#ff4d4d', borderColor: '#4e1717'}}
-            onClick={()=>{setClickOpp(true); setClickSim(false);}}> <GoMirror /> 나와 정반대 거실</button>
+            onClick={()=>clickButton('Opp')}> <GoMirror /> 나와 정반대 거실</button>
         </span>
+        <LoginModal isOpen={isOpen} onClose={()=>setIsOpen(false)} />
     </div>;
 }

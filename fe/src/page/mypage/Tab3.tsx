@@ -1,5 +1,4 @@
 import './Tab3.css'
-// import { ActivityListLayout } from '../../layout/ActivityListLayout';
 import { ListTab } from '../../common/ListTab';
 import { SearchBar } from '../../common/SearchBar';
 import { Outlet } from 'react-router-dom';

@@ -85,7 +85,7 @@ export function StockList(){
         </div>
         <div className='table-body'>
             {
-                stockRows.map((stock) => 
+                stockRows?.map((stock) => 
                 <StockRow key={stock.stock_code}
                 order={stock.rank} 
                 s_name={stock.stock_name} 

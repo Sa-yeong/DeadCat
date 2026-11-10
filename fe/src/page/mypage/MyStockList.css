@@ -30,6 +30,9 @@
     text-align: center;
     cursor: pointer;
 }
+.my-stock-list .stock-list-body .stock-row:hover{
+    background: #171c27;
+}
 .my-stock-list .stock-row span{
     padding-left: 10px;
     font-size: medium;

@@ -8,7 +8,7 @@ export function ListTab({list=[]}:{list:[ReactNode, string][]}){
 
     return <div className="tab">
         {list.map(([content, link], index) => (
-            <Link key={index} to={link} className={path===link?'active':'inactive'}>{content}</Link>
+            <Link key={index} to={link} className={path.includes(link)?'active':'inactive'}>{content}</Link>
         ))}
     </div>;
 }

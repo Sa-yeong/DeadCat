@@ -2,7 +2,6 @@ import './StockRow.css'
 import { useState, type MouseEvent } from 'react';
 import { IoHeartOutline, IoHeart } from 'react-icons/io5';
 import { LoginModal } from '../../modal/LoginModal';
-import Login from '../../common/Login';
 import { toggleFavorite, useIsFavorite } from '../../common/favorites/favorites';
 
 
@@ -59,7 +58,7 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
             { isLiked? (<IoHeart color='red' />):(<IoHeartOutline />) }
             </span>
         )}
-        <LoginModal isOpen={open} onClose={() => setOpen(false)} children={<Login />} />
+        <LoginModal isOpen={open} onClose={() => setOpen(false)} />
         <span className='stock-name'>{s_name}</span>
         <span className='current-price'>{formatComma(market, c_price)}</span>
         <span className='rise-rate' 
