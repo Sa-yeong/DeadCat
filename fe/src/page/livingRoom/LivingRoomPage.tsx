@@ -3,6 +3,8 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import * as api from './api';
 import { characterDef } from './catalog';
 import { FURNITURE_CATALOG } from './furnitureCatalog';
+import { CameraMode } from './hud/CameraMode';
+import { autoFrame } from './hud/cameraFrame';
 import { DebugLabels } from './hud/DebugLabels';
 import { ITEM_MIME } from './hud/dnd';
 import { LoginPrompt } from './hud/LoginPrompt';
@@ -17,7 +19,7 @@ import { RoomFeed } from './runtime/RoomFeed';
 import { createRoomEngine, ROOM_MOTIONS } from './runtime/roomEngine';
 import { RoomLoop } from './runtime/RoomLoop';
 import type { RoomRenderer } from './runtime/RoomRenderer';
-import { charIdOf, type OwnedStock, type Quote, type ReactionKind, type RoomSnapshot } from './types';
+import { charIdOf, type OwnedStock, type Quote, type ReactionKind, type RoomSnapshot, type RoomThumbnail } from './types';
 
 /** 개발 모드(?debug=motion) — 파일 없는 모션 단계를 이만큼 대기 자세로 채운다(지시서 1-3, 글자를 읽기 편하게) */
 const DEBUG_HOLD_MS = 3000;
@@ -109,6 +111,14 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
   const zoomAnim = useRef<{ raf: number; target: number } | null>(null);
   /** 휠 줌을 받을 때인가 — 거실을 다 받았고 비공개가 아닐 때 */
   const wheelOn = useRef(false);
+  /** 카메라 모드(거실 썸네일 직접 촬영) — HUD 를 전부 숨기고 캐릭터 · 가구 상호작용을 막는다. 휠 줌 · 끌기만 */
+  const [camera, setCamera] = useState(false);
+  /** 내 거실 썸네일 상태 — 자동 촬영할지 판단(url 없음 또는 isAuto 면 찍는다) */
+  const thumbRef = useRef<RoomThumbnail | null>(null);
+  /** 배치 편집 중 — 이때는 절대 자동으로 찍지 않는다 */
+  const placingRef = useRef(false);
+  /** 배치를 「저장」으로 마쳤다 — 일반 모드로 돌아와 캐릭터가 다시 선 뒤 한 번 찍는다 */
+  const savedLayoutRef = useRef(false);
 
   /* ── 진입: 스냅샷 + 카탈로그 → 런타임 ── */
   useEffect(() => {
@@ -173,6 +183,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       });
       loop.load(snap);
       loop.start();
+      thumbRef.current = snap.mode === 'OWNER' ? (snap.roomThumbnail ?? null) : null;
       setSnapshot(snap);
       setHoldings(owned);
       setRt({ loop, renderer, characters, furniture, reactionKinds, feed });
@@ -190,6 +201,36 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       renderer?.dispose();
     };
   }, [userId, use3d, debug, navigate]);
+
+  /**
+   * 자동 썸네일 — 기본 줌 구도(처음 들어왔을 때)로 찍어 is_auto 로 올린다. 사용자에게는 아무것도 안 보인다(실패해도 콘솔만).
+   * 직접 찍은 적이 있으면(isAuto false) 찍지 않는다 — 서버도 덮지 않고 skipped 를 준다
+   */
+  const autoShot = async (renderer: RoomRenderer) => {
+    const t = thumbRef.current;
+    if (!t || !(t.url === null || t.isAuto) || !renderer.capture || !renderer.whenSettled) return;
+    try {
+      await renderer.whenSettled();
+      // 기다리는 사이 배치 편집을 시작했으면 찍지 않는다
+      if (placingRef.current) return;
+      const L0 = layoutRef.current;
+      const v = clampView(L0, FIT_VIEW.z, FIT_VIEW.tx, FIT_VIEW.ty, sideSlack(L0));
+      const P0 = projectionOf(L0, v);
+      const blob = await renderer.capture({ scale: P0.scale, ox: P0.ox, oy: P0.oy }, autoFrame(L0.width, L0.stageHeight));
+      const r = await api.uploadRoomThumbnail(blob, true);
+      thumbRef.current = r.thumbnail;
+    } catch (e) {
+      console.warn('[거실 썸네일] 자동 촬영 실패', e);
+    }
+  };
+  // ① 썸네일이 아예 없을 때 내 거실을 열면 — 방 · 가구 · 캐릭터가 다 서고 나서 한 번
+  const autoOnOpen = useRef(false);
+  useEffect(() => {
+    if (!rt || autoOnOpen.current || snapshot?.mode !== 'OWNER' || thumbRef.current?.url !== null) return;
+    autoOnOpen.current = true;
+    void autoShot(rt.renderer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 거실을 받은 뒤 한 번만
+  }, [rt]);
 
   // 보유 종목 3초 폴링 — 내 거실을 다 받은 뒤부터. 로그인이 풀리면 멈추고 로그인 창
   useHoldingsPoll(!!rt && snapshot?.mode === 'OWNER', setHoldings, () => setNeedLogin(true));
@@ -319,6 +360,11 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
           // 방 밖에서 손을 떼도 놓기가 들어오게 — 들어 옮기던 캐릭터가 붙은 채 남지 않도록
           e.currentTarget.setPointerCapture(e.pointerId);
           const p = local(e);
+          // 카메라 모드 — 끌기(구도)만. 캐릭터 · 가구에는 아무것도 보내지 않는다
+          if (camera) {
+            pan.start(p.x, p.y);
+            return;
+          }
           // 캐릭터가 아닌 곳을 누르면 줌인 상태에서는 방을 끈다. 짧게 누르면 여전히 빈 바닥 누름(스탯 링 닫기)
           if (!rt.loop.charAt(p.x, p.y)) pan.start(p.x, p.y);
           rt.loop.pointerDown(p.x, p.y);
@@ -327,13 +373,13 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
           if (!rt || !e.isPrimary) return;
           const p = local(e);
           pan.move(p.x, p.y);
-          rt.loop.pointerMove(p.x, p.y);
+          if (!camera) rt.loop.pointerMove(p.x, p.y);
         }}
         onPointerUp={(e) => {
           if (!rt || !e.isPrimary) return;
           const p = local(e);
           pan.end();
-          rt.loop.pointerUp(p.x, p.y);
+          if (!camera) rt.loop.pointerUp(p.x, p.y);
         }}
         onPointerCancel={(e) => {
           if (!e.isPrimary) return;
@@ -345,7 +391,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
           rt?.loop.pointerCancel();
         }}
         onDragOver={(e) => {
-          if (!e.dataTransfer.types.includes(ITEM_MIME)) return;
+          if (camera || !e.dataTransfer.types.includes(ITEM_MIME)) return;
           e.preventDefault();
           // 끌고 있는 아이템 밑의 캐릭터 — 호감도 MAX 면 HUD 가 「이미 MAX」를 띄운다(3-⑦-a)
           if (!rt) return;
@@ -358,7 +404,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
         }}
         onDrop={(e) => {
           const itemId = Number(e.dataTransfer.getData(ITEM_MIME));
-          if (!rt || !itemId) return;
+          if (camera || !rt || !itemId) return;
           e.preventDefault();
           const p = local(e);
           const charId = rt.loop.charAt(p.x, p.y);
@@ -380,11 +426,13 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       {!snapshot && !error && <Center>불러오는 중…</Center>}
       {error && <Center>{error}</Center>}
       {isPrivate && <Center>비공개 거실이에요</Center>}
-      {snapshot && !isPrivate && snapshot.characters.length === 0 && snapshot.mode === 'OWNER' && (
+      {!camera && snapshot && !isPrivate && snapshot.characters.length === 0 && snapshot.mode === 'OWNER' && (
         <Center sub="오른쪽 위 캐릭터 탭에서 거실에 세울 캐릭터를 고를 수 있어요">거실에 세운 캐릭터가 없어요</Center>
       )}
 
       {snapshot && rt && !isPrivate && (
+        // 카메라 모드 동안은 통째로 숨긴다 — 내려 버리면 패널 · 호감도 같은 HUD 상태를 잃으므로 그리기만 끈다
+        <div style={{ display: camera ? 'none' : 'contents' }}>
         <RoomHud
           ref={hud}
           ownerId={userId}
@@ -419,7 +467,10 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
               });
           }}
           onRoomReactions={(roomReactions) => setSnapshot((s) => (s ? { ...s, roomReactions } : s))}
-          onPlacementsSaved={(p) => rt.loop.setPlacements(p)}
+          onPlacementsSaved={(p) => {
+            rt.loop.setPlacements(p);
+            savedLayoutRef.current = true; // ② 저장이 성공했을 때만 — 일반 모드로 돌아온 뒤 찍는다
+          }}
           onRoster={(characters) => {
             setSnapshot((s) => (s ? { ...s, characters } : s));
             // 새로 세운 캐릭터의 감정을 다음 1분 주기까지 기다리지 않고 새 snapshot 으로 받는다(1-5 B)
@@ -427,10 +478,34 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
           }}
           loginOpen={needLogin}
           onNeedLogin={() => setNeedLogin(true)}
+          onCamera={snapshot.mode === 'OWNER' && rt.renderer.capture ? () => setCamera(true) : undefined}
+          onInteraction={(m) => {
+            placingRef.current = m === 'PLACEMENT';
+            // 배치 모드가 끝나고 캐릭터가 다시 선 뒤(setInteractionMode 가 숨김을 푼 뒤) — 저장했을 때만
+            if (m === 'NORMAL' && savedLayoutRef.current) {
+              savedLayoutRef.current = false;
+              void autoShot(rt.renderer);
+            }
+          }}
+        />
+        </div>
+      )}
+      {camera && rt?.renderer.capture && (
+        <CameraMode
+          width={L.width}
+          stageHeight={L.stageHeight}
+          capture={(rect) => rt.renderer.capture!({ scale: P.scale, ox: P.ox, oy: P.oy }, rect)}
+          onCancel={() => setCamera(false)}
+          onSaved={(t) => {
+            thumbRef.current = t; // 직접 찍었으니 이제 자동 촬영은 멈춘다
+            setCamera(false);
+          }}
+          onNeedLogin={() => setNeedLogin(true)}
+          loginOpen={needLogin}
         />
       )}
-      {debug && rt && !isPrivate && <DebugLabels loop={rt.loop} />}
-      {snapshot && rt && !isPrivate && (
+      {!camera && debug && rt && !isPrivate && <DebugLabels loop={rt.loop} />}
+      {!camera && snapshot && rt && !isPrivate && (
         // 오른쪽 창이 열리면 그 왼쪽으로 비켜난다
         <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.zoomTop} onZoom={zoomTo} onStep={zoomStep} />
       )}

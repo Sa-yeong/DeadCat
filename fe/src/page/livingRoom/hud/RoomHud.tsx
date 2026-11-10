@@ -20,6 +20,7 @@ import {
   type RoomSnapshot,
 } from '../types';
 import { AssetSummary } from './AssetSummary';
+import { CameraButton } from './CameraMode';
 import { ModeDock, TopActions } from './chrome';
 import { GuestbookPanel } from './GuestbookPanel';
 import { CharacterPanel } from './CharacterPanel';
@@ -97,6 +98,8 @@ export function RoomHud({
   onRoster,
   loginOpen,
   onNeedLogin,
+  onCamera,
+  onInteraction,
 }: {
   ref: Ref<RoomHudApi>;
   /** 거실 주인 — undefined 면 내 거실 */
@@ -128,6 +131,10 @@ export function RoomHud({
   /** 로그인 창은 페이지가 하나만 띄운다 — 떠 있는 동안 여기 Esc 는 쉰다 */
   loginOpen: boolean;
   onNeedLogin: () => void;
+  /** 카메라 모드로(거실 썸네일) — 내 거실 · 3D 일 때만 페이지가 준다. 없으면 버튼도 없다 */
+  onCamera?: () => void;
+  /** 상호작용 모드가 바뀌었다(일반 · 배치) — 페이지가 자동 촬영 때를 가린다 */
+  onInteraction?: (m: InteractionMode) => void;
 }) {
   const mode = snapshot.mode;
   const owner = mode === 'OWNER';
@@ -183,6 +190,7 @@ export function RoomHud({
     loop.setInteractionMode(m);
     setSelected(null);
     setDragging(null);
+    onInteraction?.(m);
   };
 
   /** 아이템 탭을 열 때마다 보유 목록을 새로 받는다 — 빠르게 여닫으면 늦게 온 옛 응답이 새 응답을 덮지 않게 */
@@ -219,6 +227,16 @@ export function RoomHud({
     onSidePanel(sideOpen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sideOpen]);
+
+  /** 카메라 모드 — 열린 창 · 링 · 게이지를 다 닫고 페이지에 넘긴다(HUD 는 페이지가 숨긴다) */
+  const enterCamera = () => {
+    setOpenPanel(null);
+    deselect();
+    setDragging(null);
+    setCharge(null);
+    setFlash(null);
+    onCamera?.();
+  };
 
   const enterPlacement = () => {
     setOpenPanel(null);
@@ -341,6 +359,7 @@ export function RoomHud({
 
       {normal && <TopActions mode={mode} openPanel={openPanel} onOpen={open} />}
       {normal && owner && <ModeDock centerX={centerX} top={layout.dockTop} onPlace={enterPlacement} />}
+      {normal && owner && onCamera && <CameraButton top={layout.dockTop} onClick={enterCamera} />}
 
       {normal && selected && sel && selDef && selAt && (
         <StatRing

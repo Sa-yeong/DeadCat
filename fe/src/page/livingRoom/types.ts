@@ -72,6 +72,12 @@ export interface PlacementDto {
   rotation: number;
 }
 
+/** 거실 썸네일 상태(내 거실만) — url 이 없거나 isAuto 면 화면이 자동으로 찍는다 */
+export interface RoomThumbnail {
+  url: string | null;
+  isAuto: boolean;
+}
+
 export interface RoomSnapshot {
   mode: ViewMode;
   /** 거실 공개 여부(서버 share_option). 남의 비공개 거실은 서버가 403 을 주고 화면은 빈 방에 블러만 얹는다 */
@@ -84,6 +90,8 @@ export interface RoomSnapshot {
   roomReactions: RoomReactions;
   /** VISITOR·GUEST 전용 · 거실에 세운 캐릭터 기준 % */
   roomReturnRate?: number;
+  /** OWNER 전용 — 거실 썸네일 상태 */
+  roomThumbnail?: RoomThumbnail;
 }
 
 /* ── Catalog API — 종목·가구 고정값. 스냅샷에 싣지 않고 따로 받아 캐시 ─────── */

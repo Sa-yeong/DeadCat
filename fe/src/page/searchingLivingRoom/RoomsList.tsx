@@ -17,8 +17,6 @@ export function RoomList(){
 
     const navigate = useNavigate();
 
-    console.log(rooms[0]?.room_img_url);
-
     return <div className="roomList-container">
         <div>
             <div className='label'>

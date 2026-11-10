@@ -24,6 +24,19 @@ export interface MotionStep {
   loop: boolean;
 }
 
+/** 거실 썸네일 — 찍을 시점(1칸 px · 뒤 꼭짓점 자리)과 무대 px 영역. 영역은 2:1 이어야 찌그러지지 않는다 */
+export interface CaptureView {
+  scale: number;
+  ox: number;
+  oy: number;
+}
+export interface CaptureRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface RoomRenderer {
   /* ── 다이어그램 그대로 ── */
   spawn(charId: string, def: CharacterDef, pos: Pt): void;
@@ -94,6 +107,14 @@ export interface RoomRenderer {
    * 평면 더미는 SVG 외곽선, 3D 는 부풀린 뒷면으로 그린 실루엣 (추가, 제안)
    */
   setDropTarget(target: DropTarget | null): void;
+  /**
+   * 거실 썸네일(3D 만 — 평면 더미는 없음). 주어진 시점의 영역을 늘 800×400 으로 찍는다 — 화면 해상도와 무관.
+   * 배경은 거실 배경색으로 채우고, 3D 보조 표시(선택 테두리 · 가구 하이라이트 · 고스트 · 배치 영역 · 드롭 대상)는 그 순간만 끈다.
+   * 화면은 찍은 뒤 원래대로. webp(못 만들면 jpeg)
+   */
+  capture?(view: CaptureView, rect: CaptureRect): Promise<Blob>;
+  /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
+  whenSettled?(): Promise<void>;
   dispose(): void;
 }
 

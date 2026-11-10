@@ -8,7 +8,7 @@ import { C, accentBtn, ghostBtn } from './style';
 
 type IconName =
   | 'att' | 'fare' | 'gb' | 'item' | 'place' | 'close' | 'rotate' | 'store' | 'undo' | 'redo'
-  | 'lock' | 'heart' | 'star' | 'smile' | 'arrow' | 'hanger' | 'left' | 'right' | 'char' | 'pencil' | 'plus';
+  | 'lock' | 'heart' | 'star' | 'smile' | 'arrow' | 'hanger' | 'left' | 'right' | 'char' | 'pencil' | 'plus' | 'camera';
 
 const PATHS: Record<IconName, ReactNode> = {
   att: <><rect x="2" y="3" width="12" height="11" rx="2" /><path d="M2 6.5h12M5.5 1.8v2.6M10.5 1.8v2.6M5.8 10l1.6 1.5 3-3" /></>,
@@ -32,6 +32,7 @@ const PATHS: Record<IconName, ReactNode> = {
   char: <><circle cx="8" cy="5.4" r="2.9" /><path d="M3 14.2c.5-2.9 2.6-4.6 5-4.6s4.5 1.7 5 4.6" /></>,
   pencil: <path d="M10.6 2.6l2.8 2.8L5.6 13.2 2.4 13.6l.4-3.2z" />,
   plus: <path d="M8 3v10M3 8h10" />,
+  camera: <><path d="M2 5.2h2.8L6 3.4h4l1.2 1.8H14v8H2z" /><circle cx="8" cy="8.9" r="2.4" /></>,
 };
 
 export function Icon({ name, size = 15, fill = false, color = 'currentColor' }: { name: IconName; size?: number; fill?: boolean; color?: string }) {

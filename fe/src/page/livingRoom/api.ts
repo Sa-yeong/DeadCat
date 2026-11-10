@@ -28,6 +28,7 @@ import type {
   RoomCharacterDto,
   RoomReactions,
   RoomSnapshot,
+  RoomThumbnail,
   StorageItem,
 } from './types';
 
@@ -125,6 +126,8 @@ interface MyRoomRes {
   viewer_mode: 'OWNER';
   share_option: boolean;
   owner_info: { nickname: string };
+  /** 거실 썸네일 상태 — 자동 촬영할지 판단용 */
+  room_thumbnail?: { url: string | null; is_auto: boolean };
   received_reactions: ReactionCountRes[];
   placed_characters: {
     stock_id: number;
@@ -205,6 +208,7 @@ function myRoomSnapshot(d: MyRoomRes): RoomSnapshot {
     })),
     placements: d.placed_furniture.map(placementOf),
     roomReactions: { counts: countsOf(d.received_reactions), mine: null },
+    roomThumbnail: { url: d.room_thumbnail?.url ?? null, isAuto: d.room_thumbnail?.is_auto ?? true },
   };
 }
 
@@ -262,6 +266,20 @@ export async function getRoom(ownerId: OwnerId): Promise<RoomSnapshot> {
 export async function getReactionKinds(): Promise<ReactionKind[]> {
   const list = await request<{ reaction_type: string }[]>('get', '/rooms/reaction-types', { auth: 'optional' });
   return list.map((k) => ({ reactionType: k.reaction_type }));
+}
+
+/* ── 거실 썸네일 ─────────────────────────────────────────────── */
+
+/**
+ * PUT /rooms/me/thumbnail (multipart — image · is_auto). 자동(isAuto)이 직접 찍은 사진을 덮으려 하면
+ * 서버가 저장하지 않고 지금 상태를 skipped 로 돌려준다(에러 아님)
+ */
+export async function uploadRoomThumbnail(image: Blob, isAuto: boolean): Promise<{ thumbnail: RoomThumbnail; skipped: boolean }> {
+  const form = new FormData();
+  form.append('image', image, image.type === 'image/webp' ? 'thumbnail.webp' : 'thumbnail.jpg');
+  form.append('is_auto', String(isAuto));
+  const r = await authed<{ room_thumbnail_url: string | null; room_thumbnail_is_auto: boolean; skipped: boolean }>('put', '/rooms/me/thumbnail', form);
+  return { thumbnail: { url: r.room_thumbnail_url, isAuto: r.room_thumbnail_is_auto }, skipped: r.skipped };
 }
 
 /* ── Placement API ────────────────────────────────────────────── */
