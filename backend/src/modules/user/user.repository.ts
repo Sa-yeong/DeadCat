@@ -1,6 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/providers/database/prisma.service';
+import { ProfileImageResponseDto } from './dto/profile-image-response.dto';
 
 @Injectable()
 export class UserRepository {
@@ -144,7 +145,34 @@ export class UserRepository {
         };
     }
 
+    // 기존 프로필 이미지 URL 조회
+    async findProfileImage(userIdStr: string) {
+        const userId = BigInt(userIdStr);
+
+        return await this.prisma.users.findUnique({
+            where: { id: userId },
+            select: {
+                profile_img_url: true,
+            },
+        });
+    }
+
     // 프로필 이미지 URL 저장 및 업데이트
+    async updateProfileImage(userIdStr: string, profileImgUrl: string) {
+        const userId = BigInt(userIdStr);
+
+        // DB 오류가 발생하면 호출한 Service로 전달
+        return await this.prisma.users.update({
+            where: { id: userId },
+            data: { profile_img_url: profileImgUrl },
+            select: {
+                profile_img_url: true,
+            },
+        });
+    }
+
+    // 프로필 이미지 URL 저장 및 업데이트
+    /*
     async updateProfileImage(userIdStr: string, profileImgUrl: string) {
         const userId = BigInt(userIdStr);
 
@@ -157,9 +185,8 @@ export class UserRepository {
         } catch {
             return null;
         }
-    }
+    }*/
 
-    // 7. 유저 팔로우 / 팔로우 취소
     // 7. 유저 팔로우 / 팔로우 취소
     async toggleFollow(followerId: bigint, followingId: bigint) {
         // 1. 대상 유저 정보 조회

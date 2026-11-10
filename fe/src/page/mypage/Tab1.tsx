@@ -118,6 +118,12 @@ function Represent({token, mydata, setMydata}:any){
         }catch(e){console.error('사용자 프로필 이미지 저장 실패: ', e)}
     }
 
+    useEffect(() => {
+    if (mydata?.profile_img_url) {
+        setImgUrl(mydata.profile_img_url);
+    }
+}, [mydata?.profile_img_url]);
+
 
     return<>
         <div>

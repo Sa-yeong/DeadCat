@@ -30,7 +30,6 @@ export function MyStockList({token}:any) {
                 })
 
                 setMyHoldings(response.data.data);
-                console.log('보유 종목 리스트 조회 성공!');
             }catch(e){console.error('보유 종목 리스트 조회 실패: ', e)}
         };
 

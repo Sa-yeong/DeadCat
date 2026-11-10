@@ -22,9 +22,12 @@ async function bootstrap() {
     );
 
     // 업로드된 프로필 이미지 정적 파일 제공 설정 추가
-    app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    app.useStaticAssets(join(process.cwd(), 'uploads'), {
         prefix: '/uploads/',
     });
+    /*app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+        prefix: '/uploads/',
+    });*/
 
     await app.listen(process.env.PORT ?? 3000);
 }
