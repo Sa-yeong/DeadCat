@@ -7,6 +7,15 @@ export class TagItemDto {
     name!: string;
 }
 
+// 공통 거실 카드 DTO
+export class RoomCardDto {
+    user_id!: number; // 거실 소유 유저 ID
+    nickname!: string;
+    room_img_url!: string;
+    profit_rate!: number;
+    tags!: string[];
+}
+
 export class GetTagsResponseDto {
     is_success!: boolean;
     code!: string;
@@ -14,15 +23,6 @@ export class GetTagsResponseDto {
     data!: {
         tags: TagItemDto[];
     };
-}
-
-// 공통 거실 카드 DTO
-export class RoomCardDto {
-    user_id!: string;
-    nickname!: string;
-    room_img_url!: string;
-    profit_rate!: number;
-    tags!: string[];
 }
 
 export class SimilarRoomCardDto extends RoomCardDto {
@@ -34,14 +34,23 @@ export class OppositeRoomCardDto extends RoomCardDto {
 }
 
 // 10.2 응답 DTO
-export class GetExploreRoomsResponseDto {
+/*export class GetExploreRoomsResponseDto {
     is_success!: boolean;
     code!: string;
     message!: string;
+    user_id!: number | null; // 현재 로그인한 사용자 ID
+
     data!: {
         soaring_rooms: RoomCardDto[];
         plummeting_rooms: RoomCardDto[];
     };
+}*/
+
+// 10.2 응답 DTO
+export class GetExploreRoomsResponseDto {
+    user_id!: number | null; // 현재 로그인한 사용자 ID (비로그인 시 null)
+    soaring_rooms!: RoomCardDto[];
+    plummeting_rooms!: RoomCardDto[];
 }
 
 // 10.3 쿼리 파라미터 DTO

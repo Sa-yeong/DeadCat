@@ -127,12 +127,15 @@ export class HomeRoomsService {
     }
 
     // 10.2 메인 피드 조회 (급등 / 급락 거실)
-    async getExploreRooms(): Promise<GetExploreRoomsResponseDto> {
+    // 10.2 메인 피드 조회 (급등 / 급락 거실)
+    async getExploreRooms(
+        currentUserId?: string,
+    ): Promise<GetExploreRoomsResponseDto> {
         const users = await this.repository.findPublicUsersWithDetails();
 
         const roomCards: RoomCardDto[] = await Promise.all(
             users.map(async (u) => ({
-                user_id: u.id.toString(),
+                user_id: Number(u.id),
                 nickname: u.nickname,
                 room_img_url: u.room_thumbnail_url ?? '',
                 profit_rate: await this.calculateUserProfitRate(u.holdings),
@@ -140,7 +143,6 @@ export class HomeRoomsService {
             })),
         );
 
-        // 기준 등락률 필터링 (+5% 이상 급등, -5% 이하 급락)
         const soaringRooms = roomCards
             .filter((r) => r.profit_rate >= 5.0)
             .sort((a, b) => b.profit_rate - a.profit_rate);
@@ -149,14 +151,11 @@ export class HomeRoomsService {
             .filter((r) => r.profit_rate <= -5.0)
             .sort((a, b) => a.profit_rate - b.profit_rate);
 
+        // 전역 TransformInterceptor가 { success: true, data: ... }로 감싸줍니다.
         return {
-            is_success: true,
-            code: 'COMMON200',
-            message: '성공입니다.',
-            data: {
-                soaring_rooms: soaringRooms,
-                plummeting_rooms: plummetingRooms,
-            },
+            user_id: currentUserId ? Number(currentUserId) : null,
+            soaring_rooms: soaringRooms,
+            plummeting_rooms: plummetingRooms,
         };
     }
 
@@ -169,7 +168,8 @@ export class HomeRoomsService {
 
         let roomCards: RoomCardDto[] = await Promise.all(
             users.map(async (u) => ({
-                user_id: u.id.toString(),
+                // user_id: u.id.toString(),
+                user_id: Number(u.id),
                 nickname: u.nickname,
                 room_img_url: u.room_thumbnail_url ?? '',
                 profit_rate: await this.calculateDailyProfitRate(u.holdings),
