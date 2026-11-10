@@ -36,6 +36,11 @@ export interface CaptureRect {
   w: number;
   h: number;
 }
+/** 찍은 캔버스 크기(px) — 영역과 같은 비율이어야 찌그러지지 않는다 */
+export interface CaptureSize {
+  w: number;
+  h: number;
+}
 
 export interface RoomRenderer {
   /* ── 다이어그램 그대로 ── */
@@ -108,11 +113,11 @@ export interface RoomRenderer {
    */
   setDropTarget(target: DropTarget | null): void;
   /**
-   * 거실 썸네일(3D 만 — 평면 더미는 없음). 주어진 시점의 영역을 늘 800×400 으로 찍는다 — 화면 해상도와 무관.
+   * 거실 썸네일(3D 만 — 평면 더미는 없음). 주어진 시점의 영역을 size(기본 800×400)로 찍은 캔버스 — 화면 해상도와 무관.
    * 배경은 거실 배경색으로 채우고, 3D 보조 표시(선택 테두리 · 가구 하이라이트 · 고스트 · 배치 영역 · 드롭 대상)는 그 순간만 끈다.
-   * 화면은 찍은 뒤 원래대로. webp(못 만들면 jpeg)
+   * 화면은 찍은 뒤 원래대로. 파일로 바꾸는 건 thumbImage
    */
-  capture?(view: CaptureView, rect: CaptureRect): Promise<Blob>;
+  capture?(view: CaptureView, rect: CaptureRect, size?: CaptureSize): HTMLCanvasElement;
   /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
   whenSettled?(): Promise<void>;
   dispose(): void;

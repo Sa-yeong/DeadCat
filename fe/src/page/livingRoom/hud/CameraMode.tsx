@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import * as api from '../api';
-import type { CaptureRect } from '../runtime/RoomRenderer';
-import { cameraFrame } from './cameraFrame';
 import type { RoomThumbnail } from '../types';
 import { C, accentBtn, floatBar, solidBtn } from './style';
 import { Icon } from './ui';
@@ -41,12 +39,52 @@ export function CameraButton({ top, onClick }: { top: number; onClick: () => voi
   );
 }
 
+/** 뷰파인더 선 — 네 모서리 ㄱ자 · 가운데 초점 모서리 · ＋ */
+const VF_LINE = 'rgba(255,255,255,0.85)';
+const VF_W = 2;
+/** 화면 모서리 ㄱ자 — 화면 끝에서 띄운 거리 · 팔 길이 */
+const VF_INSET = 20;
+const VF_ARM = 28;
+/** 가운데 초점 상자(모서리만) 크기 · 팔 길이, ＋ 크기 */
+const VF_FOCUS = 64;
+const VF_FOCUS_ARM = 12;
+const VF_CROSS = 14;
+
+type Corner = 'tl' | 'tr' | 'bl' | 'br';
+/** ㄱ자 하나 — 상자의 그 모서리 쪽 두 변만 그린다 */
+function cornerStyle(c: Corner, arm: number): React.CSSProperties {
+  const b = `${VF_W}px solid ${VF_LINE}`;
+  return {
+    position: 'absolute',
+    width: arm,
+    height: arm,
+    ...(c[0] === 't' ? { top: 0, borderTop: b } : { bottom: 0, borderBottom: b }),
+    ...(c[1] === 'l' ? { left: 0, borderLeft: b } : { right: 0, borderRight: b }),
+  };
+}
+const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br'];
+
+/** 촬영 범위(화면 전체)를 보여 주는 뷰파인더 — 선만, 포인터는 통과 */
+function Viewfinder() {
+  return (
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', inset: VF_INSET }}>
+        {CORNERS.map((c) => <div key={c} style={cornerStyle(c, VF_ARM)} />)}
+      </div>
+      <div style={{ position: 'absolute', left: '50%', top: '50%', width: VF_FOCUS, height: VF_FOCUS, transform: 'translate(-50%, -50%)' }}>
+        {CORNERS.map((c) => <div key={c} style={cornerStyle(c, VF_FOCUS_ARM)} />)}
+        <div style={{ position: 'absolute', left: '50%', top: '50%', width: VF_CROSS, height: VF_W, background: VF_LINE, transform: 'translate(-50%, -50%)' }} />
+        <div style={{ position: 'absolute', left: '50%', top: '50%', width: VF_W, height: VF_CROSS, background: VF_LINE, transform: 'translate(-50%, -50%)' }} />
+      </div>
+    </div>
+  );
+}
+
 /**
- * 카메라 모드 — 틀 밖은 어둡게, 위 [✕ 취소] · 아래 [촬영]. 촬영 → 미리보기 → [다시 찍기] / [썸네일로 설정].
- * 덮개 자체는 포인터를 통과시킨다(휠 줌 · 끌기는 페이지가 받는다). 미리보기 중에는 틀 아래를 막는다
+ * 카메라 모드 — 화면 전체가 촬영 범위(뷰파인더 선만), 위 [✕ 취소] · 아래 [촬영]. 촬영 → 미리보기 → [다시 찍기] / [썸네일로 설정].
+ * 덮개 자체는 포인터를 통과시킨다(휠 줌 · 끌기는 페이지가 받는다). 미리보기는 찍은 원본을 화면 전체에 깔고 아래를 막는다
  */
 export function CameraMode({
-  width,
   stageHeight,
   capture,
   onCancel,
@@ -54,17 +92,15 @@ export function CameraMode({
   onNeedLogin,
   loginOpen,
 }: {
-  width: number;
   stageHeight: number;
-  /** 지금 화면의 이 영역을 800×400 으로 */
-  capture: (rect: CaptureRect) => Promise<Blob>;
+  /** 지금 화면 전체 — 미리보기(원본)와 올릴 파일 */
+  capture: () => Promise<{ preview: Blob; upload: Blob }>;
   onCancel: () => void;
   /** 설정 성공 — 안내를 잠깐 보인 뒤 페이지가 카메라 모드를 끝낸다 */
   onSaved: (t: RoomThumbnail) => void;
   onNeedLogin: () => void;
   loginOpen: boolean;
 }) {
-  const frame = cameraFrame(width, stageHeight);
   const [shot, setShot] = useState<{ blob: Blob; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -81,8 +117,8 @@ export function CameraMode({
     setBusy(true);
     setMessage(null);
     try {
-      const blob = await capture(frame);
-      setShot({ blob, url: URL.createObjectURL(blob) });
+      const { preview, upload } = await capture();
+      setShot({ blob: upload, url: URL.createObjectURL(preview) });
     } catch (e) {
       console.warn('[거실 썸네일] 촬영 실패', e);
       setMessage('사진을 찍지 못했어요');
@@ -109,10 +145,12 @@ export function CameraMode({
   const bottom = stageHeight - 64;
   return (
     <div style={{ position: 'absolute', inset: 0, zIndex: 9, pointerEvents: shot ? 'auto' : 'none' }}>
-      {/* 촬영 틀 — 큰 그림자로 틀 밖을 어둡게 */}
-      <div style={{ position: 'absolute', left: frame.x, top: frame.y, width: frame.w, height: frame.h, boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)', outline: '1px solid rgba(255,255,255,0.7)' }}>
-        {shot && <img src={shot.url} alt="찍은 거실 사진" style={{ width: '100%', height: '100%', display: 'block' }} />}
-      </div>
+      {shot ? (
+        // 찍은 그대로(화면 해상도) — 화면과 같은 크기 · 비율이라 늘리거나 줄이지 않는다
+        <img src={shot.url} alt="찍은 거실 사진" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }} />
+      ) : (
+        <Viewfinder />
+      )}
 
       <div style={{ position: 'absolute', left: 0, right: 0, top: 20, display: 'flex', justifyContent: 'center' }}>
         <button type="button" onClick={onCancel} style={{ ...solidBtn, height: 34, pointerEvents: 'auto' }}>

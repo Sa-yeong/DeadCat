@@ -9,7 +9,8 @@ import { DEFAULT_LOOK, type Look } from './outfitState';
 import type { FurnitureCatalog } from './catalogs';
 import { AREA_COLOR, footprint, shapeOf, type Footprint, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
-import type { CaptureRect, CaptureView, DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
+import type { CaptureRect, CaptureSize, CaptureView, DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
+import { THUMB_H, THUMB_W } from './thumbImage';
 import { CHAR } from './characterSize';
 import { Swing } from './swing';
 import { ROOM_ASSETS } from './roomAssets';
@@ -111,19 +112,8 @@ const REST_POSE: [VRMHumanBoneName, number][] = [
  *   (양면 머리카락·눈처럼 얇은 면이 많아 깊이만으로는 안쪽에 테두리 색이 비친다)
  * 셰이더에 붙이는 값(width)이 재질마다 따로 걸리도록 프로그램 key 를 다르게 준다.
  */
-/** 거실 썸네일 — 거실 탐색 카드(2:1)에 맞춘 크기, 배경은 거실 화면 배경색 */
-const THUMB_W = 800;
-const THUMB_H = 400;
+/** 거실 썸네일 배경 — 거실 화면 배경색(렌더러가 alpha 라 그대로 찍으면 비어 나온다) */
 const THUMB_BG = '#19191C';
-const toBlob = (c: HTMLCanvasElement, type: string) => new Promise<Blob | null>((ok) => c.toBlob(ok, type, 0.85));
-/** webp 로 — 브라우저가 webp 를 못 만들면(다른 형식이 나오면) jpeg 로 */
-async function encodeThumb(c: HTMLCanvasElement): Promise<Blob> {
-  const webp = await toBlob(c, 'image/webp');
-  if (webp && webp.type === 'image/webp') return webp;
-  const jpeg = await toBlob(c, 'image/jpeg');
-  if (!jpeg) throw new Error('썸네일 이미지를 만들지 못했어요');
-  return jpeg;
-}
 
 const RIM_ORDER = 1;
 const BODY_ORDER = 2;
@@ -1647,10 +1637,10 @@ export class RoomScene implements RoomRenderer {
   }
 
   /**
-   * 캔버스를 잠깐 800×400(배율 1)으로 그려 2D 캔버스에 옮기고 곧바로 원래 크기로 다시 그린다 — 한 작업 안에서 끝나
+   * 캔버스를 잠깐 size(배율 1, 기본 800×400)로 그려 2D 캔버스에 옮기고 곧바로 원래 크기로 다시 그린다 — 한 작업 안에서 끝나
    * 화면에는 바뀐 크기가 보이지 않는다. 렌더러가 alpha 라 그대로 옮기면 배경이 비어서 거실 배경색 위에 얹는다
    */
-  async capture(view: CaptureView, rect: CaptureRect): Promise<Blob> {
+  capture(view: CaptureView, rect: CaptureRect, size: CaptureSize = { w: THUMB_W, h: THUMB_H }): HTMLCanvasElement {
     if (this.disposed) throw new Error('거실 화면이 닫혔어요');
     const r = this.renderer;
     const cam = this.camera;
@@ -1658,11 +1648,11 @@ export class RoomScene implements RoomRenderer {
     const ratio = r.getPixelRatio();
     const restore = this.hideHelpers();
     const out = document.createElement('canvas');
-    out.width = THUMB_W;
-    out.height = THUMB_H;
+    out.width = size.w;
+    out.height = size.h;
     try {
       r.setPixelRatio(1);
-      r.setSize(THUMB_W, THUMB_H, false);
+      r.setSize(size.w, size.h, false);
       cam.left = (rect.x - view.ox) / view.scale;
       cam.right = (rect.x + rect.w - view.ox) / view.scale;
       cam.top = (view.oy - rect.y) / view.scale;
@@ -1671,8 +1661,8 @@ export class RoomScene implements RoomRenderer {
       this.render();
       const ctx = out.getContext('2d')!;
       ctx.fillStyle = THUMB_BG;
-      ctx.fillRect(0, 0, THUMB_W, THUMB_H);
-      ctx.drawImage(this.canvas, 0, 0, THUMB_W, THUMB_H);
+      ctx.fillRect(0, 0, size.w, size.h);
+      ctx.drawImage(this.canvas, 0, 0, size.w, size.h);
     } finally {
       r.setPixelRatio(ratio);
       r.setSize(this.size.w, this.size.h, false);
@@ -1681,7 +1671,7 @@ export class RoomScene implements RoomRenderer {
       restore();
       this.render();
     }
-    return encodeThumb(out);
+    return out;
   }
 
   /** 3D 보조 표시를 끄고, 되돌리는 함수를 준다 — 고른 가구 · 고스트 · 배치 영역은 overlay, 테두리는 캐릭터 · 가구 쪽 */
