@@ -1,24 +1,33 @@
 import {
     Controller,
     Get,
+    Post,
+    Patch,
+    Param,
+    Query,
+    Body,
     UseGuards,
     Request,
-    Patch,
-    Body,
-    Query,
-    Post,
-    Param,
+    UseInterceptors,
+    UploadedFile,
+    BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { UserService } from './user.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
-import { UserProfileResponseDto } from './dto/user-profile.response.dto';
 import { User } from 'src/common/decorators/user.decorator';
+import { UserProfileResponseDto } from './dto/user-profile-response.dto';
 import {
-    ShareOptionResponseDto,
     UpdateShareOptionDto,
+    ShareOptionResponseDto,
 } from './dto/update-share-option.dto';
-import { UserRelationResponseDto } from './dto/user-relation-response.dto';
 import { ToggleFollowResponseDto } from './dto/toggle-follow-response.dto';
+import { ProfileImageResponseDto } from './dto/profile-image-response.dto';
+import { UserRelationResponseDto } from './dto/user-relation-response.dto';
+import { SkipResponseTransform } from 'src/common/decorators/skip-response-transform.decorator';
 
 interface AuthenticatedRequest extends Request {
     user: {
@@ -32,6 +41,8 @@ export class UserController {
 
     // 7. 유저 팔로우 / 팔로우 취소
     @UseGuards(JwtAuthGuard)
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    @SkipResponseTransform() // 공통 응답 래핑 제외
     @Post('users/:userId/follow')
     async toggleFollow(
         @User() currentUserId: string,
@@ -72,5 +83,66 @@ export class UserController {
         @Body() dto: UpdateShareOptionDto,
     ): Promise<ShareOptionResponseDto> {
         return await this.userService.updateShareOption(userId, dto);
+    }
+
+    // 20. 프로필 이미지 파일 업로드 및 DB 저장
+    @UseGuards(JwtAuthGuard)
+    @Patch('users/me/profile-image')
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    @UseInterceptors(
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        FileInterceptor('file', {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            storage: diskStorage({
+                destination: (req, file, callback) => {
+                    const uploadPath = './uploads/profiles';
+
+                    // 폴더가 존재하지 않으면 상위 폴더까지 자동으로 생성
+                    if (!existsSync(uploadPath)) {
+                        mkdirSync(uploadPath, { recursive: true });
+                    }
+
+                    callback(null, uploadPath);
+                },
+                filename: (req: any, file, callback) => {
+                    const uniqueSuffix =
+                        Date.now() + '-' + Math.round(Math.random() * 1e9);
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    const ext = extname(file.originalname);
+                    callback(
+                        null,
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+                        `profile_${req.user?.id}_${uniqueSuffix}${ext}`,
+                    );
+                },
+            }),
+            fileFilter: (req, file, callback) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+                if (!file.mimetype.match(/\/(jpg|jpeg|png)$/)) {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                    return callback(
+                        new BadRequestException(
+                            'jpg, jpeg, png 이미지 파일만 업로드 가능합니다.',
+                        ),
+                        false,
+                    );
+                }
+                callback(null, true);
+            },
+        }),
+    )
+    async updateProfileImage(
+        @User() userId: string,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+        @UploadedFile() file: Express.Multer.File,
+    ): Promise<ProfileImageResponseDto> {
+        if (!file) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+            throw new BadRequestException(
+                '업로드할 프로필 이미지 파일이 없습니다.',
+            );
+        }
+
+        return await this.userService.updateProfileImage(userId, file.filename);
     }
 }

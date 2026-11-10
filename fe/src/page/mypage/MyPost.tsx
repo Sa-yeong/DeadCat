@@ -1,4 +1,3 @@
-// import { MyRecordsLayout_P } from "../../layout/MyRecordsLayout";
 import { WrittenPostLayout } from "../../layout/ActivityListLayout";
 import { useOutletContext } from "react-router-dom";
 

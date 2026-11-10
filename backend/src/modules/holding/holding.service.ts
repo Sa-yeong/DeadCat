@@ -2,7 +2,101 @@ import { Injectable } from '@nestjs/common';
 import { HoldingRepository } from './holding.repository';
 import { HoldingItemDto } from './dto/holding-list.response.dto';
 import { PriceService } from '../../price/price.service';
+import { Prisma } from 'generated/prisma/browser';
 
+@Injectable()
+export class HoldingService {
+    constructor(
+        private readonly holdingRepository: HoldingRepository,
+        private readonly priceService: PriceService,
+    ) {}
+
+    async getMyHoldings(userId: string): Promise<HoldingItemDto[]> {
+        const userHoldings =
+            await this.holdingRepository.findUserHoldingsData(userId);
+
+        if (userHoldings.length === 0) return [];
+
+        // 1. 보유 종목 코드 수집
+        const codes = userHoldings
+            .map((h) => h.stocks?.code)
+            .filter((code): code is string => !!code);
+
+        // 2. Redis에서 현재가 조회
+        const cachedPrices = await this.priceService.readPrices(codes);
+
+        return userHoldings.map((holding) => {
+            // 3. 수량은 기존 BigInt 유지
+            const quantityBigInt = BigInt(holding.quantity);
+
+            // 평균 매입가는 DB 타입이 BigInt이므로 문자열을 거쳐 Decimal로 변환
+            const meanPrice = new Prisma.Decimal(
+                holding.mean_price_krw.toString(),
+            );
+
+            const stockCode = holding.stocks?.code ?? '';
+
+            // 4. Redis 현재가 확인
+            const cachedStock = cachedPrices.get(stockCode);
+
+            // 기본 현재가는 평균 매입가
+            let currentPrice = meanPrice;
+
+            if (cachedStock?.current_price != null) {
+                // Redis 가격을 Decimal로 변환하여 소수점 보존
+                currentPrice = new Prisma.Decimal(
+                    String(cachedStock.current_price),
+                );
+            } else {
+                // Redis에 없으면 DB 최신 종가 사용
+                const latestHistory = holding.stocks?.stock_history?.[0];
+
+                if (latestHistory?.close_price != null) {
+                    currentPrice = new Prisma.Decimal(
+                        latestHistory.close_price.toString(),
+                    );
+                }
+            }
+
+            // 5. 평가손익 = (현재가 - 평균 매입가) * 수량
+            const quantity = new Prisma.Decimal(quantityBigInt.toString());
+
+            const valuationProfit = currentPrice.minus(meanPrice).mul(quantity);
+
+            // 6. 수익률 = 평가손익 / 총매입금액 * 100
+            const totalPurchaseAmount = meanPrice.mul(quantity);
+
+            let returnRate = 0;
+
+            if (totalPurchaseAmount.gt(0)) {
+                // Decimal 계산 후 소수점 둘째 자리까지 반올림
+                returnRate = valuationProfit
+                    .div(totalPurchaseAmount)
+                    .mul(100)
+                    .toDecimalPlaces(2)
+                    .toNumber();
+            }
+
+            // 7. 캐릭터 이미지 주소 추출
+            const stockImgUrl = holding.stocks?.characters?.img_url ?? '';
+
+            // 8. DTO 반환
+            return new HoldingItemDto({
+                stock_code: stockCode,
+                stock_name: holding.stocks?.name ?? '',
+                current_price: currentPrice.toString(),
+                quantity: holding.quantity,
+                return_rate: returnRate,
+                valuation_profit: valuationProfit.toString(),
+                purchase_price: meanPrice.toString(),
+                stock_img: stockImgUrl,
+                market: holding.stocks?.stock_type ?? 'DOMESTIC',
+            });
+        });
+    }
+}
+
+/*
 @Injectable()
 export class HoldingService {
     constructor(
@@ -76,3 +170,4 @@ export class HoldingService {
         });
     }
 }
+*/

@@ -10,6 +10,18 @@
     border-bottom: 1px solid #6c6c6c;
     flex: 3;
     color: white;
+    position: relative;
+}
+.room-container .img span{
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    font-size: 15px;
+    /* border: 1px solid gray; */
+    border-radius: 5px;
+    padding: 0 5px;
+    line-height: 1.4;
+    background-color: #5b49d8;
 }
 .room-container .room-footer{
     /* border: 1px solid red; */

@@ -184,17 +184,17 @@ export class PriceScheduler implements OnModuleInit {
                     const recordDate = new Date(Date.UTC(year, month, day));
 
                     // 주가 원화/달러 변환 및 BigInt 안전 처리
-                    const openPrice = toSafeBigInt(
-                        Math.round(Number(item.stck_oprc || 0)),
-                    );
-                    const closePrice = toSafeBigInt(
-                        Math.round(Number(item.stck_clpr || 0)),
-                    );
-                    const lowPrice = toSafeBigInt(
-                        Math.round(Number(item.stck_lwpr || 0)),
-                    );
-                    const highPrice = toSafeBigInt(
-                        Math.round(Number(item.stck_hgpr || 0)),
+
+                    // 1. 주가: Decimal 저장을 위해 문자열로 변환
+                    // Math.round()를 사용하지 않아 소수점 4자리까지 보존
+                    const openPrice = String(item.stck_oprc ?? '0');
+                    const closePrice = String(item.stck_clpr ?? '0');
+                    const lowPrice = String(item.stck_lwpr ?? '0');
+                    const highPrice = String(item.stck_hgpr ?? '0');
+
+                    // 2. 거래량: 기존처럼 BigInt 유지
+                    const volume = toSafeBigInt(
+                        Math.round(Number(item.acml_vol || 0)),
                     );
 
                     try {
@@ -206,30 +206,38 @@ export class PriceScheduler implements OnModuleInit {
                                 },
                             },
                             update: {
+                                // 가격은 Decimal 입력값으로 전달
                                 open_price: openPrice,
                                 close_price: closePrice,
                                 low_price: lowPrice,
                                 high_price: highPrice,
-                                volume: toSafeBigInt(
-                                    Math.round(Number(item.acml_vol || 0)),
-                                ),
+
+                                // 거래량은 BigInt 유지
+                                volume: volume,
                             },
                             create: {
                                 stock_id: stock.id,
                                 record_date: recordDate,
+
+                                // 가격은 Decimal 입력값으로 전달
                                 open_price: openPrice,
                                 close_price: closePrice,
                                 low_price: lowPrice,
                                 high_price: highPrice,
-                                volume: toSafeBigInt(
-                                    Math.round(Number(item.acml_vol || 0)),
-                                ),
+
+                                // 거래량은 BigInt 유지
+                                volume: volume,
                             },
                         });
+
                         savedCount++;
                     } catch (dbError) {
                         this.logger.error(
-                            `[${stock.name}] ${cleanDate} 저장 실패: ${dbError instanceof Error ? dbError.message : String(dbError)}`,
+                            `[${stock.name}] ${cleanDate} 저장 실패: ${
+                                dbError instanceof Error
+                                    ? dbError.message
+                                    : String(dbError)
+                            }`,
                         );
                     }
                 }

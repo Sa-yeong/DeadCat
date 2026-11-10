@@ -24,11 +24,11 @@ export function RoomList(){
                 오늘의 급등 거실
             </div>
             {
-                riseRooms.length === 0 ?
+                riseRooms?.length === 0 ?
                 <div className='no-room'>현재 급등 중인 거실이 없습니다</div> :
                 <Carousel arrows dotPlacement='top' slidesToShow={4} slidesToScroll={4} className='rooms-carousel'>
                     {
-                        riseRooms.map((room: any)=>{
+                        riseRooms?.map((room: any)=>{
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
                             onClick={()=>navigate(`/room/${room.user_id}`)}
@@ -44,11 +44,11 @@ export function RoomList(){
                 오늘의 급락 거실
             </div>
             {
-                fallRooms.length === 0 ?
+                fallRooms?.length === 0 ?
                 <div className='no-room'>현재 급락 중인 거실이 없습니다</div> :
                 <Carousel arrows dotPlacement='top' slidesToShow={4} slidesToScroll={4} className='rooms-carousel'>
                     {
-                        fallRooms.map((room: any)=>{
+                        fallRooms?.map((room: any)=>{
                             return <Room img={room.room_img_url} nickname={room.nickname}
                             profit={room.profit_rate} tags={room.tags}
                             onClick={()=>navigate(`/room/${room.user_id}`)}
@@ -61,11 +61,11 @@ export function RoomList(){
         <div>
             <div className='label'>
                 전체 거실
-                <span>{rooms.length}</span>
+                <span>{rooms?.length}</span>
             </div>
             <div className='content'>
                 {
-                    rooms.map((room: any)=>{
+                    rooms?.map((room: any)=>{
                         return <Room img={room.room_img_url} nickname={room.nickname}
                         profit={room.profit_rate} tags={room.tags}
                         onClick={()=>navigate(`/room/${room.user_id}`)}

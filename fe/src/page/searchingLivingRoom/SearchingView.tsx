@@ -122,7 +122,7 @@ export function SearchingView(){
                     response = await api.get('/home/rooms/tags');
                 }
 
-                setTags(response.data.data.tags);
+                setTags(response.data.data.data.tags);
             }catch(e){console.error(`전체 태그 목록 조회 실패: `, e)}
         }
         
@@ -137,7 +137,7 @@ export function SearchingView(){
                     )
                 }else{response = await api.get('/home/rooms/explore')}
 
-                setCurrentUser(response.data.user_id);
+                setCurrentUser(response.data.data.user_id);
                 setRiseRooms(response.data.data.soaring_rooms);
                 setFallRooms(response.data.data.plummeting_rooms);
             }catch(e){console.error('급등 / 급락 거실 조회 실패: ', e);}
@@ -162,8 +162,8 @@ export function SearchingView(){
                     params: {sort: order}
                 });
 
-                setRooms(response.data.data.rooms);
-                setSeletedTags(response.data.data.reference_tags)
+                setRooms(response.data.data.data.rooms);
+                setSeletedTags(response.data.data.data.reference_tags)
                 console.log('유사한 거실 조회 성공 ', response.data.data)
             }catch(e){console.error('유사한 거실 조회 실패: ', e);}
         }
@@ -181,8 +181,8 @@ export function SearchingView(){
                     params: {sort: order}
                 });
 
-                setRooms(response.data.data.rooms);
-                setSeletedTags(response.data.data.reference_tags)
+                setRooms(response.data.data.data.rooms);
+                setSeletedTags(response.data.data.data.reference_tags)
                 console.log('정반대 거실 조회 성공 ', response.data.data)
             }catch(e){console.error('정반대 거실 조회 실패: ', e);}
         }
@@ -219,7 +219,7 @@ export function SearchingView(){
                     })
                 }
 
-                setRooms(response.data.data.rooms);
+                setRooms(response.data.data.data.rooms);
             }catch(e){console.error('거실 리스트 조회 실패: ', e)}
         };
 
@@ -290,7 +290,7 @@ function Header({token, tags, order, setOrder, setSelectedTags, setKeywords,
     const content = (
         <div style={{display: 'flex', gap: '8px'}}>
             {
-                tags.map((tag: { tag_id: number, name: string }) => {
+                tags?.map((tag: { tag_id: number, name: string }) => {
                     return <p onClick={() => {if(!findTag(tag.name))
                         setSelectedTags((prev: string[]) => [...prev, tag.name])
                         setClickOpp(false); setClickSim(false);

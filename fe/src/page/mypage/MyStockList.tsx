@@ -86,10 +86,10 @@ function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, mark
             {formatComma(market, mean_price)}
         </span>
         <span className='quantity'>{quantity}</span>
-        <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}>
+        <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'#566072':((rate>0) ?'#f04452':'#5c96f5')}}>
             {(typeof rate =='string')?rate:rate + '%'}
         </span>
-        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'black':((rate>0) ?'#f04452':'#5c96f5')}}>
+        <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'#566072':((rate>0) ?'#f04452':'#5c96f5')}}>
             {formatComma(market, profit)}
         </span>
     </div>

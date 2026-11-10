@@ -3,15 +3,21 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
+
 import { UserRepository } from './user.repository';
-import { UserProfileResponseDto } from './dto/user-profile.response.dto';
+
+// 사용자 프로필 DTO (실제 파일명에 맞춤)
+import { UserProfileResponseDto } from './dto/user-profile-response.dto';
+
 import {
     ShareOptionResponseDto,
     UpdateShareOptionDto,
 } from './dto/update-share-option.dto';
+
 import { UserRelationResponseDto } from './dto/user-relation-response.dto';
 import { ToggleFollowResponseDto } from './dto/toggle-follow-response.dto';
 import { PrismaService } from 'src/providers/database/prisma.service';
+import { ProfileImageResponseDto } from './dto/profile-image-response.dto';
 
 @Injectable()
 export class UserService {
@@ -20,66 +26,22 @@ export class UserService {
         private readonly prisma: PrismaService,
     ) {}
 
-    //팔로우 메서드
+    // 7. 유저 팔로우 / 팔로우 취소
+    // 7. 유저 팔로우 / 팔로우 취소
     async toggleFollow(
-        followerIdStr: string,
-        followeeIdStr: string,
+        currentUserIdStr: string,
+        targetUserIdStr: string,
     ): Promise<ToggleFollowResponseDto> {
-        // 1. String -> BigInt 변환
-        const followerId = BigInt(followerIdStr);
-        const followeeId = BigInt(followeeIdStr);
+        const currentUserId = BigInt(currentUserIdStr);
+        const targetUserId = BigInt(targetUserIdStr);
 
-        // 2. 자기 자신 팔로우 방지
-        if (followerId === followeeId) {
-            throw new BadRequestException('자기 자신은 팔로우할 수 없습니다.');
-        }
-
-        // 3. 팔로우 대상 유저 존재 확인
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const targetUser = await this.prisma.users.findUnique({
-            where: { id: followeeId },
-        });
+        const { isFollowing, targetUser } =
+            await this.userRepository.toggleFollow(currentUserId, targetUserId);
 
         if (!targetUser) {
-            throw new NotFoundException('존재하지 않는 유저입니다.');
+            throw new NotFoundException('대상 사용자를 찾을 수 없습니다.');
         }
 
-        // 4. 기존 팔로우 상태 확인
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const existingFollow = await this.prisma.follow.findUnique({
-            where: {
-                follower_id_followee_id: {
-                    follower_id: followerId,
-                    followee_id: followeeId,
-                },
-            },
-        });
-
-        let isFollowing = false;
-
-        if (existingFollow) {
-            // 이미 팔로우 상태 -> 팔로우 취소 (DELETE)
-            await this.prisma.follow.delete({
-                where: {
-                    follower_id_followee_id: {
-                        follower_id: followerId,
-                        followee_id: followeeId,
-                    },
-                },
-            });
-            isFollowing = false;
-        } else {
-            // 팔로우 안 되어 있음 -> 팔로우 등록 (CREATE)
-            await this.prisma.follow.create({
-                data: {
-                    follower_id: followerId,
-                    followee_id: followeeId,
-                },
-            });
-            isFollowing = true;
-        }
-
-        // 5. Response 구성 (BigInt 타입 id를 response spec에 맞춰 number 타입으로 변환)
         return {
             code: 'success',
             description: isFollowing ? '팔로우 성공' : '팔로우 취소 성공',
@@ -87,9 +49,7 @@ export class UserService {
                 is_following: isFollowing,
                 target_user: {
                     id: Number(targetUser.id),
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     nickname: targetUser.nickname,
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     profile_img_url: targetUser.profile_img_url,
                 },
             },
@@ -216,6 +176,28 @@ export class UserService {
             data: {
                 users: usersData,
             },
+        };
+    }
+
+    // 20. 사용자 프로필 이미지 파일 저장 및 수정
+    async updateProfileImage(
+        userId: string,
+        filename: string,
+    ): Promise<ProfileImageResponseDto> {
+        // 서버 주소 기반 접근 URL 생성
+        const profileImgUrl = `http://localhost:3000/uploads/profiles/${filename}`;
+
+        const updatedUser = await this.userRepository.updateProfileImage(
+            userId,
+            profileImgUrl,
+        );
+
+        if (!updatedUser) {
+            throw new NotFoundException('사용자를 찾을 수 없습니다.');
+        }
+
+        return {
+            profile_img_url: updatedUser.profile_img_url,
         };
     }
 
