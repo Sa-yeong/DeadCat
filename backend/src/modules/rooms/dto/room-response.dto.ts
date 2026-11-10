@@ -43,6 +43,8 @@ export class MyRoomResponseDto {
     viewer_mode!: 'OWNER';
     share_option!: boolean;
     owner_info!: { nickname: string };
+    /** 거실 썸네일 — 프론트가 자동 촬영할지 판단(url 없음 또는 is_auto면 자동) */
+    room_thumbnail!: { url: string | null; is_auto: boolean };
     /** 거실이 받은 반응(종류별 개수) */
     received_reactions!: ReactionCountDto[];
     placed_characters!: MyRoomCharacterDto[];

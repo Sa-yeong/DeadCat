@@ -335,6 +335,8 @@ model users {
   share_option                                     Boolean               @default(true)
   attendance_count                                 Int                   @default(0)
   last_attendance_date                             DateTime?             @db.Date
+  room_thumbnail_url                               String?
+  room_thumbnail_is_auto                           Boolean               @default(true)
   affinity                                         affinity[]
   alarms                                           alarms[]
   char_reactions_char_reactions_reactor_idTousers  char_reactions[]      @relation("char_reactions_reactor_idTousers")

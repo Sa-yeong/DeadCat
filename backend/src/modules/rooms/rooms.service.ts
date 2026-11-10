@@ -41,7 +41,12 @@ export class RoomsService {
 
         const owner = await this.prisma.users.findUnique({
             where: { id: userId },
-            select: { nickname: true, share_option: true },
+            select: {
+                nickname: true,
+                share_option: true,
+                room_thumbnail_url: true,
+                room_thumbnail_is_auto: true,
+            },
         });
         if (!owner) {
             throw new NotFoundException('존재하지 않는 사용자입니다.');
@@ -72,6 +77,10 @@ export class RoomsService {
             viewer_mode: 'OWNER',
             share_option: owner.share_option ?? true,
             owner_info: { nickname: owner.nickname },
+            room_thumbnail: {
+                url: owner.room_thumbnail_url,
+                is_auto: owner.room_thumbnail_is_auto,
+            },
             received_reactions: roomReactions,
             placed_characters: placedHoldings.map((h) => {
                 const aff = affinities.find((a) => a.stock_id === h.stock_id);
