@@ -1,5 +1,6 @@
 import {
     Controller,
+    Delete,
     Get,
     UseGuards,
     Request,
@@ -17,6 +18,7 @@ import { MyPostItemDto } from './dto/my-posts-response.dto';
 import { StockPostsResponseDto } from './dto/stock-post-response.dto';
 import { CreateCommentRequestDto } from './dto/create-comment-request.dto';
 import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
+import { DeleteCommentResponseDto } from './dto/delete-comment-response.dto';
 import { PostCommentsResponseDto } from './dto/post-comment-response.dto';
 import { VoteResponseDto } from './dto/vote-response.dto';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
@@ -113,6 +115,29 @@ export class PostController {
             postId,
             userId,
             body.content,
+        );
+    }
+
+    /**
+     * 댓글 삭제 — 쓴 사람 본인만
+     *
+     * DELETE /posts/{postId}/comments/{commentId}
+     *
+     * 로그인 필수
+     */
+    @UseGuards(JwtAuthGuard)
+    @Delete('posts/:postId/comments/:commentId')
+    async deleteComment(
+        @Param('postId') postId: string,
+        @Param('commentId') commentId: string,
+        @Request() req: AuthenticatedRequest,
+    ): Promise<DeleteCommentResponseDto> {
+        const userId = String(req.user.id);
+
+        return await this.postService.deleteComment(
+            postId,
+            commentId,
+            userId,
         );
     }
 

@@ -74,7 +74,7 @@ export const getScores = (code: string) => get<CompanyScores>(`${path(code)}/com
 /** GET …/company-info/overview — 배당·기업 개요. 없으면 null들 */
 export const getOverview = (code: string) => get<CompanyOverview>(`${path(code)}/company-info/overview`);
 
-/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 (댓글 등록·글쓰기·투표는 아직) ─────── */
+/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 · 댓글 등록 · 삭제 (글쓰기·투표는 아직) ─────── */
 
 /** GET /stocks/{code}/posts?cursor=&limit= — 최신순, cursor는 마지막 글 id */
 export const getPosts = (code: string, cursor: string | null, limit = 20) =>
@@ -102,6 +102,24 @@ export const getComments = (postId: string, cursor: string | null, limit: number
   get<{ comments: PostComment[]; next_cursor: string | null; has_more: boolean }>(
     `/posts/${encodeURIComponent(postId)}/comments`,
     { limit: String(limit), ...(cursor ? { cursor } : {}) },
+  );
+
+/**
+ * POST /posts/{postId}/comments — 댓글 등록({ content }, 150자). 새 댓글과 등록 뒤 그 글의 댓글 수를 돌려준다.
+ * 로그인 필수, 없는 글은 404. 서버는 댓글 칸들과 comment_count 를 한 덩어리로 준다 — 여기서 둘로 나눈다
+ */
+export const createComment = (postId: string, content: string) =>
+  post<PostComment & { comment_count: number }>(`/posts/${encodeURIComponent(postId)}/comments`, { content }).then(
+    ({ comment_count, ...comment }): { comment: PostComment; comment_count: number } => ({ comment, comment_count }),
+  );
+
+/**
+ * DELETE /posts/{postId}/comments/{commentId} — 내 댓글 삭제. 지운 뒤 그 글의 댓글 수를 돌려준다.
+ * 로그인 필수. 남의 댓글은 403, 없는 댓글(그 글의 댓글이 아닌 것 포함)은 404
+ */
+export const deleteComment = (postId: string, commentId: string) =>
+  del<{ comment_id: string; comment_count: number }>(
+    `/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
   );
 
 /* ── 캐릭터 감정 ───────────────────────────────────── */

@@ -1,5 +1,6 @@
 import {
     BadRequestException,
+    ForbiddenException,
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
     PostCommentsResponseDto,
 } from './dto/post-comment-response.dto';
 import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
+import { DeleteCommentResponseDto } from './dto/delete-comment-response.dto';
 import { VoteOptionResultDto, VoteResponseDto } from './dto/vote-response.dto';
 import { CreatePostRequestDto } from './dto/create-post-request.dto copy';
 import { CreatePostResponseDto } from './dto/create-post-response.dto';
@@ -371,6 +373,55 @@ export class PostService {
                 profile_img_url: comment.users.profile_img_url ?? null,
             },
 
+            comment_count: commentCount,
+        });
+    }
+
+    /**
+     * 댓글 삭제 — 쓴 사람 본인만
+     *
+     * DELETE /posts/{postId}/comments/{commentId}
+     *
+     * 없는 댓글 · 그 글의 댓글이 아닌 것은 404, 남의 댓글은 403
+     */
+    async deleteComment(
+        postId: string,
+        commentId: string,
+        userId: string,
+    ): Promise<DeleteCommentResponseDto> {
+        // 번호가 숫자가 아니면 그런 댓글은 없다 (BigInt 변환 오류로 500이 나지 않게)
+        const isId = (value: string) => /^[0-9]+$/.test(value);
+
+        if (!isId(postId) || !isId(commentId)) {
+            throw new NotFoundException('댓글을 찾을 수 없습니다.');
+        }
+
+        // 1. 댓글 확인 — 주소의 글에 달린 댓글이어야 한다
+        const comment = await this.postRepository.findCommentById(commentId);
+
+        if (!comment || comment.post_id !== BigInt(postId)) {
+            throw new NotFoundException('댓글을 찾을 수 없습니다.');
+        }
+
+        // 2. 본인 확인
+        if (comment.user_id !== BigInt(userId)) {
+            throw new ForbiddenException(
+                '본인이 쓴 댓글만 삭제할 수 있습니다.',
+            );
+        }
+
+        // 3. 삭제 — 그 사이 이미 지워졌으면 없는 댓글
+        const deleted = await this.postRepository.deleteComment(commentId);
+
+        if (deleted === 0) {
+            throw new NotFoundException('댓글을 찾을 수 없습니다.');
+        }
+
+        // 4. 지운 뒤 댓글 수 — 등록과 같은 방식(comments 줄 수)
+        const commentCount = await this.postRepository.countComments(postId);
+
+        return new DeleteCommentResponseDto({
+            comment_id: String(comment.id),
             comment_count: commentCount,
         });
     }

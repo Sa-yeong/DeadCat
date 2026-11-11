@@ -199,3 +199,85 @@ describe('PostService.getStockPosts — is_liked', () => {
         expect(findStockPosts).toHaveBeenCalledWith('005930', null, 20, 8n);
     });
 });
+
+// DELETE /posts/:postId/comments/:commentId — 내 댓글 삭제 (K3)
+describe('PostService.deleteComment', () => {
+    function commentService(
+        comment: { id: bigint; post_id: bigint; user_id: bigint } | null,
+        opts: { deleted?: number; count?: number } = {},
+    ) {
+        const findCommentById = jest.fn().mockResolvedValue(comment);
+        const deleteComment = jest.fn().mockResolvedValue(opts.deleted ?? 1);
+        const countComments = jest.fn().mockResolvedValue(opts.count ?? 0);
+        const service = new PostService(
+            { findCommentById, deleteComment, countComments } as never,
+            {} as never,
+        );
+        return { service, findCommentById, deleteComment, countComments };
+    }
+
+    const mine = { id: 50n, post_id: 3n, user_id: 7n };
+
+    it('내 댓글이면 지우고, 지운 뒤 댓글 수를 돌려준다', async () => {
+        const { service, findCommentById, deleteComment, countComments } =
+            commentService(mine, { count: 4 });
+
+        const res = await service.deleteComment('3', '50', '7');
+
+        expect(res).toEqual({ comment_id: '50', comment_count: 4 });
+        expect(findCommentById).toHaveBeenCalledWith('50');
+        expect(deleteComment).toHaveBeenCalledTimes(1);
+        expect(deleteComment).toHaveBeenCalledWith('50');
+        expect(countComments).toHaveBeenCalledWith('3');
+    });
+
+    it('남의 댓글이면 403 — 지우지 않는다', async () => {
+        const { service, deleteComment } = commentService(mine);
+
+        await expect(
+            service.deleteComment('3', '50', '8'),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('없는 댓글이면 404', async () => {
+        const { service, deleteComment } = commentService(null);
+
+        await expect(
+            service.deleteComment('3', '50', '7'),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('다른 글의 댓글이면 404 — 내 댓글이어도 지우지 않는다', async () => {
+        const { service, deleteComment } = commentService(mine);
+
+        await expect(
+            service.deleteComment('4', '50', '7'),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(deleteComment).not.toHaveBeenCalled();
+    });
+
+    it('번호가 숫자가 아니면 404 — DB를 묻지 않는다', async () => {
+        const { service, findCommentById } = commentService(mine);
+
+        await expect(
+            service.deleteComment('3', 'abc', '7'),
+        ).rejects.toMatchObject({ status: 404 });
+        await expect(
+            service.deleteComment('x', '50', '7'),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(findCommentById).not.toHaveBeenCalled();
+    });
+
+    it('그 사이 이미 지워졌으면 404', async () => {
+        const { service, countComments } = commentService(mine, {
+            deleted: 0,
+        });
+
+        await expect(
+            service.deleteComment('3', '50', '7'),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(countComments).not.toHaveBeenCalled();
+    });
+});

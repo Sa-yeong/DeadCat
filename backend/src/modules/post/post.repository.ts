@@ -277,6 +277,36 @@ export class PostRepository {
     }
 
     /**
+     * 댓글 하나 조회 — 어느 글의 댓글인지 · 누가 썼는지만
+     */
+    async findCommentById(commentId: string) {
+        return this.prisma.comments.findUnique({
+            where: {
+                id: BigInt(commentId),
+            },
+            select: {
+                id: true,
+                post_id: true,
+                user_id: true,
+            },
+        });
+    }
+
+    /**
+     * 댓글 삭제 — comments 줄 하나만 지운다.
+     * 그 사이 이미 지워졌으면 0, 지웠으면 1
+     */
+    async deleteComment(commentId: string): Promise<number> {
+        const result = await this.prisma.comments.deleteMany({
+            where: {
+                id: BigInt(commentId),
+            },
+        });
+
+        return result.count;
+    }
+
+    /**
      * 투표 정보 조회
      */
     async findVoteByPostId(postId: bigint) {

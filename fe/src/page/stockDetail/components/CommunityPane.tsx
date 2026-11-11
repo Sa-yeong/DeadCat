@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../../../common/authToken';
 import { myUserId } from '../../livingRoom/api';
-import { errorMessage, getComments, getPosts, isUnauthorized, toggleFollow, toggleLike } from '../api';
+import { createComment, deleteComment, errorMessage, getComments, getPosts, isUnauthorized, toggleFollow, toggleLike } from '../api';
+import { COMMENT_MAX, appendComments, commentDraft, prependComment, removeComment } from '../communityComment';
 import { isMine, mergeFollowing, withFollow } from '../communityFollow';
 import { flipLike, likeFromServer } from '../communityLike';
 import { ago } from '../format';
@@ -162,6 +163,7 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
           key={p.post_id}
           post={p}
           mine={isMine(p.writer.user_id, me)}
+          me={me}
           following={p.writer.user_id != null && following.has(p.writer.user_id)}
           onFollow={(userId) => void onFollow(userId)}
           onNotice={setNotice}
@@ -193,6 +195,7 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
 function PostCard({
   post,
   mine,
+  me,
   following,
   onFollow,
   onNotice,
@@ -200,6 +203,8 @@ function PostCard({
   post: Post;
   /** 내가 쓴 글 — 팔로우 버튼을 숨긴다 */
   mine: boolean;
+  /** 내 번호 — 내 댓글에만 「삭제」를 보인다. 비로그인이면 null */
+  me: string | null;
   following: boolean;
   onFollow: (userId: string) => void;
   /** 실패 안내 한 줄(목록 맨 위) */
@@ -253,7 +258,7 @@ function PostCard({
     setLoadFailed(false);
     try {
       const r = await loadComments(post.post_id, loaded ? cursor : null, COMMENT_PAGE);
-      setComments((prev) => [...prev, ...r.comments]);
+      setComments((prev) => appendComments(prev, r.comments)); // 방금 등록해 맨 위에 올린 댓글이 또 오면 한 번만
       setCursor(r.next);
       setLoaded(true);
     } catch {
@@ -266,6 +271,66 @@ function PostCard({
   const toggleComments = () => {
     if (!open && !loaded) void loadMore(); // 처음 펼칠 때만 받는다 — 접었다 펴면 받은 만큼 그대로
     setOpen(!open);
+  };
+
+  // 댓글 수 — 목록이 준 값에서 시작, 등록 · 삭제 응답의 comment_count 로 바꾼다
+  const [commentCount, setCommentCount] = useState(post.comment_count);
+
+  // 댓글 등록 — 입력칸의 글자는 실패해도 그대로 둔다
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+  /** 등록 응답을 기다리는 중 */
+  const postPending = useRef(false);
+  /** 지금 등록할 수 있는 내용인가(빈 칸 · 공백만 · 150자 초과가 아님) */
+  const ready = commentDraft(draft) !== null;
+  const onSubmitComment = async () => {
+    if (!requireLogin()) return; // 비로그인 — 로그인 창만 띄우고 서버로는 안 보낸다
+    if (postPending.current) return; // 응답 오기 전 연타 · Enter 반복 — 한 번만 나간다
+    const content = commentDraft(draft);
+    if (content === null) return;
+    postPending.current = true;
+    setPosting(true);
+    try {
+      const r = await createComment(post.post_id, content);
+      setComments((prev) => prependComment(prev, r.comment)); // 목록이 최신순이라 맨 위가 제자리
+      setCommentCount(r.comment_count);
+      setDraft('');
+    } catch (e) {
+      // 실패 — 쓴 내용은 그대로
+      if (!shown.current) return;
+      if (isUnauthorized(e)) openLogin();
+      else onNotice(errorMessage(e, '댓글을 등록하지 못했어요.'));
+    } finally {
+      postPending.current = false;
+      setPosting(false);
+    }
+  };
+
+  // 내 댓글 삭제 — 「삭제」를 누르면 그 자리에서 한 번 더 묻는다
+  /** 「삭제할까요?」를 보이고 있는 댓글 */
+  const [confirming, setConfirming] = useState<string | null>(null);
+  /** 삭제 응답을 기다리는 댓글 */
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const deletePending = useRef(false);
+  const onDeleteComment = async (commentId: string) => {
+    if (!requireLogin()) return;
+    if (deletePending.current) return; // 응답 오기 전 연타 — 한 번만 나간다
+    deletePending.current = true;
+    setDeleting(commentId);
+    try {
+      const r = await deleteComment(post.post_id, commentId);
+      setComments((prev) => removeComment(prev, commentId));
+      setCommentCount(r.comment_count);
+    } catch (e) {
+      // 실패 — 댓글은 그대로 둔다
+      if (!shown.current) return;
+      if (isUnauthorized(e)) openLogin();
+      else onNotice(errorMessage(e, '댓글을 삭제하지 못했어요.'));
+    } finally {
+      deletePending.current = false;
+      setDeleting(null);
+      setConfirming(null);
+    }
   };
 
   return (
@@ -375,7 +440,7 @@ function PostCard({
           type="button"
           onClick={toggleComments}
           aria-expanded={open}
-          aria-label={`댓글 ${post.comment_count}개 ${open ? '접기' : '펼치기'}`}
+          aria-label={`댓글 ${commentCount}개 ${open ? '접기' : '펼치기'}`}
           className="inline-flex items-center"
           style={{
             gap: 5,
@@ -389,22 +454,111 @@ function PostCard({
           <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M4 5h16v11H9l-5 4z" fill={open ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
           </svg>
-          {post.comment_count}
+          {commentCount}
         </button>
       </div>
 
       {open && (
         <div>
+          {/* 댓글 입력 — 목록 맨 위. 비로그인도 보이고, 등록을 누르면 로그인 창 */}
+          <div className="flex items-center" style={{ gap: 8, marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <input
+              value={draft}
+              maxLength={COMMENT_MAX}
+              readOnly={posting}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter 로 등록 — 한글 조합 중의 Enter(글자 확정)는 등록이 아니다
+                if (e.key !== 'Enter' || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                e.preventDefault();
+                void onSubmitComment();
+              }}
+              placeholder="댓글 입력…"
+              aria-label="댓글 입력"
+              style={{
+                flexGrow: 1,
+                minWidth: 0,
+                height: 32,
+                padding: '0 10px',
+                border: '1px solid rgba(255,255,255,0.14)',
+                borderRadius: R.control,
+                background: 'transparent',
+                color: '#EDEDEA',
+                fontSize: 13,
+                outline: 'none',
+              }}
+            />
+            {draft.length > 0 && (
+              <span style={{ flexShrink: 0, fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, color: '#6E6E68' }}>
+                {draft.length}/{COMMENT_MAX}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => void onSubmitComment()}
+              aria-disabled={!ready || posting}
+              style={{
+                flexShrink: 0,
+                height: 32,
+                padding: '0 12px',
+                border: 'none',
+                borderRadius: R.control,
+                background: '#EDEDEA',
+                color: '#1C1C1E',
+                fontSize: 12.5,
+                fontWeight: 700,
+                opacity: ready && !posting ? 1 : 0.45,
+                cursor: posting ? 'progress' : 'pointer',
+              }}
+            >
+              등록
+            </button>
+          </div>
           {comments.map((c) => (
             <div key={c.comment_id} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <div className="flex items-center" style={{ gap: 6, fontSize: 12 }}>
                 <Nickname userId={c.writer.user_id} name={c.writer.nickname} size={12} />
                 <span style={{ color: '#6E6E68' }}>· {ago(c.write_time)}</span>
+                {isMine(c.writer.user_id, me) && (
+                  // 내 댓글에만 — 누르면 그 자리에서 한 번 더 묻는다
+                  <span className="inline-flex items-center" style={{ gap: 8, marginLeft: 'auto', fontSize: 11.5, color: '#6E6E68' }}>
+                    {deleting === c.comment_id ? (
+                      '삭제 중…'
+                    ) : confirming === c.comment_id ? (
+                      <>
+                        삭제할까요?
+                        <button
+                          type="button"
+                          onClick={() => void onDeleteComment(c.comment_id)}
+                          style={{ padding: 0, border: 'none', background: 'transparent', color: '#FF8A80', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          삭제
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirming(null)}
+                          style={{ padding: 0, border: 'none', background: 'transparent', color: '#9A9A93', fontSize: 11.5, cursor: 'pointer' }}
+                        >
+                          취소
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirming(c.comment_id)}
+                        aria-label="내 댓글 삭제"
+                        style={{ padding: 0, border: 'none', background: 'transparent', color: '#6E6E68', fontSize: 11.5, cursor: 'pointer' }}
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </span>
+                )}
               </div>
               <div style={{ marginTop: 3, fontSize: 13, color: '#C6C6BE', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{c.content}</div>
             </div>
           ))}
-          {loaded && comments.length === 0 && (
+          {loaded && comments.length === 0 && !cursor && !loading && (
             <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12.5, color: '#6E6E68' }}>
               아직 댓글이 없습니다
             </div>
