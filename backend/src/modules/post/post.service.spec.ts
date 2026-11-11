@@ -147,3 +147,55 @@ describe('PostService.getStockPosts — writer.is_following', () => {
         expect(findFollowedWriterIds).not.toHaveBeenCalled();
     });
 });
+
+// 목록의 is_liked — 그 글의 좋아요 전체(like_posts.user_id)에 내 번호가 있는지 (K2 확인)
+describe('PostService.getStockPosts — is_liked', () => {
+    const rows: Row[] = [
+        { id: 4n, writerId: 10n, likes: [7n, 8n] }, // 나 + 다른 사람
+        { id: 3n, writerId: 10n, likes: [8n, 9n] }, // 다른 사람만
+        { id: 2n, writerId: 7n, likes: [7n] }, // 내 글에 내가 누름
+        { id: 1n, writerId: 11n }, // 아무도 안 누름
+    ];
+
+    it('로그인하면 내가 누른 글만 true, 좋아요 수는 전체 사람 수', async () => {
+        const { service } = serviceWith(rows);
+
+        const res = await service.getStockPosts('005930', undefined, 20, '7');
+
+        expect(res.posts.map((p) => p.is_liked)).toEqual([
+            true,
+            false,
+            true,
+            false,
+        ]);
+        expect(res.posts.map((p) => p.like_count)).toEqual([2, 2, 1, 0]);
+    });
+
+    it('비로그인이면 전부 false — 좋아요 수는 그대로', async () => {
+        const { service } = serviceWith(rows);
+
+        const res = await service.getStockPosts('005930');
+
+        expect(res.posts.map((p) => p.is_liked)).toEqual([
+            false,
+            false,
+            false,
+            false,
+        ]);
+        expect(res.posts.map((p) => p.like_count)).toEqual([2, 2, 1, 0]);
+    });
+
+    it('다른 사람으로 로그인하면 그 사람 기준 — 번호를 숫자로 비교한다(문자 "8" → 8n)', async () => {
+        const { service, findStockPosts } = serviceWith(rows);
+
+        const res = await service.getStockPosts('005930', undefined, 20, '8');
+
+        expect(res.posts.map((p) => p.is_liked)).toEqual([
+            true,
+            true,
+            false,
+            false,
+        ]);
+        expect(findStockPosts).toHaveBeenCalledWith('005930', null, 20, 8n);
+    });
+});

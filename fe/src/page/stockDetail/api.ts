@@ -74,7 +74,7 @@ export const getScores = (code: string) => get<CompanyScores>(`${path(code)}/com
 /** GET …/company-info/overview — 배당·기업 개요. 없으면 null들 */
 export const getOverview = (code: string) => get<CompanyOverview>(`${path(code)}/company-info/overview`);
 
-/* ── 커뮤니티 — 읽기만 (쓰기·좋아요·투표는 로그인 연결 때) ─────── */
+/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 (댓글 등록·글쓰기·투표는 아직) ─────── */
 
 /** GET /stocks/{code}/posts?cursor=&limit= — 최신순, cursor는 마지막 글 id */
 export const getPosts = (code: string, cursor: string | null, limit = 20) =>
@@ -89,6 +89,13 @@ export const getPosts = (code: string, cursor: string | null, limit = 20) =>
  */
 export const toggleFollow = (userId: string) =>
   post<{ is_following: boolean }>(`/users/${encodeURIComponent(userId)}/follow`, null).then((r) => r.is_following);
+
+/**
+ * POST /posts/{postId}/like — 토글 하나(좋아요 ↔ 취소). 바뀐 뒤의 상태와 좋아요 수를 돌려준다.
+ * 로그인 필수, 없는 글은 404. 공통 포장({ success, data })으로 온다
+ */
+export const toggleLike = (postId: string) =>
+  post<{ is_liked: boolean; like_count: number }>(`/posts/${encodeURIComponent(postId)}/like`, null);
 
 /** GET /posts/{postId}/comments?cursor=&limit= */
 export const getComments = (postId: string, cursor: string | null, limit: number) =>

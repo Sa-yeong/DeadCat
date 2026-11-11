@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../../../common/authToken';
 import { myUserId } from '../../livingRoom/api';
-import { errorMessage, getComments, getPosts, isUnauthorized, toggleFollow } from '../api';
+import { errorMessage, getComments, getPosts, isUnauthorized, toggleFollow, toggleLike } from '../api';
 import { isMine, mergeFollowing, withFollow } from '../communityFollow';
+import { flipLike, likeFromServer } from '../communityLike';
 import { ago } from '../format';
 import { livingRoomPath } from '../links';
 import { useLoginGate } from '../loginGate';
@@ -163,6 +164,7 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
           mine={isMine(p.writer.user_id, me)}
           following={p.writer.user_id != null && following.has(p.writer.user_id)}
           onFollow={(userId) => void onFollow(userId)}
+          onNotice={setNotice}
         />
       ))}
       {next && (
@@ -193,15 +195,47 @@ function PostCard({
   mine,
   following,
   onFollow,
+  onNotice,
 }: {
   post: Post;
   /** 내가 쓴 글 — 팔로우 버튼을 숨긴다 */
   mine: boolean;
   following: boolean;
   onFollow: (userId: string) => void;
+  /** 실패 안내 한 줄(목록 맨 위) */
+  onNotice: (message: string) => void;
 }) {
-  const [liked, setLiked] = useState(post.is_liked);
-  const [likes, setLikes] = useState(post.like_count);
+  const { requireLogin, openLogin } = useLoginGate();
+  // 좋아요 — 목록이 준 값(is_liked · like_count)에서 시작. 목록을 처음부터 다시 받으면 카드가 새로 그려져 서버 값으로 다시 시작한다
+  const [like, setLike] = useState({ liked: post.is_liked, likes: post.like_count });
+  const { liked, likes } = like;
+  /** 좋아요 응답을 기다리는 중 */
+  const likePending = useRef(false);
+  /** 카드가 화면에 있는가 — 목록을 다시 받아 사라진 카드의 늦은 실패는 안내하지 않는다 */
+  const shown = useRef(true);
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
+  const onLike = async () => {
+    if (!requireLogin()) return; // 비로그인 — 로그인 창만 띄우고 서버로는 안 보낸다
+    if (likePending.current) return; // 응답 오기 전 연타 — 한 번만 나간다
+    const before = like;
+    likePending.current = true;
+    setLike(flipLike(before)); // 먼저 바꿔 보이고
+    try {
+      setLike(likeFromServer(await toggleLike(post.post_id))); // 서버가 준 값이 최종
+    } catch (e) {
+      setLike(before); // 실패 — 누르기 전으로
+      if (!shown.current) return;
+      if (isUnauthorized(e)) openLogin();
+      else onNotice(errorMessage(e, before.liked ? '좋아요를 취소하지 못했어요.' : '좋아요를 누르지 못했어요.'));
+    } finally {
+      likePending.current = false;
+    }
+  };
   const [voted, setVoted] = useState<number | null>(null);
   // 투표 전에는 결과를 숨긴다. 마감된 투표는 처음부터 보인다
   const revealed = voted !== null || (post.vote ? !post.vote.state : false);
@@ -322,10 +356,7 @@ function PostCard({
       <div className="flex items-center" style={{ gap: 14, marginTop: 10 }}>
         <button
           type="button"
-          onClick={() => {
-            setLiked(!liked);
-            setLikes(likes + (liked ? -1 : 1));
-          }}
+          onClick={() => void onLike()}
           aria-pressed={liked}
           className="inline-flex items-center"
           style={{ gap: 5, border: 'none', background: 'transparent', color: liked ? '#F2564C' : '#9A9A93', fontSize: 12.5, cursor: 'pointer' }}
