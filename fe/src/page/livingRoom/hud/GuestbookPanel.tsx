@@ -65,6 +65,10 @@ export function GuestbookPanel({
   const [failed, setFailed] = useState<string | null>(null);
   /** 보내는 중 — 같은 글·반응이 두 번 가지 않게. 글과 반응은 따로 막는다(글 보내는 중에도 반응은 눌리게) */
   const [busy, setBusy] = useState<Record<Lane, boolean>>({ text: false, reaction: false });
+  /** 「삭제할까요?」를 묻는 중인 글 — 내 글에만 삭제가 있다 */
+  const [confirmDel, setConfirmDel] = useState<number | null>(null);
+  /** 내 번호(토큰) — 비로그인은 null */
+  const me = guest ? null : Number(api.myUserId()) || null;
 
   useEffect(() => {
     if (!open) return;
@@ -156,6 +160,26 @@ export function GuestbookPanel({
     }, '답글을 달지 못했어요');
   };
 
+  /** 내 글 삭제 — 응답을 받은 뒤 목록에서 뺀다. 이미 지워진 글(404)도 목록에서 뺀다 */
+  const remove = (postId: number) => {
+    void attempt('text', async () => {
+      const drop = () => {
+        setPosts((list) => (list ?? []).filter((x) => x.postId !== postId));
+        setConfirmDel(null);
+        setReplyTo((id) => (id === postId ? null : id));
+      };
+      try {
+        await api.deleteGuestbook(ownerId, postId);
+      } catch (e) {
+        if (!(e instanceof api.HttpError) || e.status !== 404) throw e;
+        drop();
+        setFailed('이미 삭제된 글이에요');
+        return;
+      }
+      drop();
+    }, '글을 삭제하지 못했어요');
+  };
+
   const react = (reactionType: string) => {
     if (guest) return onNeedLogin();
     if (mode !== 'VISITOR' || !ownerId) return;
@@ -222,6 +246,26 @@ export function GuestbookPanel({
                     style={{ ...ghostBtn, height: 24, padding: '0 8px', marginTop: 6, fontSize: 12, color: C.dim }}>
                     {replyTo === p.postId ? '닫기' : '답글'}
                   </button>
+                  {me !== null && p.userId === me && (
+                    confirmDel === p.postId ? (
+                      <span style={{ marginLeft: 8, fontSize: 12, color: C.dim }}>
+                        삭제할까요?
+                        <button type="button" disabled={busy.text} onClick={() => remove(p.postId)}
+                          style={{ ...ghostBtn, height: 24, padding: '0 6px', marginTop: 6, marginLeft: 4, fontSize: 12, color: C.accent }}>
+                          {busy.text ? '삭제 중…' : '삭제'}
+                        </button>
+                        <button type="button" disabled={busy.text} onClick={() => setConfirmDel(null)}
+                          style={{ ...ghostBtn, height: 24, padding: '0 6px', marginTop: 6, fontSize: 12, color: C.dim }}>
+                          취소
+                        </button>
+                      </span>
+                    ) : (
+                      <button type="button" onClick={() => setConfirmDel(p.postId)}
+                        style={{ ...ghostBtn, height: 24, padding: '0 8px', marginTop: 6, marginLeft: 4, fontSize: 12, color: C.dim }}>
+                        삭제
+                      </button>
+                    )
+                  )}
                   {replyTo === p.postId && (
                     <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
                       <input aria-label="답글 입력" autoFocus value={reply} maxLength={api.REPLY_MAX} onChange={(e) => setReply(e.target.value)}

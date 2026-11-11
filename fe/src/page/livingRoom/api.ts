@@ -505,6 +505,11 @@ export async function replyGuestbook(ownerId: OwnerId, postId: number, content: 
   return { replyId: r.reply_id, writeTime: r.created_at };
 }
 
+/** DELETE /rooms/:userId/guestbook/:postId — 내가 쓴 방명록 글 삭제(답글도 같이 지워진다). 남의 글 403 · 없는 글 404 */
+export async function deleteGuestbook(ownerId: OwnerId, postId: number): Promise<void> {
+  await authed<{ post_id: number }>('delete', `/rooms/${guestbookOwner(ownerId)}/guestbook/${postId}`);
+}
+
 /* ── 반응 — 1인 1개: 다른 종류 = 교체, 같은 종류 다시 = 취소 (3-⑦-c) ─────────── */
 
 /** POST /rooms/:userId/reactions { reaction_type } — 로그인 필수. 내 거실 · 없는 종류는 서버가 400 */

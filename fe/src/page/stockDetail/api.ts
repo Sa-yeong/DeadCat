@@ -38,6 +38,9 @@ async function del<T>(url: string): Promise<T> {
   return res.data.data;
 }
 
+/** GET /users/me — 로그인한 내 닉네임(글쓰기 창 머리). 로그인 필수 */
+export const getMyNickname = () => get<{ nickname: string }>('/users/me').then((r) => r.nickname);
+
 /** 로그인 토큰이 있는가 — 로그인해야만 되는 조회를 괜히 보내 401을 만들지 않으려고 */
 export const hasLogin = () => authHeader() !== undefined;
 

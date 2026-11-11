@@ -259,6 +259,12 @@ describe('방명록 (GET · POST /rooms/:userId/guestbook)', () => {
     expect(await api.replyGuestbook('22', 50, '반가워요')).toEqual({ replyId: 8, writeTime: 't2' });
     expect(calls[1]).toMatchObject({ method: 'post', url: '/rooms/22/guestbook/50/replies', data: { content: '반가워요' } });
   });
+
+  it('내 글 삭제 — DELETE /rooms/:userId/guestbook/:postId', async () => {
+    const calls = serve(() => ({ data: { post_id: 50 } }));
+    await api.deleteGuestbook('22', 50);
+    expect(calls[0]).toMatchObject({ method: 'delete', url: '/rooms/22/guestbook/50' });
+  });
 });
 
 describe('팔로우 (POST /users/:userId/follow)', () => {

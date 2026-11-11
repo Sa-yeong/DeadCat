@@ -161,4 +161,38 @@ export class GuestbooksService {
             created_at: reply.write_time.toISOString(),
         };
     }
+
+    // DELETE /rooms/:userId/guestbook/:postId — 로그인 필수. 쓴 사람 본인만.
+    // 거실이 비공개로 바뀐 뒤에도 내가 남긴 글은 지울 수 있게 거실 열람 권한은 보지 않는다
+    async deleteGuestbook(
+        userId: bigint,
+        ownerIdParam: string,
+        postIdParam: string,
+    ) {
+        const ownerId = parseUserIdParam(ownerIdParam);
+        const post = /^\d+$/.test(postIdParam)
+            ? await this.guestbooksRepository.findGuestbook(
+                  ownerId,
+                  BigInt(postIdParam),
+              )
+            : null;
+        if (!post) {
+            throw new NotFoundException('방명록을 찾을 수 없습니다.');
+        }
+        if (post.writer_id === null || post.writer_id !== userId) {
+            throw new ForbiddenException(
+                '본인이 쓴 방명록만 삭제할 수 있습니다.',
+            );
+        }
+
+        const deleted = await this.guestbooksRepository.deleteGuestbook(
+            ownerId,
+            post.id,
+        );
+        if (deleted === 0) {
+            throw new NotFoundException('방명록을 찾을 수 없습니다.');
+        }
+
+        return { post_id: Number(post.id) };
+    }
 }

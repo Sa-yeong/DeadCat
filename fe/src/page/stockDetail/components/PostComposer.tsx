@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLayout } from '../layout';
-import * as dummy from '../dummy';
+import { useAuthToken } from '../../../common/authToken';
 import { R } from '../radius';
-import { createPost, errorMessage, isUnauthorized } from '../api';
+import { createPost, errorMessage, getMyNickname, isUnauthorized } from '../api';
 import { POLL_MAX, POLL_MIN, POLL_OPTION_MAX, POST_MAX, filledOptions, postBody } from '../communityPost';
 import { useLoginGate } from '../loginGate';
 
@@ -42,6 +42,21 @@ export function PostComposer({
   const [failed, setFailed] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
+
+  /** 창 머리의 내 닉네임 — 열릴 때 서버에서 받는다(GET /users/me). 받기 전 · 실패하면 비워 둔다 */
+  const token = useAuthToken();
+  const [nickname, setNickname] = useState('');
+  useEffect(() => {
+    if (!open || !token) return;
+    let alive = true;
+    getMyNickname().then(
+      (n) => alive && setNickname(n),
+      () => alive && setNickname(''),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [open, token]);
 
   // 열릴 때 본문에 바로 쓸 수 있게
   useEffect(() => {
@@ -169,7 +184,7 @@ export function PostComposer({
               <path d="M2.2 12.2c0-2.4 2.1-3.9 4.8-3.9s4.8 1.5 4.8 3.9" fill="none" stroke="#C6C6BE" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           </span>
-          <b style={{ fontSize: 15 }}>{dummy.me.nickname}</b>
+          <b style={{ fontSize: 15 }}>{nickname}</b>
           <button type="button" aria-label="닫기" onClick={close} style={{ ...iconBtn(false), marginLeft: 'auto' }}>
             <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
               <path d="M4 4 14 14M14 4 4 14" stroke="#B4B4AC" strokeWidth="1.7" strokeLinecap="round" />

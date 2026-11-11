@@ -69,4 +69,16 @@ export class GuestbooksRepository {
             },
         });
     }
+
+    // 방명록 글 삭제 — 그 거실의 방명록 글일 때만. 지운 줄 수를 돌려준다(답글은 DB cascade)
+    async deleteGuestbook(targetUserId: bigint, postId: bigint) {
+        const { count } = await this.prisma.posts.deleteMany({
+            where: {
+                id: postId,
+                type: GUESTBOOK,
+                target_user_id: targetUserId,
+            },
+        });
+        return count;
+    }
 }

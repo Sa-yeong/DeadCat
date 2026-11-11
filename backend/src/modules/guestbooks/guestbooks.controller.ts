@@ -2,6 +2,7 @@ import {
     Controller,
     Get,
     Post,
+    Delete,
     Param,
     Body,
     Query,
@@ -64,6 +65,21 @@ export class GuestbooksController {
             userId,
             postId,
             dto,
+        );
+    }
+
+    // 거실 방명록 글 삭제 — 쓴 사람 본인만 (답글은 DB cascade로 같이 지워진다)
+    @UseGuards(JwtAuthGuard)
+    @Delete(':userId/guestbook/:postId')
+    async deleteGuestbook(
+        @User() userId: bigint,
+        @Param('userId') ownerId: string,
+        @Param('postId') postId: string,
+    ) {
+        return await this.guestbooksService.deleteGuestbook(
+            userId,
+            ownerId,
+            postId,
         );
     }
 }
