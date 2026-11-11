@@ -1,4 +1,6 @@
 import { api } from '../../api/axios';
+import type { CreatePostBody } from './communityPost';
+import type { VoteResult } from './communityVote';
 import type { Emotion } from './runtime/motionTable';
 import type {
   Candle, CompanyOverview, CompanyScores, CompanySummary, FavoriteItem, Financial,
@@ -74,7 +76,7 @@ export const getScores = (code: string) => get<CompanyScores>(`${path(code)}/com
 /** GET …/company-info/overview — 배당·기업 개요. 없으면 null들 */
 export const getOverview = (code: string) => get<CompanyOverview>(`${path(code)}/company-info/overview`);
 
-/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 · 댓글 등록 · 삭제 (글쓰기·투표는 아직) ─────── */
+/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 · 댓글 등록 · 삭제 · 글쓰기 · 투표 ─────── */
 
 /** GET /stocks/{code}/posts?cursor=&limit= — 최신순, cursor는 마지막 글 id */
 export const getPosts = (code: string, cursor: string | null, limit = 20) =>
@@ -121,6 +123,29 @@ export const deleteComment = (postId: string, commentId: string) =>
   del<{ comment_id: string; comment_count: number }>(
     `/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
   );
+
+/** POST /posts/create 가 돌려주는 새 글 */
+export interface CreatedPost {
+  id: string;
+  has_vote: boolean;
+  content: string;
+  created_at: string;
+}
+
+/**
+ * POST /posts/create — 글 등록({ content, stock_code, type, vote_option? }). 투표는 서버가 7일 뒤 마감으로 고정한다.
+ * 로그인 필수, 없는 종목은 404. 서비스가 { code, description, data } 를 주고 공통 포장이 한 번 더 싼다
+ * ({ success, data: { code, description, data: 새 글 } }) — 여기서 안쪽 data 까지 꺼낸다
+ */
+export const createPost = (body: CreatePostBody) =>
+  post<{ code: string; description: string; data: CreatedPost }>('/posts/create', body).then((r) => r.data);
+
+/**
+ * POST /posts/{postId}/vote/options/{optionNo} — 투표 참여. 선택지별 수 · 비율 · 참여자 수 · 내 선택을 돌려준다.
+ * 로그인 필수. 이미 참여했거나 마감된 투표 · 없는 선택지는 400, 투표가 없는 글은 404. 공통 포장({ success, data })으로 온다
+ */
+export const votePost = (postId: string, optionNo: number) =>
+  post<VoteResult>(`/posts/${encodeURIComponent(postId)}/vote/options/${optionNo}`, null);
 
 /* ── 캐릭터 감정 ───────────────────────────────────── */
 

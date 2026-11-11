@@ -9,6 +9,7 @@ import { InfoPane } from './InfoPane';
 import { CommunityPane } from './CommunityPane';
 import { PanelHeader, TabChip } from './Block';
 import { R } from '../radius';
+import { useLoginGate } from '../loginGate';
 import { NO_INDICATORS, type IndicatorSet } from '../chart/indicatorLayer';
 import { drawingsOf, type Tool } from '../chart/drawings';
 
@@ -72,6 +73,7 @@ export function WindowHud({
   onWheelIn?: () => void;
 }) {
   const L = useLayout();
+  const { requireLogin } = useLoginGate();
   const { winWidth, winHeight } = L;
   const sliding = useSliding();
   // 차트 크기는 글로벌 사이드바를 여닫는 움직임이 끝난 뒤에 한 번 맞춘다 — 그동안은 창틀만 움직인다
@@ -107,7 +109,10 @@ export function WindowHud({
           tab === 'COMMUNITY' ? (
             <button
               type="button"
-              onClick={onCompose}
+              // 비로그인 — 글쓰기 창 대신 로그인 창
+              onClick={() => {
+                if (requireLogin()) onCompose();
+              }}
               style={{
                 height: 24,
                 padding: '0 10px',

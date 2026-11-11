@@ -329,6 +329,7 @@ export function StockDetailPage() {
         )}
 
         <PostComposer
+          stockCode={stockCode}
           open={composing}
           onClose={() => setComposing(false)}
           onSubmitted={() => setCommunityKey((k) => k + 1)}

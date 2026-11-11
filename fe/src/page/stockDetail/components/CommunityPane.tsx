@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../../../common/authToken';
 import { myUserId } from '../../livingRoom/api';
-import { createComment, deleteComment, errorMessage, getComments, getPosts, isUnauthorized, toggleFollow, toggleLike } from '../api';
+import { createComment, deleteComment, errorMessage, getComments, getPosts, isUnauthorized, statusOf, toggleFollow, toggleLike, votePost } from '../api';
+import { canVote, myOption, voteFromServer, voteRevealed } from '../communityVote';
 import { COMMENT_MAX, appendComments, commentDraft, prependComment, removeComment } from '../communityComment';
 import { isMine, mergeFollowing, withFollow } from '../communityFollow';
 import { flipLike, likeFromServer } from '../communityLike';
@@ -50,6 +51,9 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
   // 내 번호(토큰의 sub) — 내 글에는 팔로우 버튼을 숨긴다. 비로그인이면 null
   const me = token ? myUserId() : null;
   const { requireLogin, openLogin } = useLoginGate();
+  // 화면이 서버와 어긋났을 때(다른 기기에서 이미 투표 등) 목록을 처음부터 다시 받게 하는 번호
+  const [stale, setStale] = useState(0);
+  const reload = useCallback(() => setStale((n) => n + 1), []);
 
   // 실패 안내 한 줄 — 잠깐 떴다 사라진다
   const [notice, setNotice] = useState<string | null>(null);
@@ -109,7 +113,7 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
     return () => {
       alive = false;
     };
-  }, [stockCode, reloadKey, token]);
+  }, [stockCode, reloadKey, token, stale]);
 
   /** 아래 끝의 '글 더보기' — 받은 글 뒤에 잇는다. 같은 글이 겹쳐 오면 한 번만 */
   const loadMorePosts = async () => {
@@ -167,6 +171,7 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
           following={p.writer.user_id != null && following.has(p.writer.user_id)}
           onFollow={(userId) => void onFollow(userId)}
           onNotice={setNotice}
+          onReload={reload}
         />
       ))}
       {next && (
@@ -199,6 +204,7 @@ function PostCard({
   following,
   onFollow,
   onNotice,
+  onReload,
 }: {
   post: Post;
   /** 내가 쓴 글 — 팔로우 버튼을 숨긴다 */
@@ -209,6 +215,8 @@ function PostCard({
   onFollow: (userId: string) => void;
   /** 실패 안내 한 줄(목록 맨 위) */
   onNotice: (message: string) => void;
+  /** 글 목록을 처음부터 다시 받는다 — 화면이 서버와 어긋났을 때(중복 투표 등) */
+  onReload: () => void;
 }) {
   const { requireLogin, openLogin } = useLoginGate();
   // 좋아요 — 목록이 준 값(is_liked · like_count)에서 시작. 목록을 처음부터 다시 받으면 카드가 새로 그려져 서버 값으로 다시 시작한다
@@ -241,9 +249,40 @@ function PostCard({
       likePending.current = false;
     }
   };
-  const [voted, setVoted] = useState<number | null>(null);
-  // 투표 전에는 결과를 숨긴다. 마감된 투표는 처음부터 보인다
-  const revealed = voted !== null || (post.vote ? !post.vote.state : false);
+  // 투표 — 목록이 준 값(선택지별 수 · 내 선택 my_option_no)에서 시작, 투표 응답으로 바꾼다
+  const [vote, setVote] = useState(post.vote);
+  /** 내가 고른 선택지 — 이미 투표한 글은 목록 값으로 채워져 새로고침해도 남는다 */
+  const voted = vote ? myOption(vote) : null;
+  // 투표 전에는 결과를 숨긴다. 내가 투표했거나 마감된 투표는 처음부터 보인다
+  const revealed = vote ? voteRevealed(vote) : false;
+  const [voting, setVoting] = useState(false);
+  /** 투표 응답을 기다리는 중 */
+  const votePending = useRef(false);
+  const onVote = async (optionNo: number) => {
+    if (!vote || !vote.state) return; // 마감된 투표 — 결과만 보인다
+    if (!requireLogin()) return; // 비로그인 — 로그인 창만 띄우고 서버로는 안 보낸다
+    if (!canVote(vote)) return; // 이미 투표했다 — 바꾸거나 취소할 수 없다
+    if (votePending.current) return; // 응답 오기 전 연타 · 다른 선택지 누르기 — 한 번만 나간다
+    votePending.current = true;
+    setVoting(true);
+    try {
+      const r = await votePost(post.post_id, optionNo);
+      setVote((prev) => (prev ? voteFromServer(prev, r) : prev)); // 수 · 비율 · 참여자 수 · 내 선택은 서버 값 그대로
+    } catch (e) {
+      if (!shown.current) return;
+      if (isUnauthorized(e)) {
+        openLogin();
+        return;
+      }
+      onNotice(errorMessage(e, '투표하지 못했어요.'));
+      // 이미 참여함(다른 기기) · 그 사이 마감 · 글이 지워짐 — 화면이 옛것이다. 목록을 다시 받아 맞춘다
+      const status = statusOf(e);
+      if (status === 400 || status === 404) onReload();
+    } finally {
+      votePending.current = false;
+      setVoting(false);
+    }
+  };
 
   // 댓글 — 기본은 접힘. 펼치면 5개, 더보기마다 5개씩
   const [open, setOpen] = useState(false);
@@ -370,16 +409,16 @@ function PostCard({
         {post.content}
       </p>
 
-      {post.vote && (
+      {vote && (
         <div className="flex flex-col" style={{ gap: 6, marginTop: 10 }}>
-          {post.vote.options.map((o) => {
+          {vote.options.map((o) => {
             const chosen = voted === o.option_no;
-            // {투표 반영은 C단계} 누르면 결과만 공개한다 — 숫자는 서버 값 그대로
+            // 누르면 서버에 투표하고, 응답으로 결과를 공개한다 — 숫자는 서버 값 그대로
             return (
               <button
                 key={o.option_no}
                 type="button"
-                onClick={() => voted === null && setVoted(o.option_no)}
+                onClick={() => void onVote(o.option_no)}
                 aria-pressed={chosen}
                 className="relative flex items-center justify-between"
                 style={{
@@ -390,7 +429,7 @@ function PostCard({
                   background: 'transparent',
                   color: '#EDEDEA',
                   fontSize: 13,
-                  cursor: revealed ? 'default' : 'pointer',
+                  cursor: revealed ? 'default' : voting ? 'progress' : 'pointer',
                   overflow: 'hidden',
                 }}
               >
@@ -413,7 +452,7 @@ function PostCard({
             );
           })}
           <div style={{ fontSize: 11, color: '#6E6E68' }}>
-            {post.vote.total_voters}명 참여{revealed ? '' : ' · 투표 후 결과 공개'}
+            {vote.total_voters}명 참여{revealed ? '' : ' · 투표 후 결과 공개'}
           </div>
         </div>
       )}

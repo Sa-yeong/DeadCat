@@ -147,6 +147,8 @@ export interface Post {
     end_date: string;
     total_voters: number;
     options: VoteOption[];
+    /** 내가 고른 선택지 번호 — 안 했거나 비로그인이면 null. 옛 서버는 칸을 안 줄 수 있다(안 한 것으로 본다) */
+    my_option_no?: number | null;
   } | null;
 }
 

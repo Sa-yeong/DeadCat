@@ -2,25 +2,44 @@ import { useEffect, useRef, useState } from 'react';
 import { useLayout } from '../layout';
 import * as dummy from '../dummy';
 import { R } from '../radius';
+import { createPost, errorMessage, isUnauthorized } from '../api';
+import { POLL_MAX, POLL_MIN, POLL_OPTION_MAX, POST_MAX, filledOptions, postBody } from '../communityPost';
+import { useLoginGate } from '../loginGate';
 
-const MAX_LEN = 2000;
+const MAX_LEN = POST_MAX;
 const MAX_IMAGES = 4;
-const POLL_MIN = 2;
-const POLL_MAX = 4;
+/** 사진 첨부 — 백엔드에 사진 올리기가 없어 버튼을 숨긴다(2026-11-11). 생기면 true 로 */
+const PHOTO_ON: boolean = false;
 
 /**
  * 글쓰기 — 시안(CommunityRail 아트보드)의 창. 무대 전체를 어둡게 덮고 가운데에 뜬다.
  * 제목 칸은 두지 않는다 — 목록도 제목 없이 본문만 보이므로(2026-09-29).
  *
- * 아래 두 아이콘 — 사진 첨부 · 투표 개설. 이번에는 화면 동작까지만 만든다.
- * 실 API 교체 지점 — POST /posts/create (사진 업로드·투표 필드는 명세 확인 필요)
+ * 아래 아이콘 — 투표 개설(사진 첨부는 꺼 둠). 「남기기」는 POST /posts/create 로 보낸다.
+ * 투표 글의 마감은 서버가 7일 뒤로 고정한다 — 화면에 마감 설정은 없다.
  */
-export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; onClose: () => void; onSubmitted: () => void }) {
+export function PostComposer({
+  stockCode,
+  open,
+  onClose,
+  onSubmitted,
+}: {
+  /** 이 글이 달릴 종목 */
+  stockCode: string;
+  open: boolean;
+  onClose: () => void;
+  onSubmitted: () => void;
+}) {
   const L = useLayout();
+  const { requireLogin, openLogin } = useLoginGate();
   const [body, setBody] = useState('');
   const [images, setImages] = useState<{ file: File; url: string }[]>([]);
   const [poll, setPoll] = useState<string[] | null>(null);
   const [sending, setSending] = useState(false);
+  /** 등록 응답을 기다리는 중 */
+  const sendPending = useRef(false);
+  /** 등록 실패 안내 — 창 안(아래 줄 왼쪽)에 보인다. 다시 보내거나 창을 닫으면 지운다 */
+  const [failed, setFailed] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
 
@@ -33,7 +52,9 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      setFailed(null);
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -52,9 +73,9 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
 
   if (!open) return null;
 
-  const pollFilled = poll ? poll.filter((o) => o.trim()).length : 0;
+  const pollFilled = poll ? filledOptions(poll).length : 0;
   const pollOk = !poll || pollFilled >= POLL_MIN;
-  const canSend = !sending && body.trim().length > 0 && pollOk;
+  const canSend = !sending && postBody(stockCode, body, poll) !== null;
 
   const reset = () => {
     images.forEach((i) => dropImage(i.url));
@@ -64,16 +85,31 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
   };
 
   const submit = async () => {
-    if (!canSend) return;
+    if (sendPending.current) return; // 응답 오기 전 연타 — 한 번만 나간다
+    const request = postBody(stockCode, body, poll);
+    if (request === null) return;
+    if (!requireLogin()) return; // 창을 연 뒤 로그아웃됐다 — 로그인 창만 띄우고 서버로는 안 보낸다
+    sendPending.current = true;
     setSending(true);
+    setFailed(null);
     try {
-      await new Promise((r) => setTimeout(r, 250));
+      await createPost(request);
       reset();
-      onSubmitted();
+      onSubmitted(); // 목록을 다시 받는다
       onClose();
+    } catch (e) {
+      // 실패 — 창과 쓴 내용은 그대로
+      if (isUnauthorized(e)) openLogin();
+      setFailed(errorMessage(e, '글을 등록하지 못했어요.'));
     } finally {
+      sendPending.current = false;
       setSending(false);
     }
+  };
+
+  const close = () => {
+    setFailed(null);
+    onClose();
   };
 
   const addImages = (files: FileList | null) => {
@@ -134,7 +170,7 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
             </svg>
           </span>
           <b style={{ fontSize: 15 }}>{dummy.me.nickname}</b>
-          <button type="button" aria-label="닫기" onClick={onClose} style={{ ...iconBtn(false), marginLeft: 'auto' }}>
+          <button type="button" aria-label="닫기" onClick={close} style={{ ...iconBtn(false), marginLeft: 'auto' }}>
             <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
               <path d="M4 4 14 14M14 4 4 14" stroke="#B4B4AC" strokeWidth="1.7" strokeLinecap="round" />
             </svg>
@@ -228,7 +264,7 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
               <div key={i} className="flex items-center" style={{ gap: 6 }}>
                 <input
                   value={opt}
-                  maxLength={40}
+                  maxLength={POLL_OPTION_MAX}
                   onChange={(e) => setPoll(poll.map((o, j) => (j === i ? e.target.value : o)))}
                   placeholder={`선택지 ${i + 1}`}
                   aria-label={`선택지 ${i + 1}`}
@@ -287,6 +323,9 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
 
         {/* 첨부 아이콘 · 남은 글자 수 */}
         <div className="flex shrink-0 items-center" style={{ gap: 2, paddingBottom: 14 }}>
+          {/* 사진 첨부는 꺼 둠(PHOTO_ON) — 코드는 그대로 둔다 */}
+          {PHOTO_ON && (
+          <>
           <input
             ref={fileInput}
             type="file"
@@ -312,6 +351,8 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
               <path d="M3.4 14.2 7.8 10l3 2.8 2.4-2 3.4 3.4" fill="none" stroke="#9A9A93" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
           </button>
+          </>
+          )}
           <button
             type="button"
             aria-label="투표 개설"
@@ -333,8 +374,13 @@ export function PostComposer({ open, onClose, onSubmitted }: { open: boolean; on
 
         {/* 남기기 */}
         <div className="flex shrink-0 items-center" style={{ padding: '14px 0', borderTop: '1px solid rgba(255, 255, 255, 0.12)' }}>
-          {poll && !pollOk && (
-            <span style={{ fontSize: 12, color: '#9A9A93' }}>선택지를 {POLL_MIN}개 이상 채워 주세요</span>
+          {failed ? (
+            // 등록 실패 — 목록의 안내 줄과 같은 빨강
+            <span role="alert" style={{ fontSize: 12, color: '#FF8A80' }}>
+              {failed}
+            </span>
+          ) : (
+            poll && !pollOk && <span style={{ fontSize: 12, color: '#9A9A93' }}>선택지를 {POLL_MIN}개 이상 채워 주세요</span>
           )}
           <button
             type="button"
