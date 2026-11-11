@@ -3,6 +3,10 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 import { Prisma } from 'generated/prisma/client';
 import { OrderSide } from './dto/create-order.dto';
 import type { StoredType } from './order-rules';
+import {
+    applyPresetAutoOnBuy,
+    applyPresetAutoOnSoldOut,
+} from '../characters/preset-auto';
 
 /** 접수 검사 — 사용자 행을 잠근 트랜잭션 안에서 불린다. 통과 못 하면 던진다(아무것도 저장되지 않음) */
 export type OrderGuard = (tx: Prisma.TransactionClient) => Promise<void>;
@@ -286,6 +290,8 @@ export class OrdersRepository {
                     select: { stock_id: true },
                 });
             }
+            // 프리셋 자동 채움(M-1) — 보유 줄이 생긴 뒤에. 사용자 줄은 위 잔고 차감에서 이미 잠겼다
+            await applyPresetAutoOnBuy(tx, userId, stockId);
         } else {
             const holding = await tx.holdings.findUnique({
                 where: key,
@@ -310,7 +316,7 @@ export class OrdersRepository {
                 throw new BadRequestException('보유 수량이 부족합니다.');
             }
             // 다 팔았으면 보유 줄을 지운다
-            await tx.holdings.deleteMany({
+            const soldOut = await tx.holdings.deleteMany({
                 where: {
                     user_id: userId,
                     stock_id: stockId,
@@ -323,6 +329,11 @@ export class OrdersRepository {
                 data: { balance: { increment: totalAmount } },
                 select: { id: true },
             });
+
+            // 다 판 종목은 모든 프리셋에서 지운다(M-1) — 위 잔고 갱신으로 사용자 줄이 잠긴 뒤에
+            if (soldOut.count > 0) {
+                await applyPresetAutoOnSoldOut(tx, userId, stockId);
+            }
         }
 
         await tx.transaction_history.create({

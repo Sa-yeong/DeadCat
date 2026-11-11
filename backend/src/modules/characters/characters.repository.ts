@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from 'generated/prisma/client';
 import { PrismaService } from 'src/providers/database/prisma.service';
+import { MAX_PRESETS } from './preset-auto';
 
 @Injectable()
 export class CharactersRepository {
@@ -194,7 +195,8 @@ export class CharactersRepository {
         return rows.map((r) => r.stock_id);
     }
 
-    // 18. 유저의 전체 프리셋 목록 조회 — 다 판 종목은 빼고(D4). DB 의 프리셋 줄은 그대로라 다시 사면 돌아온다
+    // 18. 유저의 전체 프리셋 목록 조회 — 다 판 종목은 빼고(D4).
+    // 전량 매도 체결 때 프리셋 줄을 실제로 지우므로(M-1) 이 필터는 그 전에 남은 옛 줄 대비다
     async findPresetsByUserId(userId: bigint) {
         return await this.prisma.character_presets.findMany({
             where: { user_id: userId },
@@ -229,18 +231,26 @@ export class CharactersRepository {
         });
     }
 
-    // 19. 프리셋 생성 (트랜잭션)
+    // 19. 프리셋 생성 — 사용자가 만든 프리셋은 처음부터 일반(is_auto = false).
+    // 한도(MAX_PRESETS)가 찼으면 만들지 않고 null. 사용자 줄을 잠그고 세므로 동시에 눌러도 한도를 넘지 않는다
     async createPreset(userId: bigint, presetName: string, stockIds: bigint[]) {
-        return await this.prisma.character_presets.create({
-            data: {
-                user_id: userId,
-                preset_name: presetName,
-                preset_items: {
-                    create: stockIds.map((stockId) => ({
-                        stock_id: stockId,
-                    })),
+        return await this.prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT 1 FROM users WHERE id = ${userId} FOR UPDATE`;
+            const count = await tx.character_presets.count({
+                where: { user_id: userId },
+            });
+            if (count >= MAX_PRESETS) return null;
+            return await tx.character_presets.create({
+                data: {
+                    user_id: userId,
+                    preset_name: presetName,
+                    preset_items: {
+                        create: stockIds.map((stockId) => ({
+                            stock_id: stockId,
+                        })),
+                    },
                 },
-            },
+            });
         });
     }
 
@@ -252,10 +262,10 @@ export class CharactersRepository {
         stockIds: bigint[],
     ) {
         return await this.prisma.$transaction(async (tx) => {
-            // 1) 프리셋 이름 수정
+            // 1) 프리셋 이름 수정. 수정 저장 = 손댐 → 일반 프리셋(이름만 고쳐도, M-1)
             const preset = await tx.character_presets.update({
                 where: { id: presetId },
-                data: { preset_name: presetName },
+                data: { preset_name: presetName, is_auto: false },
             });
 
             // 2) 기존 연결된 아이템 삭제

@@ -17,6 +17,7 @@ import {
     toAffinityInfo,
 } from 'src/common/affinity/affinity-level';
 import { giftAffinityPoints } from 'src/common/items/item-grade';
+import { PRESET_LIMIT_MESSAGE } from './preset-auto';
 
 @Injectable()
 export class CharactersService {
@@ -230,6 +231,10 @@ export class CharactersService {
             dto.preset_name,
             stockIds,
         );
+        // 프리셋 개수 한도(M-1) — 화면도 같은 수에서 막지만 서버가 최종으로 본다
+        if (!created) {
+            throw new BadRequestException(PRESET_LIMIT_MESSAGE);
+        }
 
         return {
             code: 'success',

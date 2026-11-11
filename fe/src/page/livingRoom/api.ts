@@ -310,7 +310,7 @@ export async function savePlacements(placements: readonly PlacementDto[]): Promi
 /* ── Preset API — 캐릭터 탭 (OWNER, 3-⑥) ─────────────────────────────── */
 
 export const MAX_ROOM_CHARACTERS = 5;
-/** 화면 규칙 — 서버는 개수를 막지 않는다 */
+/** 서버도 같은 수에서 막는다(backend preset-auto.ts MAX_PRESETS — 넘으면 400 + 안내 글, 편집 화면이 그 글을 그대로 보여 준다) */
 export const MAX_PRESETS = 5;
 /** 화면 규칙 — 서버는 50자까지 받는다 */
 export const PRESET_NAME_MAX = 12;

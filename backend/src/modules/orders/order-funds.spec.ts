@@ -259,6 +259,21 @@ function fakeDb(balance: bigint, held: Record<string, number> = {}) {
                 return {};
             },
         },
+        // 프리셋 자동 채움(M-1)은 이 파일의 관심 밖 — 일반 프리셋이 켜진 사용자로 두어 체결 때 아무것도 안 하게 한다
+        character_presets: {
+            findMany: async () => {
+                await beat();
+                return [
+                    {
+                        id: 1n,
+                        preset_name: '내 조합',
+                        is_active: true,
+                        is_auto: false,
+                        preset_items: [],
+                    },
+                ];
+            },
+        },
     };
 
     const prisma = {
