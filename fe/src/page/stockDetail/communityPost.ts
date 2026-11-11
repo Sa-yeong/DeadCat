@@ -40,3 +40,8 @@ export function postBody(stockCode: string, text: string, poll: readonly string[
   if (options.some((o) => o.length > POLL_OPTION_MAX)) return null;
   return { ...body, vote_option: options };
 }
+
+/** 지운 글을 목록에서 뺀다 — 다른 글의 순서는 그대로 */
+export function removePost<T extends { post_id: string }>(list: readonly T[], postId: string): T[] {
+  return list.filter((p) => p.post_id !== postId);
+}

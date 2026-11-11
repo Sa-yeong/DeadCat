@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../../../common/authToken';
 import { myUserId } from '../../livingRoom/api';
-import { createComment, deleteComment, errorMessage, getComments, getPosts, isUnauthorized, statusOf, toggleFollow, toggleLike, votePost } from '../api';
+import { createComment, deleteComment, deletePost, errorMessage, getComments, getPosts, isUnauthorized, statusOf, toggleFollow, toggleLike, votePost } from '../api';
+import { removePost } from '../communityPost';
 import { canVote, myOption, voteFromServer, voteRevealed } from '../communityVote';
 import { COMMENT_MAX, appendComments, commentDraft, prependComment, removeComment } from '../communityComment';
 import { isMine, mergeFollowing, withFollow } from '../communityFollow';
@@ -54,6 +55,8 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
   // 화면이 서버와 어긋났을 때(다른 기기에서 이미 투표 등) 목록을 처음부터 다시 받게 하는 번호
   const [stale, setStale] = useState(0);
   const reload = useCallback(() => setStale((n) => n + 1), []);
+  /** 지운 글을 목록에서 바로 뺀다 — 다시 받지 않는다(다른 카드의 펼친 댓글 · 쓰던 댓글이 그대로) */
+  const onDeleted = useCallback((postId: string) => setPosts((prev) => (prev ? removePost(prev, postId) : prev)), []);
 
   // 실패 안내 한 줄 — 잠깐 떴다 사라진다
   const [notice, setNotice] = useState<string | null>(null);
@@ -140,7 +143,8 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
 
   if (error) return <Notice>글 목록을 불러오지 못했습니다</Notice>;
   if (!posts) return <Notice>불러오는 중…</Notice>;
-  if (posts.length === 0) return <Notice>아직 글이 없습니다</Notice>;
+  // 받은 글을 전부 지웠어도 더 받을 쪽이 남아 있으면 「글 더보기」를 보인다
+  if (posts.length === 0 && !next) return <Notice>아직 글이 없습니다</Notice>;
 
   return (
     <div className="dc-scroll flex h-full flex-col overflow-y-auto" style={{ gap: 12, padding: '16px 18px' }}>
@@ -172,6 +176,7 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
           onFollow={(userId) => void onFollow(userId)}
           onNotice={setNotice}
           onReload={reload}
+          onDeleted={onDeleted}
         />
       ))}
       {next && (
@@ -205,9 +210,10 @@ function PostCard({
   onFollow,
   onNotice,
   onReload,
+  onDeleted,
 }: {
   post: Post;
-  /** 내가 쓴 글 — 팔로우 버튼을 숨긴다 */
+  /** 내가 쓴 글 — 팔로우 버튼을 숨기고 그 자리에 「삭제」를 보인다 */
   mine: boolean;
   /** 내 번호 — 내 댓글에만 「삭제」를 보인다. 비로그인이면 null */
   me: string | null;
@@ -217,6 +223,8 @@ function PostCard({
   onNotice: (message: string) => void;
   /** 글 목록을 처음부터 다시 받는다 — 화면이 서버와 어긋났을 때(중복 투표 등) */
   onReload: () => void;
+  /** 이 글을 지웠다 — 목록에서 뺀다 */
+  onDeleted: (postId: string) => void;
 }) {
   const { requireLogin, openLogin } = useLoginGate();
   // 좋아요 — 목록이 준 값(is_liked · like_count)에서 시작. 목록을 처음부터 다시 받으면 카드가 새로 그려져 서버 값으로 다시 시작한다
@@ -372,6 +380,35 @@ function PostCard({
     }
   };
 
+  // 내 글 삭제 — 댓글 삭제와 같은 방식(「삭제」를 누르면 그 자리에서 한 번 더 묻는다)
+  const [confirmingPost, setConfirmingPost] = useState(false);
+  /** 글 삭제 응답을 기다리는 중 */
+  const [deletingPost, setDeletingPost] = useState(false);
+  const postDeletePending = useRef(false);
+  const onDeletePost = async () => {
+    if (!requireLogin()) return;
+    if (postDeletePending.current) return; // 응답 오기 전 연타 — 한 번만 나간다
+    postDeletePending.current = true;
+    setDeletingPost(true);
+    try {
+      await deletePost(post.post_id);
+      onDeleted(post.post_id); // 응답을 받은 뒤 목록에서 뺀다
+    } catch (e) {
+      // 실패 — 글은 그대로 둔다
+      if (!shown.current) return;
+      if (isUnauthorized(e)) openLogin();
+      else if (statusOf(e) === 404) {
+        // 이미 지워진 글(다른 창 · 기기에서 지움) — 서버에 없으니 목록에서도 뺀다
+        onNotice('이미 삭제된 글이에요.');
+        onDeleted(post.post_id);
+      } else onNotice(errorMessage(e, '글을 삭제하지 못했어요.'));
+    } finally {
+      postDeletePending.current = false;
+      setDeletingPost(false);
+      setConfirmingPost(false);
+    }
+  };
+
   return (
     <article style={{ padding: '14px 16px', background: '#26262B', borderRadius: R.card }}>
       <div className="flex items-center justify-between">
@@ -402,6 +439,41 @@ function PostCard({
           >
             {following ? '팔로잉' : '팔로우'}
           </button>
+        )}
+        {mine && (
+          // 내 글에만 — 팔로우 버튼 자리. 누르면 그 자리에서 한 번 더 묻는다
+          <span className="inline-flex items-center" style={{ gap: 8, flexShrink: 0, fontSize: 11.5, color: '#6E6E68' }}>
+            {deletingPost ? (
+              '삭제 중…'
+            ) : confirmingPost ? (
+              <>
+                삭제할까요?
+                <button
+                  type="button"
+                  onClick={() => void onDeletePost()}
+                  style={{ padding: 0, border: 'none', background: 'transparent', color: '#FF8A80', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  삭제
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingPost(false)}
+                  style={{ padding: 0, border: 'none', background: 'transparent', color: '#9A9A93', fontSize: 11.5, cursor: 'pointer' }}
+                >
+                  취소
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingPost(true)}
+                aria-label="내 글 삭제"
+                style={{ padding: 0, border: 'none', background: 'transparent', color: '#6E6E68', fontSize: 11.5, cursor: 'pointer' }}
+              >
+                삭제
+              </button>
+            )}
+          </span>
         )}
       </div>
 

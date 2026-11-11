@@ -1,8 +1,8 @@
 import type { AxiosResponse } from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api as http } from '../../api/axios';
-import { createPost } from './api';
-import { POLL_OPTION_MAX, POST_MAX, filledOptions, postBody } from './communityPost';
+import { createPost, deletePost } from './api';
+import { POLL_OPTION_MAX, POST_MAX, filledOptions, postBody, removePost } from './communityPost';
 
 // 커뮤니티 글쓰기(K4) — 요청 body 만들기 + 실제 등록 호출
 
@@ -84,5 +84,44 @@ describe('createPost — POST /posts/create', () => {
     vi.stubGlobal('localStorage', { getItem: () => 'tok' });
     vi.spyOn(http, 'post').mockRejectedValue(new Error('network'));
     await expect(createPost(postBody('005930', '본문', null)!)).rejects.toThrow('network');
+  });
+});
+
+// 내 글 삭제(K5) — 목록에서 빼기 + 실제 삭제 호출
+
+describe('removePost — 지운 글을 목록에서', () => {
+  const list = [{ post_id: '9' }, { post_id: '8' }, { post_id: '7' }];
+
+  it('그 글만 빼고 순서는 그대로', () => {
+    expect(removePost(list, '8')).toEqual([{ post_id: '9' }, { post_id: '7' }]);
+  });
+
+  it('없는 번호면 그대로 · 원래 목록은 바꾸지 않는다', () => {
+    expect(removePost(list, '1')).toEqual(list);
+    expect(list).toHaveLength(3);
+  });
+
+  it('마지막 글을 지우면 빈 목록', () => {
+    expect(removePost([{ post_id: '9' }], '9')).toEqual([]);
+  });
+});
+
+describe('deletePost — DELETE /posts/:postId', () => {
+  it('토큰을 실어 보내고, 지운 글 번호를 돌려준다', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => 'tok' });
+    const spy = vi.spyOn(http, 'delete').mockResolvedValue({
+      data: { success: true, data: { post_id: '31' } },
+    } as AxiosResponse);
+
+    expect(await deletePost('31')).toEqual({ post_id: '31' });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0]).toBe('/posts/31');
+    expect(spy.mock.calls[0][1]).toMatchObject({ headers: { Authorization: 'Bearer tok' } });
+  });
+
+  it('실패(403 · 404 등)는 그대로 던진다', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => 'tok' });
+    vi.spyOn(http, 'delete').mockRejectedValue(new Error('forbidden'));
+    await expect(deletePost('31')).rejects.toThrow('forbidden');
   });
 });

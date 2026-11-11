@@ -281,3 +281,94 @@ describe('PostService.deleteComment', () => {
         expect(countComments).not.toHaveBeenCalled();
     });
 });
+
+describe('PostService.deletePost', () => {
+    function postService(
+        post: { id: bigint; writer_id: bigint | null; type: string } | null,
+        opts: { deleted?: number } = {},
+    ) {
+        const findPostOwner = jest.fn().mockResolvedValue(post);
+        const deletePost = jest.fn().mockResolvedValue(opts.deleted ?? 1);
+        const service = new PostService(
+            { findPostOwner, deletePost } as never,
+            {} as never,
+        );
+        return { service, findPostOwner, deletePost };
+    }
+
+    const mine = { id: 3n, writer_id: 7n, type: 'COMMUNITY' };
+
+    it('내 글이면 posts 줄 하나만 지우고 지운 글 번호를 돌려준다', async () => {
+        const { service, findPostOwner, deletePost } = postService(mine);
+
+        const res = await service.deletePost('3', '7');
+
+        expect(res).toEqual({ post_id: '3' });
+        expect(findPostOwner).toHaveBeenCalledWith('3');
+        expect(deletePost).toHaveBeenCalledTimes(1);
+        expect(deletePost).toHaveBeenCalledWith('3');
+    });
+
+    it('남의 글이면 403 — 지우지 않는다', async () => {
+        const { service, deletePost } = postService(mine);
+
+        await expect(service.deletePost('3', '8')).rejects.toMatchObject({
+            status: 403,
+        });
+        expect(deletePost).not.toHaveBeenCalled();
+    });
+
+    it('글쓴이 번호가 없는 글(탈퇴)은 아무도 못 지운다 — 403', async () => {
+        const { service, deletePost } = postService({
+            ...mine,
+            writer_id: null,
+        });
+
+        await expect(service.deletePost('3', '7')).rejects.toMatchObject({
+            status: 403,
+        });
+        expect(deletePost).not.toHaveBeenCalled();
+    });
+
+    it('없는 글이면 404', async () => {
+        const { service, deletePost } = postService(null);
+
+        await expect(service.deletePost('3', '7')).rejects.toMatchObject({
+            status: 404,
+        });
+        expect(deletePost).not.toHaveBeenCalled();
+    });
+
+    it('방명록 글은 대상이 아니다 — 내가 썼어도 404, 지우지 않는다', async () => {
+        const { service, deletePost } = postService({
+            ...mine,
+            type: 'GUESTBOOK',
+        });
+
+        await expect(service.deletePost('3', '7')).rejects.toMatchObject({
+            status: 404,
+        });
+        expect(deletePost).not.toHaveBeenCalled();
+    });
+
+    it('번호가 숫자가 아니면 404 — DB를 묻지 않는다 (DELETE /posts/create 등)', async () => {
+        const { service, findPostOwner } = postService(mine);
+
+        await expect(
+            service.deletePost('create', '7'),
+        ).rejects.toMatchObject({ status: 404 });
+        await expect(service.deletePost('3x', '7')).rejects.toMatchObject({
+            status: 404,
+        });
+        expect(findPostOwner).not.toHaveBeenCalled();
+    });
+
+    it('그 사이 이미 지워졌으면 404', async () => {
+        const { service, deletePost } = postService(mine, { deleted: 0 });
+
+        await expect(service.deletePost('3', '7')).rejects.toMatchObject({
+            status: 404,
+        });
+        expect(deletePost).toHaveBeenCalledTimes(1);
+    });
+});

@@ -21,6 +21,7 @@ import {
 } from './dto/post-comment-response.dto';
 import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
 import { DeleteCommentResponseDto } from './dto/delete-comment-response.dto';
+import { DeletePostResponseDto } from './dto/delete-post-response.dto';
 import { VoteOptionResultDto, VoteResponseDto } from './dto/vote-response.dto';
 import { CreatePostRequestDto } from './dto/create-post-request.dto copy';
 import { CreatePostResponseDto } from './dto/create-post-response.dto';
@@ -423,6 +424,47 @@ export class PostService {
         return new DeleteCommentResponseDto({
             comment_id: String(comment.id),
             comment_count: commentCount,
+        });
+    }
+
+    /**
+     * 글 삭제 — 쓴 사람 본인만
+     *
+     * DELETE /posts/{postId}
+     *
+     * 없는 글은 404, 남의 글 · 글쓴이가 없는 글(탈퇴)은 403.
+     * posts 줄만 지운다 — 댓글 · 좋아요 · 투표는 DB의 외래 키(cascade)가 같이 지운다.
+     */
+    async deletePost(
+        postId: string,
+        userId: string,
+    ): Promise<DeletePostResponseDto> {
+        // 번호가 숫자가 아니면 그런 글은 없다 (BigInt 변환 오류로 500이 나지 않게)
+        if (!/^[0-9]+$/.test(postId)) {
+            throw new NotFoundException('게시글을 찾을 수 없습니다.');
+        }
+
+        // 1. 글 확인 — 방명록 글(posts 표를 같이 쓴다)은 이 API의 대상이 아니다
+        const post = await this.postRepository.findPostOwner(postId);
+
+        if (!post || post.type === 'GUESTBOOK') {
+            throw new NotFoundException('게시글을 찾을 수 없습니다.');
+        }
+
+        // 2. 본인 확인 — 글쓴이 번호가 없는 글(탈퇴)은 아무도 못 지운다
+        if (post.writer_id === null || post.writer_id !== BigInt(userId)) {
+            throw new ForbiddenException('본인이 쓴 글만 삭제할 수 있습니다.');
+        }
+
+        // 3. 삭제 — 그 사이 이미 지워졌으면 없는 글
+        const deleted = await this.postRepository.deletePost(postId);
+
+        if (deleted === 0) {
+            throw new NotFoundException('게시글을 찾을 수 없습니다.');
+        }
+
+        return new DeletePostResponseDto({
+            post_id: String(post.id),
         });
     }
 

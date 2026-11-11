@@ -76,7 +76,7 @@ export const getScores = (code: string) => get<CompanyScores>(`${path(code)}/com
 /** GET …/company-info/overview — 배당·기업 개요. 없으면 null들 */
 export const getOverview = (code: string) => get<CompanyOverview>(`${path(code)}/company-info/overview`);
 
-/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 · 댓글 등록 · 삭제 · 글쓰기 · 투표 ─────── */
+/* ── 커뮤니티 — 읽기 + 팔로우 · 좋아요 · 댓글 등록 · 삭제 · 글쓰기 · 글 삭제 · 투표 ─────── */
 
 /** GET /stocks/{code}/posts?cursor=&limit= — 최신순, cursor는 마지막 글 id */
 export const getPosts = (code: string, cursor: string | null, limit = 20) =>
@@ -139,6 +139,12 @@ export interface CreatedPost {
  */
 export const createPost = (body: CreatePostBody) =>
   post<{ code: string; description: string; data: CreatedPost }>('/posts/create', body).then((r) => r.data);
+
+/**
+ * DELETE /posts/{postId} — 내 글 삭제. 그 글의 댓글 · 좋아요 · 투표도 서버(DB)에서 같이 지워진다.
+ * 로그인 필수. 남의 글 · 글쓴이가 없는 글은 403, 없는 글(이미 지워진 글 포함)은 404. 공통 포장({ success, data })으로 온다
+ */
+export const deletePost = (postId: string) => del<{ post_id: string }>(`/posts/${encodeURIComponent(postId)}`);
 
 /**
  * POST /posts/{postId}/vote/options/{optionNo} — 투표 참여. 선택지별 수 · 비율 · 참여자 수 · 내 선택을 돌려준다.

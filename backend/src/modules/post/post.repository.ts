@@ -204,6 +204,37 @@ export class PostRepository {
     }
 
     /**
+     * 글 하나 조회 — 누가 썼는지 · 어떤 글인지(type)만
+     */
+    async findPostOwner(postId: string) {
+        return this.prisma.posts.findUnique({
+            where: {
+                id: BigInt(postId),
+            },
+            select: {
+                id: true,
+                writer_id: true,
+                type: true,
+            },
+        });
+    }
+
+    /**
+     * 글 삭제 — posts 줄 하나만 지운다.
+     * 그 글의 댓글 · 좋아요 · 투표(선택지 · 투표 기록)는 DB의 외래 키(ON DELETE CASCADE)가 같이 지운다.
+     * 그 사이 이미 지워졌으면 0, 지웠으면 1
+     */
+    async deletePost(postId: string): Promise<number> {
+        const result = await this.prisma.posts.deleteMany({
+            where: {
+                id: BigInt(postId),
+            },
+        });
+
+        return result.count;
+    }
+
+    /**
      * 댓글 목록 조회
      *
      * cursor보다 작은 ID를 조회해서 오래된 댓글 방향으로 페이지네이션한다.
