@@ -39,7 +39,10 @@ export function GuestbookPanel({
   onClose,
   onVisit,
   onNeedLogin,
+  onLoaded,
 }: {
+  /** 첫 쪽을 받았다 — 내 거실에서만 준다. 빨간점(M-2)이 본 글 번호를 기억한다 */
+  onLoaded?: (posts: readonly GuestbookPost[]) => void;
   open: boolean;
   ownerId: OwnerId;
   mode: ViewMode;
@@ -79,12 +82,14 @@ export function GuestbookPanel({
         setPosts(page.posts);
         setNext(page.nextCursor);
         setFailed(null);
+        onLoaded?.(page.posts);
       },
       () => alive && setFailed('방명록을 불러오지 못했어요'),
     );
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, ownerId]);
 
   /** 다음 쪽 — 받은 글 뒤에 잇는다(이미 있는 글은 건너뜀: 그 사이 새 글이 와서 밀렸을 때) */

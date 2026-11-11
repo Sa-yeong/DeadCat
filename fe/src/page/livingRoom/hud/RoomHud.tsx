@@ -34,6 +34,7 @@ import { PressRing } from './PressRing';
 import { SidePanel } from './SidePanel';
 import { StatRing, type BadgeKind } from './StatRing';
 import { useEscape } from './useEscape';
+import { useRedDots } from './useRedDots';
 
 /** 페이지가 런타임 콜백을 이어 붙이는 손잡이 */
 export interface RoomHudApi {
@@ -50,6 +51,11 @@ export interface RoomHudApi {
   onItemDrop(charId: string, itemId: number, screen: Pt): void;
   /** 끌고 있는 아이템 밑의 캐릭터가 바뀌었다(없으면 null) */
   onItemOver(charId: string | null): void;
+  /**
+   * 빨간점 **다시 살피기**(M-2) — 가구 · 아이템 · 출석 · 이별 · 방명록을 서버에서 다시 조회해 버튼 점을 맞춘다(조회만, 주인이 아니면 아무것도 안 함).
+   * 가구 · 아이템이 생긴 직후에 부른다 — 뽑기 직후(M-4)는 페이지에서 `hud.current?.recheckDots()`
+   */
+  recheckDots(): void;
 }
 
 /** OWNER 만 여는 것 */
@@ -177,6 +183,18 @@ export function RoomHud({
   const guest = mode === 'GUEST';
   const askLogin = onNeedLogin;
 
+  /** 빨간점(M-2) — 주인만. 거실에 들어올 때 한 번 살피고, 그 뒤로는 recheckDots 를 부를 때만 */
+  const red = useRedDots(owner, () => loop.currentPlacements);
+  /** 다시 살피기 — 아이템 탭이 열려 있으면 그 목록도 새로 받는다(새 아이템이 칸에 바로 보이게) */
+  const recheckDots = () => {
+    red.recheck();
+    if (openPanel === 'items') loadInventory();
+  };
+  // 아이템 목록이 오거나 바뀌면(선물로 줄어듦) 본 수를 맞춘다 — 탭을 열어 본 것이므로 버튼 점은 지워진다
+  useEffect(() => {
+    if (inventory) red.itemsLoaded(inventory);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventory]);
 
   /* ── 모드 · 패널 전환 ── */
 
@@ -215,6 +233,8 @@ export function RoomHud({
     if (openPanel === panel) return setOpenPanel(null);
     if (!isSide(openPanel)) deselect(); // 창이 새로 열릴 때만 링을 닫는다(탭만 바꿀 땐 그대로)
     if (panel === 'items') loadInventory();
+    // 탭을 열면 그 버튼의 빨간점이 사라진다(출석은 출석해야 사라진다). 남의 거실 방명록은 점이 없다
+    if (owner && (panel === 'items' || panel === 'farewell' || panel === 'guestbook')) red.panelOpened(panel);
     setSideTab(panel);
     setOpenSeq((n) => n + 1);
     setOpenPanel(panel);
@@ -239,6 +259,7 @@ export function RoomHud({
   };
 
   const enterPlacement = () => {
+    red.placementOpened(); // 배치 모드를 열면 배치 버튼의 빨간점이 사라진다(보관함 칸의 점은 남는다)
     setOpenPanel(null);
     switchInteraction('PLACEMENT');
   };
@@ -327,6 +348,7 @@ export function RoomHud({
       if (!owner || interaction !== 'NORMAL') return;
       setItemOver(charId);
     },
+    recheckDots,
   }));
 
   // Esc — 창 → 링 순으로 닫는다. 로그인 창은 자기가 받고, 배치 모드는 편집기가 받는다
@@ -357,8 +379,8 @@ export function RoomHud({
         <OwnerProfileHud owner={snapshot.owner} roomReturnRate={snapshot.roomReturnRate} onFollow={guest ? askLogin : onFollow} />
       )}
 
-      {normal && <TopActions mode={mode} openPanel={openPanel} onOpen={open} />}
-      {normal && owner && <ModeDock centerX={centerX} top={layout.dockTop} onPlace={enterPlacement} />}
+      {normal && <TopActions mode={mode} openPanel={openPanel} dots={red.dots} onOpen={open} />}
+      {normal && owner && <ModeDock centerX={centerX} top={layout.dockTop} dot={red.dots.place} onPlace={enterPlacement} />}
       {normal && owner && onCamera && <CameraButton top={layout.dockTop} onClick={enterCamera} />}
 
       {normal && selected && sel && selDef && selAt && (
@@ -411,11 +433,14 @@ export function RoomHud({
           stageHeight={layout.stageHeight}
           pan={pan}
           barTop={barTop}
+          dots={red.furnitureTile}
+          onStorage={red.placementOpened}
           onPreview={(p) => loop.previewPlacements(p)}
           onExit={(saved) => {
             if (saved) onPlacementsSaved(saved);
             else loop.previewPlacements(loop.currentPlacements); // 취소 — 걷는 칸도 원래 배치로
             switchInteraction('NORMAL');
+            red.recheck(); // 배치 모드에서 나올 때 다시 살핀다(M-2)
           }}
         />
       )}
@@ -432,12 +457,22 @@ export function RoomHud({
             onClose={closePanel}
             onVisit={onVisit}
             onNeedLogin={askLogin}
+            onLoaded={owner ? red.guestbookLoaded : undefined}
           />
         )}
         {/* 주인 탭은 열 때마다 새로 받는다 — 닫히며 미끄러져 나가는 동안엔 그대로 둔다 */}
-        {owner && sideTab === 'attendance' && <AttendancePanel key={openSeq} onClose={closePanel} onClaimed={() => setInventory(null)} />}
-        {owner && sideTab === 'farewell' && <FarewellPanel key={openSeq} onClose={closePanel} />}
-        {owner && sideTab === 'items' && <ItemPanel inventory={inventory} dragging={dragging} onDrag={setDragging} onClose={closePanel} />}
+        {owner && sideTab === 'attendance' && (
+          <AttendancePanel
+            key={openSeq}
+            onClose={closePanel}
+            onClaimed={() => {
+              setInventory(null);
+              red.attendanceClaimed(); // 출석 점을 지우고 다시 살핀다 — 받은 보상이 아이템(M-3: 슬롯머신이면 배치) 버튼의 점으로 뜬다
+            }}
+          />
+        )}
+        {owner && sideTab === 'farewell' && <FarewellPanel key={openSeq} onClose={closePanel} onLoaded={red.farewellsLoaded} />}
+        {owner && sideTab === 'items' && <ItemPanel inventory={inventory} dragging={dragging} dots={red.itemTile} onDrag={setDragging} onClose={closePanel} />}
         {owner && sideTab === 'characters' && <CharacterPanel key={openSeq} catalog={catalog} holdings={holdings} onRoom={applyRoster} onClose={closePanel} onNeedLogin={askLogin} />}
       </SidePanel>
       {openPanel === 'wardrobe' && wardrobeFor && (

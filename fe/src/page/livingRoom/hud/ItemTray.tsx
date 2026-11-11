@@ -1,6 +1,8 @@
 import { R } from '../../stockDetail/radius';
 import type { InventoryItem } from '../types';
+import { RedDot } from './chrome';
 import { ITEM_MIME } from './dnd';
+import type { TileDots } from './useRedDots';
 import { gradeLabel, levelLabel } from './labels';
 import { PanelBody, PanelHeader } from './SidePanel';
 import { C } from './style';
@@ -15,10 +17,13 @@ import { ItemIcon, Picture } from './ui';
 export function ItemPanel({
   inventory,
   dragging,
+  dots,
   onDrag,
   onClose,
 }: {
   inventory: InventoryItem[] | null;
+  /** 칸의 빨간점(M-2) — 새로 얻은 아이템. 올리기 · 끌기만 해도 지워진다 */
+  dots: TileDots;
   /** 끌고 있는 아이템 — 그 줄만 표시 */
   dragging: number | null;
   onDrag: (itemId: number | null) => void;
@@ -44,9 +49,12 @@ export function ItemPanel({
                   aria-disabled={empty}
                   aria-label={`${it.name} ${it.quantity}개, ${what} — 캐릭터에게 끌어다 놓기`}
                   title={`${it.name} · ${what}`}
+                  onPointerEnter={() => dots.see(it.itemId, it.quantity)}
+                  onClick={() => dots.see(it.itemId, it.quantity)}
                   onDragStart={(e) => {
                     e.dataTransfer.setData(ITEM_MIME, String(it.itemId));
                     e.dataTransfer.effectAllowed = 'copy';
+                    dots.see(it.itemId, it.quantity);
                     onDrag(it.itemId);
                   }}
                   onDragEnd={() => onDrag(null)}
@@ -61,6 +69,7 @@ export function ItemPanel({
                   <span style={{ position: 'absolute', left: 6, bottom: 4, fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: C.text }}>
                     ×{it.quantity}
                   </span>
+                  {dots.isNew(it.itemId, it.quantity) && <RedDot right={5} top={5} />}
                 </div>
               </div>
             );

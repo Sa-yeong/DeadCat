@@ -19,7 +19,9 @@ import {
   storePlacement,
   type PlacementDoc,
 } from './placementDoc';
+import { furnitureCounts, type Counts } from './seen';
 import { C, accentBtn, ghostBtn } from './style';
+import type { TileDots } from './useRedDots';
 import { furnitureImgUrl } from '../catalog';
 import { ConfirmDialog, Icon, Picture } from './ui';
 import { useEscape } from './useEscape';
@@ -40,9 +42,15 @@ export function PlacementEditor({
   stageHeight,
   pan,
   barTop,
+  dots,
+  onStorage,
   onPreview,
   onExit,
 }: {
+  /** 보관함 칸의 빨간점(M-2) — 새로 생긴 가구. 올리기 · 누르기 · 끌기만 해도 지워진다 */
+  dots: TileDots;
+  /** 보관함을 받았다 — 가구 종류별 가진 수(보관함 + 방). 배치 버튼의 점을 이 수로 지운다 */
+  onStorage: (totals: Counts) => void;
   renderer: RoomRenderer;
   catalog: FurnitureCatalog;
   initial: readonly PlacementDto[];
@@ -84,7 +92,11 @@ export function PlacementEditor({
   useEffect(() => {
     let alive = true;
     void api.getStorage().then(
-      (storage) => alive && history.reset({ placements: initial.map((p) => ({ ...p })), storage }),
+      (storage) => {
+        if (!alive) return;
+        history.reset({ placements: initial.map((p) => ({ ...p })), storage });
+        onStorage(furnitureCounts(storage, initial));
+      },
       () => alive && setFailed('load'), // 보관함을 모르면 저장할 수 없다 — 문서를 만들지 않아 저장이 잠긴 채로 둔다
     );
     return () => {
@@ -293,6 +305,8 @@ export function PlacementEditor({
   const iconBtn: React.CSSProperties = { ...ghostBtn, width: 32, height: 32, padding: 0, justifyContent: 'center' };
   const centerX = width / 2;
   const stock = doc?.storage ?? [];
+  // 가구 종류별 가진 수(보관함 + 방) — 편집 중 꺼내고 넣어도 변하지 않는다. 칸의 점은 이 수로 판단한다
+  const totals = doc ? furnitureCounts(doc.storage, doc.placements) : {};
 
   return (
     <>
@@ -358,6 +372,8 @@ export function PlacementEditor({
           const d = def(s.furnitureId);
           if (!d) return null;
           const on = holding === s.furnitureId;
+          const total = totals[s.furnitureId] ?? s.quantity;
+          const seeTile = () => dots.see(s.furnitureId, total);
           return (
             <TrayTile
               key={s.furnitureId}
@@ -365,6 +381,8 @@ export function PlacementEditor({
               name={d.name}
               count={s.quantity}
               gap={4}
+              dot={dots.isNew(s.furnitureId, total)}
+              onPointerEnter={seeTile}
               icon={
                 // 그림 파일(public/furnitures/{id}.png)이 없으면 색 상자로
                 <Picture
@@ -382,6 +400,7 @@ export function PlacementEditor({
               draggable={!saving}
               aria-label={`${d.name} ${s.quantity}개`}
               onClick={() => {
+                seeTile();
                 if (saving) return;
                 select(null);
                 if (on) stopHolding();
@@ -391,6 +410,7 @@ export function PlacementEditor({
                 e.dataTransfer.setData(FURN_MIME, String(s.furnitureId));
                 e.dataTransfer.effectAllowed = 'copy';
                 trayDrag.current = s.furnitureId;
+                seeTile();
               }}
               onDragEnd={() => {
                 trayDrag.current = null;

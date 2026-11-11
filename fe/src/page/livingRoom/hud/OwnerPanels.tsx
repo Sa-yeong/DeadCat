@@ -106,18 +106,23 @@ export function AttendancePanel({ onClose, onClaimed }: { onClose: () => void; o
  * 전량 매도로 떠난 캐릭터의 카드 — 한 줄에 하나. GET /rooms/me/farewells (3-⑦-d).
  * 같은 종목을 여러 번 사고 다 팔았으면 회차마다 한 장. 편지 · 이별 선물은 없다(도휘 결정). 기념 뱃지는 빠졌다(이별 기념물 형태 미정)
  */
-export function FarewellPanel({ onClose }: { onClose: () => void }) {
+export function FarewellPanel({ onClose, onLoaded }: { onClose: () => void; /** 카드를 받았다 — 빨간점(M-2)이 본 카드 수를 기억한다 */ onLoaded: (count: number) => void }) {
   const [cards, setCards] = useState<FarewellCard[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
     void api.getFarewells().then(
-      (c) => alive && setCards(c),
+      (c) => {
+        if (!alive) return;
+        setCards(c);
+        onLoaded(c.length);
+      },
       () => alive && setNote('이별 흔적을 불러오지 못했어요'),
     );
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const smallBtn: React.CSSProperties = {
