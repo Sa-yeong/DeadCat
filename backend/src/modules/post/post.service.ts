@@ -147,6 +147,24 @@ export class PostService {
                 ? String(resultPosts[resultPosts.length - 1].id)
                 : null;
 
+        // 9. 내가 팔로우 중인 글쓴이 — 글마다 묻지 않고 목록의 글쓴이들을 한 번에 조회 (비로그인이면 묻지 않는다)
+        const writerIds = [
+            ...new Set(
+                resultPosts
+                    .map((post) => post.users_posts_writer_idTousers?.id)
+                    .filter((id): id is bigint => id != null),
+            ),
+        ];
+
+        const followedWriterIds = new Set<bigint>(
+            currentUserId !== undefined && writerIds.length > 0
+                ? await this.postRepository.findFollowedWriterIds(
+                      currentUserId,
+                      writerIds,
+                  )
+                : [],
+        );
+
         // DTO 변환
         const mappedPosts = resultPosts.map((post) => {
             const writer = post.users_posts_writer_idTousers;
@@ -225,6 +243,10 @@ export class PostService {
                     user_id: writer ? String(writer.id) : null,
                     nickname: writer?.nickname ?? '알 수 없는 사용자',
                     profile_img_url: writer?.profile_img_url ?? null,
+                    // 내가 이 글쓴이를 팔로우 중인지 — 비로그인 · 글쓴이 없음이면 false
+                    is_following: writer
+                        ? followedWriterIds.has(writer.id)
+                        : false,
                 }),
 
                 like_count: post.like_posts.length,

@@ -5,6 +5,8 @@ export class StockPostWriterDto {
     user_id: string | null | undefined;
     nickname: string | undefined;
     profile_img_url: string | null | undefined;
+    /** 로그인한 사용자가 이 글쓴이를 팔로우 중인지. 비로그인이면 false */
+    is_following: boolean | undefined;
 
     constructor(partial: Partial<StockPostWriterDto>) {
         Object.assign(this, partial);

@@ -1,21 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getComments, getPosts } from '../api';
+import { useAuthToken } from '../../../common/authToken';
+import { myUserId } from '../../livingRoom/api';
+import { errorMessage, getComments, getPosts, isUnauthorized, toggleFollow } from '../api';
+import { isMine, mergeFollowing, withFollow } from '../communityFollow';
 import { ago } from '../format';
 import { livingRoomPath } from '../links';
+import { useLoginGate } from '../loginGate';
 import type { Post, PostComment } from '../types';
 import { R } from '../radius';
 
 /** 팔로우 버튼 색 — 가격 하락 파랑(#5B8CFF)과 겹치지 않게 조금 더 짙은 파랑 */
 const FOLLOW_BLUE = '#3D6DF2';
 
-/**
- * 실 API 교체 지점 — 팔로우 / 언팔로우.
- * {백엔드에 아직 없음} relation 모듈에는 목록 조회(GET /users/me/relations)만 있다.
- */
-async function setFollow(_userId: string, _follow: boolean): Promise<void> {
-  await new Promise((r) => setTimeout(r, 120));
-}
+/** 실패 안내가 떠 있는 시간(ms) */
+const NOTICE_MS = 4000;
 
 /** 댓글을 한 번에 몇 개씩 펼치는가 */
 const COMMENT_PAGE = 5;
@@ -44,30 +43,63 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
   const [next, setNext] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState(false);
-  // 같은 사람이 쓴 글이 여럿이어도 팔로우 상태는 하나 — 목록이 든다
+  // 로그인 · 로그아웃으로 토큰이 바뀌면 목록을 다시 받는다 — 팔로우 · 좋아요 · 내 투표 표시가 그 사람 것으로 맞게
+  const token = useAuthToken();
+  // 내 번호(토큰의 sub) — 내 글에는 팔로우 버튼을 숨긴다. 비로그인이면 null
+  const me = token ? myUserId() : null;
+  const { requireLogin, openLogin } = useLoginGate();
+
+  // 실패 안내 한 줄 — 잠깐 떴다 사라진다
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  // 같은 사람이 쓴 글이 여럿이어도 팔로우 상태는 하나 — 목록이 든다. 값은 서버가 준 것(writer.is_following)에서 시작
   const [following, setFollowing] = useState<Set<string>>(() => new Set());
-  const toggleFollow = useCallback(
-    (userId: string) => {
-      const on = !following.has(userId);
-      setFollowing((prev) => {
-        const next = new Set(prev);
-        if (on) next.add(userId);
-        else next.delete(userId);
-        return next;
-      });
-      void setFollow(userId, on);
+  /** 지금 목록의 팔로우 상태 · 응답 대기 중인 사람. 목록을 처음부터 다시 받으면 통째로 새것 — 옛 응답은 옛것에만 닿는다 */
+  const follow = useRef({ set: new Set<string>(), pending: new Set<string>() });
+  const onFollow = useCallback(
+    async (userId: string) => {
+      if (!requireLogin()) return; // 비로그인 — 로그인 창만 띄우고 서버로는 안 보낸다
+      const state = follow.current;
+      if (state.pending.has(userId)) return; // 응답 오기 전 연타 — 한 번만 나간다
+      const apply = (on: boolean) => {
+        state.set = withFollow(state.set, userId, on);
+        if (follow.current === state) setFollowing(state.set);
+      };
+      const before = state.set.has(userId);
+      state.pending.add(userId);
+      apply(!before); // 먼저 바꿔 보이고
+      try {
+        apply(await toggleFollow(userId)); // 서버가 준 값이 최종
+      } catch (e) {
+        apply(before); // 실패 — 누르기 전으로
+        if (follow.current !== state) return;
+        if (isUnauthorized(e)) openLogin();
+        else setNotice(errorMessage(e, before ? '언팔로우하지 못했어요.' : '팔로우하지 못했어요.'));
+      } finally {
+        state.pending.delete(userId);
+      }
     },
-    [following],
+    [requireLogin, openLogin],
   );
 
   useEffect(() => {
     let alive = true;
+    const state = { set: new Set<string>(), pending: new Set<string>() };
+    follow.current = state;
     setPosts(null);
     setNext(null);
     setError(false);
+    setFollowing(state.set);
     void loadPosts(stockCode, null) // 커서는 종목이 바뀔 때마다 null에서 다시 시작
       .then((r) => {
         if (!alive) return;
+        state.set = mergeFollowing(state.set, r.posts, state.pending);
+        setFollowing(state.set);
         setPosts(r.posts);
         setNext(r.next);
       })
@@ -75,16 +107,19 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
     return () => {
       alive = false;
     };
-  }, [stockCode, reloadKey]);
+  }, [stockCode, reloadKey, token]);
 
   /** 아래 끝의 '글 더보기' — 받은 글 뒤에 잇는다. 같은 글이 겹쳐 오면 한 번만 */
   const loadMorePosts = async () => {
     if (!next || more) return;
     setMore(true);
     const code = stockCode;
+    const state = follow.current;
     try {
       const r = await loadPosts(code, next);
-      if (code !== stockCode) return;
+      if (code !== stockCode || follow.current !== state) return; // 그 사이 목록을 처음부터 다시 받았다
+      state.set = mergeFollowing(state.set, r.posts, state.pending);
+      setFollowing(state.set);
       setPosts((prev) => {
         const seen = new Set((prev ?? []).map((p) => p.post_id));
         return [...(prev ?? []), ...r.posts.filter((p) => !seen.has(p.post_id))];
@@ -103,12 +138,31 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
 
   return (
     <div className="dc-scroll flex h-full flex-col overflow-y-auto" style={{ gap: 12, padding: '16px 18px' }}>
+      {notice && (
+        <div
+          role="status"
+          style={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+            flexShrink: 0,
+            padding: '8px 12px',
+            borderRadius: R.control,
+            background: '#3A2A2A',
+            color: '#FF8A80',
+            fontSize: 12.5,
+          }}
+        >
+          {notice}
+        </div>
+      )}
       {posts.map((p) => (
         <PostCard
           key={p.post_id}
           post={p}
+          mine={isMine(p.writer.user_id, me)}
           following={p.writer.user_id != null && following.has(p.writer.user_id)}
-          onFollow={toggleFollow}
+          onFollow={(userId) => void onFollow(userId)}
         />
       ))}
       {next && (
@@ -136,10 +190,13 @@ export function CommunityPane({ stockCode, reloadKey }: { stockCode: string; rel
 
 function PostCard({
   post,
+  mine,
   following,
   onFollow,
 }: {
   post: Post;
+  /** 내가 쓴 글 — 팔로우 버튼을 숨긴다 */
+  mine: boolean;
   following: boolean;
   onFollow: (userId: string) => void;
 }) {
@@ -187,7 +244,7 @@ function PostCard({
             · {ago(post.write_time)}
           </span>
         </div>
-        {post.writer.user_id != null && (
+        {!mine && post.writer.user_id != null && (
           <button
             type="button"
             onClick={() => onFollow(post.writer.user_id!)}
@@ -197,7 +254,7 @@ function PostCard({
               padding: '0 10px',
               border: 'none',
               borderRadius: R.control,
-              // {제안} 팔로우 중일 때는 회색 — 누르면 해제
+              // 팔로우 중일 때는 회색 「팔로잉」 — 누르면 그 자리에서 언팔로우
               background: following ? '#3A3A42' : FOLLOW_BLUE,
               color: '#FFFFFF',
               fontSize: 11.5,

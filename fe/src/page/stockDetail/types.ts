@@ -125,13 +125,18 @@ export interface Writer {
   profile_img_url: string | null;
 }
 
+/** 글 작성자 — 글 목록에서는 내가 이 사람을 팔로우 중인지가 같이 온다(비로그인이면 false, 옛 서버면 없음) */
+export interface PostWriter extends Writer {
+  is_following?: boolean;
+}
+
 export interface Post {
   post_id: string;
   /** 본문. 투표 글이면 이게 곧 투표 질문이다 — 제목 칸은 없앴다(2026-09-29) */
   content: string;
   write_time: string;
   type?: string;
-  writer: Writer;
+  writer: PostWriter;
   like_count: number;
   comment_count: number;
   is_liked: boolean;

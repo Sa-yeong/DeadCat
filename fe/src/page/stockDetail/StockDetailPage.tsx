@@ -9,6 +9,7 @@ import { CharacterStage, type StageStatus } from './components/CharacterStage';
 import type { StockStageLoop } from './runtime/StockStageLoop';
 import { TOOLBAR_H, WindowHud, type WindowTab } from './components/WindowHud';
 import { PostComposer } from './components/PostComposer';
+import { LoginGateProvider } from './components/LoginGateProvider';
 import { StockHeader } from './components/StockHeader';
 import { OrderBookBlock } from './components/OrderBookBlock';
 import { OrderBlock } from './components/OrderBlock';
@@ -246,6 +247,7 @@ export function StockDetailPage() {
   return (
     <LayoutContext.Provider value={L}>
     <SlidingContext.Provider value={sliding}>
+    <LoginGateProvider>
     <div
       ref={rootRef}
       className="dc-screen relative overflow-hidden"
@@ -335,6 +337,7 @@ export function StockDetailPage() {
         {emotionTestOn() && <EmotionTestPanel getLoop={getStageLoop} onActive={setEmotionTesting} />}
       </main>
     </div>
+    </LoginGateProvider>
     </SlidingContext.Provider>
     </LayoutContext.Provider>
   );

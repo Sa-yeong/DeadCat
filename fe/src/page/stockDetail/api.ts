@@ -83,6 +83,13 @@ export const getPosts = (code: string, cursor: string | null, limit = 20) =>
     ...(cursor ? { cursor } : {}),
   });
 
+/**
+ * POST /users/{userId}/follow — 토글 하나(팔로우 ↔ 언팔로우). 바뀐 뒤 팔로우 중인지를 돌려준다.
+ * 로그인 필수, 자기 자신은 서버가 400. 이 API 는 공통 포장 대신 { code, description, data } 를 준다 — data 자리는 같다(거실 api.ts 와 같은 호출)
+ */
+export const toggleFollow = (userId: string) =>
+  post<{ is_following: boolean }>(`/users/${encodeURIComponent(userId)}/follow`, null).then((r) => r.is_following);
+
 /** GET /posts/{postId}/comments?cursor=&limit= */
 export const getComments = (postId: string, cursor: string | null, limit: number) =>
   get<{ comments: PostComment[]; next_cursor: string | null; has_more: boolean }>(

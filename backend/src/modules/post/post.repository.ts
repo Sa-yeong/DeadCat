@@ -169,6 +169,27 @@ export class PostRepository {
     }
 
     /**
+     * 내가(followerId) 팔로우 중인 사람만 골라낸다 — 글 목록의 글쓴이들을 한 번에 묻는다.
+     * 돌려주는 것은 팔로우 중인 글쓴이 번호 목록
+     */
+    async findFollowedWriterIds(
+        followerId: bigint,
+        writerIds: bigint[],
+    ): Promise<bigint[]> {
+        if (writerIds.length === 0) return [];
+
+        const rows = await this.prisma.follow.findMany({
+            where: {
+                follower_id: followerId,
+                followee_id: { in: writerIds },
+            },
+            select: { followee_id: true },
+        });
+
+        return rows.map((row) => row.followee_id);
+    }
+
+    /**
      * 게시글 존재 여부 확인
      */
     async findPostById(postId: string) {
