@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { pct, toneSoft, ymd } from '../../stockDetail/format';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
-import { colorOf } from '../catalog';
-import type { AttendanceState, FarewellCard } from '../types';
+import { colorOf, furnitureImgUrl } from '../catalog';
+import type { AttendanceClaim, AttendanceState, FarewellCard } from '../types';
+import { attendanceHint } from './attendanceText';
 import { gradeLabel } from './labels';
 import { PanelBody, PanelHeader } from './SidePanel';
-import { ItemIcon } from './ui';
+import { ItemIcon, Picture } from './ui';
 import { C, accentBtn, solidBtn } from './style';
 
 /**
@@ -19,14 +20,15 @@ import { C, accentBtn, solidBtn } from './style';
 /**
  * 7일 보드를 세로 목록으로 — GET · POST /rooms/me/attendance (3-⑦-b).
  * 누적 방식(빠진 날이 있어도 다음 칸, 7번마다 처음 칸) · 하루 기준은 한국 시간 자정 — 둘 다 서버가 정해 칸 번호로 준다.
- * 칸 보상은 등급 · 수량만 정해져 있고, 받을 때 그 등급 아이템 중 하나가 무작위로 온다
+ * 칸 보상은 등급 · 수량만 정해져 있고, 받을 때 그 등급 아이템 중 하나가 무작위로 온다.
+ * 슬롯머신이 한 대도 없는 계정은 그날 칸의 아이템 대신 슬롯머신을 받는다(보관함으로, 마무리 M-3) — 글은 attendanceText.ts
  */
 export function AttendancePanel({ onClose, onClaimed }: { onClose: () => void; onClaimed: () => void }) {
   const [st, setSt] = useState<AttendanceState | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  /** 방금 받은 보상 안내 */
-  const [got, setGot] = useState<string | null>(null);
+  /** 방금 받은 보상 */
+  const [got, setGot] = useState<AttendanceClaim | null>(null);
   useEffect(() => {
     let alive = true;
     void api.getAttendance().then((s) => alive && setSt(s), () => alive && setFailed('출석 정보를 불러오지 못했어요'));
@@ -45,9 +47,10 @@ export function AttendancePanel({ onClose, onClaimed }: { onClose: () => void; o
       return;
     }
     setFailed(null);
-    setSt((s) => s && { ...s, claimedToday: true, attendanceCount: r.attendanceCount, todayIndex: r.todayIndex });
-    // 그 등급 아이템이 DB 에 아직 없으면 출석만 기록된다(아이템 데이터 보류)
-    setGot(r.rewardItem ? `${r.rewardItem.name} ×${r.rewardItem.quantity}를 보유 아이템에 넣었어요` : '출석했어요 — 이 칸의 보상 아이템은 아직 준비 중이에요');
+    // 받은 것이 가구(첫 슬롯머신)면 오늘 칸을 그 가구로 둔다 — 서버가 미리 알려 준 것과 달라도 실제로 받은 것이 맞다
+    setSt((s) => s && { ...s, claimedToday: true, attendanceCount: r.attendanceCount, todayIndex: r.todayIndex, todayFurniture: r.rewardFurniture });
+    setGot(r);
+    // 출석 점을 끄고 다시 살핀다(M-2) — 슬롯머신이면 배치 버튼에, 아이템이면 아이템 버튼에 점이 뜬다
     onClaimed();
   };
 
@@ -60,6 +63,8 @@ export function AttendancePanel({ onClose, onClaimed }: { onClose: () => void; o
           const done = i < st!.todayIndex || (i === st!.todayIndex && st!.claimedToday);
           const isToday = i === st!.todayIndex && !st!.claimedToday;
           const later = i > st!.todayIndex;
+          // 슬롯머신이 한 대도 없으면 오늘 칸은 아이템 대신 슬롯머신(마무리 M-3) — 받은 직후에도 그대로 보인다
+          const furniture = i === st!.todayIndex ? st!.todayFurniture : null;
           return (
             <div
               key={i}
@@ -69,8 +74,9 @@ export function AttendancePanel({ onClose, onClaimed }: { onClose: () => void; o
               }}
             >
               <span style={{ width: 38, fontSize: 12, fontWeight: 700, color: isToday ? C.accent : C.dim }}>{i + 1}일차</span>
-              <ItemIcon icon="gift" size={24} />
-              <span style={{ flexGrow: 1, fontSize: 13, color: C.text }}>{gradeLabel(r.grade)} 아이템 ×{r.quantity}</span>
+              {/* 가구 그림 파일(public/furnitures/{id}.png)이 없으면 선물 상자로 */}
+              {furniture ? <Picture src={furnitureImgUrl(furniture.furnitureId)} size={24} fallback={<ItemIcon icon="gift" size={24} />} /> : <ItemIcon icon="gift" size={24} />}
+              <span style={{ flexGrow: 1, fontSize: 13, color: C.text }}>{furniture ? `${furniture.name} ×1` : `${gradeLabel(r.grade)} 아이템 ×${r.quantity}`}</span>
               {done ? (
                 <svg width="22" height="22" viewBox="0 0 30 30" role="img" aria-label="받음">
                   <circle cx="15" cy="15" r="12.5" fill="none" stroke={C.accent} strokeWidth="2" />
@@ -93,7 +99,7 @@ export function AttendancePanel({ onClose, onClaimed }: { onClose: () => void; o
           {st?.claimedToday ? '출석 완료' : '오늘 보상 받기'}
         </button>
         <p style={{ fontSize: 12, lineHeight: 1.5, color: failed ? C.accent : C.faint, textAlign: 'center' }}>
-          {failed ?? `${got ? `${got} · ` : ''}받은 아이템은 아이템 탭에서 캐릭터에게 끌어다 줄 수 있어요`}
+          {failed ?? attendanceHint(st, got)}
         </p>
       </div>
     </>

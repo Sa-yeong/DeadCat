@@ -409,19 +409,24 @@ export async function giveItem(stockId: number, itemId: number): Promise<GiftRes
 
 /* ── 출석 · 이별 흔적 (OWNER, 3-⑦-b · 3-⑦-d) ────────────────────────────── */
 
-/** GET /rooms/me/attendance — 하루 기준은 한국 시간 자정(서버) */
+/** 서버의 보상 가구(snake_case) → 화면 이름. 옛 서버는 이 칸이 없다 → null */
+type RewardFurnitureRes = { furniture_id: number; furniture_name: string } | null | undefined;
+const toAttendanceFurniture = (f: RewardFurnitureRes) => (f ? { furnitureId: f.furniture_id, name: f.furniture_name } : null);
+
+/** GET /rooms/me/attendance — 하루 기준은 한국 시간 자정(서버). 슬롯머신이 한 대도 없으면 오늘 칸은 슬롯머신(today_reward_furniture) */
 export async function getAttendance(): Promise<AttendanceState> {
-  const r = await getAuthed<{ attendance_count: number; claimed_today: boolean; today_index: number; rewards: { grade: string; quantity: number }[] }>('/rooms/me/attendance');
-  return { attendanceCount: r.attendance_count, claimedToday: r.claimed_today, todayIndex: r.today_index, rewards: r.rewards };
+  const r = await getAuthed<{ attendance_count: number; claimed_today: boolean; today_index: number; rewards: { grade: string; quantity: number }[]; today_reward_furniture?: RewardFurnitureRes }>('/rooms/me/attendance');
+  return { attendanceCount: r.attendance_count, claimedToday: r.claimed_today, todayIndex: r.today_index, rewards: r.rewards, todayFurniture: toAttendanceFurniture(r.today_reward_furniture) };
 }
 
-/** POST /rooms/me/attendance — 오늘 이미 받았으면 서버가 거절 */
+/** POST /rooms/me/attendance — 오늘 이미 받았으면 서버가 거절. 아이템 대신 가구를 받았으면 reward_furniture(이때 reward_item 은 null) */
 export async function claimAttendance(): Promise<AttendanceClaim> {
-  const r = await authed<{ attendance_count: number; today_index: number; reward_item: { item_id: number; item_name: string; quantity: number } | null }>('post', '/rooms/me/attendance');
+  const r = await authed<{ attendance_count: number; today_index: number; reward_item: { item_id: number; item_name: string; quantity: number } | null; reward_furniture?: RewardFurnitureRes }>('post', '/rooms/me/attendance');
   return {
     attendanceCount: r.attendance_count,
     todayIndex: r.today_index,
     rewardItem: r.reward_item && { itemId: r.reward_item.item_id, name: r.reward_item.item_name, quantity: r.reward_item.quantity },
+    rewardFurniture: toAttendanceFurniture(r.reward_furniture),
   };
 }
 

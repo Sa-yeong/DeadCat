@@ -261,13 +261,25 @@ export interface AttendanceState {
   claimedToday: boolean;
   /** 칸마다 등급 · 수량 — 받을 때 그 등급 아이템 중 하나가 무작위로 온다 */
   rewards: { grade: string; quantity: number }[];
+  /** 오늘 칸에서 아이템 대신 받을 가구 — 슬롯머신이 한 대도 없을 때(마무리 M-3). 평소 · 오늘 이미 받았으면 null */
+  todayFurniture: AttendanceFurniture | null;
 }
 
-/** 출석 받기 결과 — 그 등급 아이템이 DB 에 없으면 출석만 기록되고 rewardItem 은 null */
+/** 출석 보상으로 받는 가구(지금은 첫 슬롯머신뿐) — 보관함에 들어간다 */
+export interface AttendanceFurniture {
+  furnitureId: number;
+  name: string;
+}
+
+/**
+ * 출석 받기 결과 — 그 등급 아이템이 DB 에 없으면 출석만 기록되고 rewardItem 은 null.
+ * 슬롯머신이 없던 계정은 아이템 대신 가구(rewardFurniture)를 받고 이때 rewardItem 은 null
+ */
 export interface AttendanceClaim {
   attendanceCount: number;
   todayIndex: number;
   rewardItem: { itemId: number; name: string; quantity: number } | null;
+  rewardFurniture: AttendanceFurniture | null;
 }
 
 /**

@@ -1,7 +1,7 @@
 import type { Prisma } from 'generated/prisma/client';
 
 // 프리셋 자동 채움(M-1) — 체결(주문 쪽 applyTrade)과 같은 트랜잭션에서 불린다.
-// 주문 모듈이 캐릭터 모듈을 물지 않게 `tx`만 받는 함수로 둔다(room-starter-furniture.ts 와 같은 꼴).
+// 주문 모듈이 캐릭터 모듈을 물지 않게 `tx`만 받는 함수로 둔다(attendance/attendance-claim.ts 와 같은 꼴).
 
 /** 사용자당 프리셋 개수 한도 — 사용자가 만드는 것(POST) · 자동으로 만드는 것 둘 다 */
 export const MAX_PRESETS = 5;

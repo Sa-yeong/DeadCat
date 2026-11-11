@@ -275,6 +275,34 @@ describe('팔로우 (POST /users/:userId/follow)', () => {
   });
 });
 
+describe('출석 (GET · POST /rooms/me/attendance) — 첫 슬롯머신 (M-3)', () => {
+  const rewards = [{ grade: 'NORMAL', quantity: 1 }];
+  it('보드 — 슬롯머신이 없으면 오늘 칸의 가구(today_reward_furniture)를 화면 이름으로', async () => {
+    serve(() => ({ data: { attendance_count: 0, claimed_today: false, today_index: 0, rewards, today_reward_furniture: { furniture_id: 29, furniture_name: '슬롯머신' } } }));
+    expect(await api.getAttendance()).toEqual({ attendanceCount: 0, claimedToday: false, todayIndex: 0, rewards, todayFurniture: { furnitureId: 29, name: '슬롯머신' } });
+  });
+  it('보드 — 평소(null) · 옛 서버(칸 없음)는 todayFurniture null', async () => {
+    serve(() => ({ data: { attendance_count: 3, claimed_today: true, today_index: 2, rewards, today_reward_furniture: null } }));
+    expect((await api.getAttendance()).todayFurniture).toBeNull();
+    vi.restoreAllMocks();
+    serve(() => ({ data: { attendance_count: 3, claimed_today: true, today_index: 2, rewards } }));
+    expect((await api.getAttendance()).todayFurniture).toBeNull();
+  });
+  it('받기 — 가구를 받으면 rewardFurniture, 아이템은 null', async () => {
+    const calls = serve(() => ({ data: { attendance_count: 1, today_index: 0, reward_item: null, reward_furniture: { furniture_id: 29, furniture_name: '슬롯머신' } } }));
+    expect(await api.claimAttendance()).toEqual({ attendanceCount: 1, todayIndex: 0, rewardItem: null, rewardFurniture: { furnitureId: 29, name: '슬롯머신' } });
+    expect(calls[0]).toMatchObject({ method: 'post', url: '/rooms/me/attendance' });
+  });
+  it('받기 — 평소에는 아이템, rewardFurniture null', async () => {
+    serve(() => ({ data: { attendance_count: 2, today_index: 1, reward_item: { item_id: 3, item_name: '쿠키', quantity: 1 }, reward_furniture: null } }));
+    expect(await api.claimAttendance()).toEqual({ attendanceCount: 2, todayIndex: 1, rewardItem: { itemId: 3, name: '쿠키', quantity: 1 }, rewardFurniture: null });
+  });
+  it('받기 — 오늘 이미 받았으면(400) 서버 안내 글을 담은 에러', async () => {
+    serve(() => ({ status: 400, message: '오늘은 이미 출석체크를 완료했습니다.' }));
+    await expect(api.claimAttendance()).rejects.toThrow('오늘은 이미 출석체크를 완료했습니다.');
+  });
+});
+
 describe('내 번호 (토큰 sub)', () => {
   it('JWT 가운데 조각의 sub — 없거나 깨졌으면 null', () => {
     expect(api.myUserId()).toBe('7');

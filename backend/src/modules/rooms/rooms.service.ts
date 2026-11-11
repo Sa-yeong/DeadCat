@@ -19,7 +19,6 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
 import { applyRoomLayout } from './room-layout';
-import { grantStarterFurniture } from './room-starter-furniture';
 import { HoldingService } from '../holding/holding.service';
 import { HoldingItemDto } from '../holding/dto/holding-list.response.dto';
 import { toAffinityInfo } from 'src/common/affinity/affinity-level';
@@ -52,7 +51,7 @@ export class RoomsService {
             throw new NotFoundException('존재하지 않는 사용자입니다.');
         }
 
-        await this.ensureStarterFurniture(userId);
+        // 기본 가구 자동 지급은 없앴다(마무리 M-3) — 신규 유저는 빈 거실로 시작하고, 첫 가구는 출석의 슬롯머신
 
         const placedHoldings = await this.prisma.holdings.findMany({
             where: { user_id: userId, is_placed: true },
@@ -102,17 +101,6 @@ export class RoomsService {
                 this.formatFurniture(f),
             ),
         };
-    }
-
-    // 거실을 처음 열 때 기본 가구 지급 — 이미 받았으면 잠금 없이 바로 돌아간다
-    private async ensureStarterFurniture(userId: bigint): Promise<void> {
-        const owned = await this.prisma.user_furniture.count({
-            where: { user_id: userId },
-        });
-        if (owned > 0) return;
-        await this.prisma.$transaction((tx) =>
-            grantStarterFurniture(tx, userId),
-        );
     }
 
     // 거실이 받은 반응 — 종류별 개수
