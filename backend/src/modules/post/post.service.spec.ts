@@ -372,3 +372,34 @@ describe('PostService.deletePost', () => {
         expect(deletePost).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('PostService.getMyPosts — source_type', () => {
+    it('글의 종류를 그대로 준다 — 방명록 글은 GUESTBOOK', async () => {
+        const row = (id: bigint, type: string) => ({
+            id,
+            type,
+            content: `글 ${id}`,
+            write_time: new Date('2026-11-11T00:00:00.000Z'),
+            users_posts_writer_idTousers: { nickname: '나' },
+            _count: { comments: 0, like_posts: 0 },
+        });
+        const service = new PostService(
+            {
+                findUserPosts: jest
+                    .fn()
+                    .mockResolvedValue([
+                        row(2n, 'GUESTBOOK'),
+                        row(1n, 'COMMUNITY'),
+                    ]),
+            } as never,
+            {} as never,
+        );
+
+        const res = await service.getMyPosts('7');
+
+        expect(res.map((p) => p.source_type)).toEqual([
+            'GUESTBOOK',
+            'COMMUNITY',
+        ]);
+    });
+});

@@ -19,7 +19,8 @@ export class CommentService {
                 post_id: String(comment.post_id),
                 content: comment.content ?? '내용 없음',
                 created_at: commentDate,
-                source_type: 'COMMUNITY', // 기본 커뮤니티 (방명록 구분 필요 시 조건 로직 추가)
+                // 댓글의 종류 그대로 — COMMUNITY(커뮤) / GUESTBOOK(방명록 답글)
+                source_type: comment.type ?? 'COMMUNITY',
             });
         });
     }

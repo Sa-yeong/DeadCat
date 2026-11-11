@@ -54,7 +54,8 @@ export class PostService {
                 comment_count: post._count?.comments ?? 0,
                 like_count: post._count?.like_posts ?? 0,
                 created_at: createdAtStr,
-                source_type: 'COMMUNITY', // 필요 시 지정
+                // 글의 종류 그대로 — COMMUNITY(커뮤) / GUESTBOOK(방명록)
+                source_type: post.type ?? 'COMMUNITY',
             });
         });
     }
