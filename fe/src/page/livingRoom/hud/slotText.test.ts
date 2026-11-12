@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { slotTimerOf } from '../api';
 import { FURNITURE_CATALOG, SLOT_MACHINE } from '../furnitureCatalog';
-import { drawHint, drawTitle, formatRemaining, READY_LABEL, remainingMs, timerLabel, waitNotice } from './slotText';
+import { drawHint, drawTitle, formatRemaining, packLabel, READY_LABEL, remainingMs, timerLabel, waitNotice } from './slotText';
 
 // 슬롯머신 타이머 · 뽑기 결과의 셈과 글 (마무리 M-4)
 
@@ -75,6 +75,16 @@ describe('뽑기 결과 글', () => {
     expect(drawTitle({ kind: 'FIRST', grade: 'NORMAL' })).toBe('첫 뽑기 — 기본 가구 패키지');
     expect(drawTitle({ kind: 'FURNITURE', grade: 'RARE' })).toBe('레어 가구 팩');
     expect(drawTitle({ kind: 'ITEM', grade: 'UNIQUE' })).toBe('유니크 아이템');
+  });
+
+  it('가구 한 줄 — 낱개가 아니라 「가구 팩 (등급)」 한 묶음(첫 뽑기는 노말 팩)', () => {
+    const five = [sofa, sofa, sofa, sofa, sofa];
+    expect(packLabel({ kind: 'FIRST', grade: 'NORMAL', furniture: five })).toBe('가구 팩 (노말)');
+    expect(packLabel({ kind: 'FURNITURE', grade: 'RARE', furniture: five })).toBe('가구 팩 (레어)');
+    expect(packLabel({ kind: 'FURNITURE', grade: 'UNIQUE', furniture: five })).toBe('가구 팩 (유니크)');
+    // 아이템만 받았거나 가구가 비었으면 가구 줄 없음
+    expect(packLabel({ kind: 'ITEM', grade: 'EPIC', furniture: [] })).toBeNull();
+    expect(packLabel({ kind: 'FURNITURE', grade: 'RARE', furniture: [] })).toBeNull();
   });
 
   it('안내 — 받은 것이 어디로 들어갔는지', () => {

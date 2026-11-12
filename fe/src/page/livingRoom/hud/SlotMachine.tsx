@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { R } from '../../stockDetail/radius';
-import { furnitureImgUrl, itemImgUrl } from '../catalog';
+import { itemImgUrl } from '../catalog';
 import { SLOT_MACHINE } from '../furnitureCatalog';
 import type { FurnitureCatalog } from '../runtime/catalogs';
 import type { Pt } from '../runtime/projection';
 import type { PlacementDto, SlotDrawResult } from '../types';
 import { gradeLabel } from './labels';
-import { drawHint, drawTitle, remainingMs, timerLabel, type SlotNote } from './slotText';
+import { drawHint, drawTitle, packLabel, remainingMs, timerLabel, type SlotNote } from './slotText';
 import { C, accentBtn } from './style';
 import { Icon, ItemIcon, Modal, Picture } from './ui';
 
@@ -77,22 +77,23 @@ export function SlotTimers({
   );
 }
 
-/** 뽑기 결과 — 받은 가구 · 아이템. 이름은 카탈로그 이름(없으면 서버 이름), 그림 파일이 없으면 아이콘 */
-export function SlotResultModal({ result, furniture, onClose }: { result: SlotDrawResult; furniture: FurnitureCatalog; onClose: () => void }) {
+/** 뽑기 결과 — 가구는 「가구 팩 (등급)」 한 줄로 묶어서(보관함에는 낱개로 들어감), 아이템은 그 아이템 한 줄. 아이템 그림 파일이 없으면 아이콘 */
+export function SlotResultModal({ result, onClose }: { result: SlotDrawResult; onClose: () => void }) {
   const row: React.CSSProperties = {
     flexShrink: 0, height: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 12, borderRadius: R.card, border: `1px solid ${C.lineSoft}`, background: C.panel,
   };
   const tag: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: C.dim, whiteSpace: 'nowrap' };
+  const pack = packLabel(result);
   return (
     <Modal title="뽑기 결과" sub={drawTitle(result)} width={380} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {result.furniture.map((f, i) => (
-          <div key={`f${i}`} style={row}>
-            <Picture src={furnitureImgUrl(f.furnitureId)} size={26} fallback={<Icon name="place" size={22} color={C.text2} />} />
-            <span style={{ flexGrow: 1, fontSize: 13, color: C.text }}>{furniture.def(f.furnitureId)?.name ?? f.name}</span>
+        {pack && (
+          <div style={row}>
+            <Icon name="place" size={22} color={C.text2} />
+            <span style={{ flexGrow: 1, fontSize: 13, color: C.text }}>{pack}</span>
             <span style={tag}>가구</span>
           </div>
-        ))}
+        )}
         {result.item && (
           <div style={row}>
             <Picture src={itemImgUrl(result.item.itemId)} size={26} fallback={<ItemIcon icon="gift" size={26} />} />

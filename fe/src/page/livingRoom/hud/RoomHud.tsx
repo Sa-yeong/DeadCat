@@ -483,7 +483,7 @@ export function RoomHud({
 
       {/* 슬롯머신 위 타이머 — 주인의 일반 모드에서만(M-4). 남의 거실 · 배치 모드에는 없다 */}
       {normal && owner && <SlotTimers placements={loop.currentPlacements} furniture={furniture} anchorOf={(id) => renderer.furnitureAnchor(id)} note={slotNote} />}
-      {slotResult && <SlotResultModal result={slotResult} furniture={furniture} onClose={closeSlotResult} />}
+      {slotResult && <SlotResultModal result={slotResult} onClose={closeSlotResult} />}
 
       {chargeAt && charge && <PressRing key={charge.key} x={chargeAt.x} y={chargeAt.y} ms={charge.ms} />}
       {flash && <AffinityFlash key={flash.key} x={flash.at.x} y={flash.at.y} text={flash.text} level={flash.level} progress={flash.progress} sub={flash.sub} />}

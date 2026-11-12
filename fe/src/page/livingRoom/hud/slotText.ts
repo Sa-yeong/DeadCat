@@ -38,6 +38,15 @@ export function drawTitle(r: Pick<SlotDrawResult, 'kind' | 'grade'>): string {
   return r.kind === 'FURNITURE' ? `${gradeLabel(r.grade)} 가구 팩` : `${gradeLabel(r.grade)} 아이템`;
 }
 
+/**
+ * 결과 창의 가구 한 줄 — 팩으로 받은 가구는 낱개로 늘어놓지 않고 「가구 팩 (노말)」 한 묶음으로만 보인다(보관함에는 낱개로 들어감).
+ * 등급 = 팩 등급(첫 뽑기는 서버가 노말 팩 등급을 grade 로 준다). 가구를 안 받았으면 null
+ */
+export function packLabel(r: Pick<SlotDrawResult, 'kind' | 'grade' | 'furniture'>): string | null {
+  if (r.kind === 'ITEM' || r.furniture.length === 0) return null;
+  return `가구 팩 (${gradeLabel(r.grade)})`;
+}
+
 /** 결과 창 아래 안내 — 받은 것이 어디로 들어갔는지 */
 export function drawHint(r: Pick<SlotDrawResult, 'furniture' | 'item'>): string {
   const furniture = r.furniture.length > 0;
