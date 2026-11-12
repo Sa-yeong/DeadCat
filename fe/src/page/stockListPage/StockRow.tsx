@@ -35,15 +35,13 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         return `${result.toLocaleString('ko-KR', {maximumFractionDigits: 1})}억`;
     }  
 
-    const formatComma = (market:string,value: number|string) => {
+    const formatComma = (value: number|string) => {
         const num = Number(value);
 
-        if(isNaN(num)) return value;
-        if(market === 'DOMESTIC'){ // 국내 주식의 경우
-            return num.toLocaleString();
-        }else{ // 해외 주식일 경우 그냥 내보내기
-            return num;
-        }
+        if(isNaN(num)) 
+            return value;
+
+        return num.toLocaleString();
     }
 
      // 로그인 창은 이 줄 안에 그려져서 창 안의 클릭도 줄로 올라온다 — 창이 떠 있는 동안은 이동하지 않는다
@@ -60,7 +58,7 @@ export function StockRow({order, s_name, c_price, rise_rate, t_value, isLike, s_
         )}
         <LoginModal isOpen={open} onClose={() => setOpen(false)} />
         <span className='stock-name'>{s_name}</span>
-        <span className='current-price'>{formatComma(market, c_price)}</span>
+        <span className='current-price'>{formatComma(c_price)}</span>
         <span className='rise-rate' 
             style={{color: (rise_rate===0||(typeof rise_rate =='string'))?'white':((rise_rate>0) ?'#f04452':'#5c96f5')}}>
             {(typeof rise_rate =='string')?rise_rate:rise_rate + '%'}

@@ -10,7 +10,8 @@ interface StockList{
     stock_code: string,
     stock_name: string,
     current_price: number,
-    change_rate: number,
+    current_price_krw: number;
+    change_rate: number;
     trading_value: number,
     trading_value_krw: number;
     market: string,
