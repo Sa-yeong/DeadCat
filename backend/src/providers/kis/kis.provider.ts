@@ -8,13 +8,41 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { RedisService } from '../redis/redis.service';
+import {
+    lastFinishedBar,
+    regularLastFromMinutes,
+    type FinishedBar,
+    type UsClock,
+    type UsDailyBar,
+    type UsMinuteRow,
+} from '../../price/us-session';
 
 // 모듈 간 공유 시세 타입(knowledge.md 규약): 가격/등락률/거래대금은 number.
 export interface StockPrice {
     current_price: number;
     change_rate: number;
+    /** 전일 대비 금액(시장 통화, 하락은 음수) — KIS 값 그대로. 등락률에서 거꾸로 계산하지 않는다 */
+    change_price?: number;
     trading_value: number;
     accumulated_volume?: number;
+}
+
+/**
+ * KIS 전일 대비 금액 + 부호 칸 → 부호 있는 금액. 부호 칸: 1 상한 · 2 상승 · 3 보합 · 4 하한 · 5 하락.
+ * 경로마다 금액 칸에 부호가 있기도 없기도 해서 부호 칸을 기준으로 한다. 모르는 값이면 없음(undefined).
+ */
+export function signedChange(
+    sign: string | undefined,
+    value: string | undefined,
+): number | undefined {
+    const n = Number(value);
+    if (value === undefined || value === '' || !Number.isFinite(n)) {
+        return undefined;
+    }
+    if (sign === '1' || sign === '2') return Math.abs(n);
+    if (sign === '4' || sign === '5') return -Math.abs(n);
+    if (sign === '3') return 0;
+    return undefined;
 }
 
 // 지수 그래프 1점(OHLC).
@@ -105,6 +133,19 @@ const OVERSEAS_EXCD: Record<string, string> = {
     AMS: 'AMS',
 };
 
+// 데이마켓(미국 주간거래) 거래소 코드 — 시세 · 호가 · 분봉 모두 EXCD 만 바꾸면 그 장 값을 준다.
+const DAY_MARKET_EXCD: Record<string, string> = {
+    NAS: 'BAQ',
+    NYS: 'BAY',
+    AMS: 'BAA',
+};
+
+/** 우리 거래소 코드 → KIS EXCD. dayMarket 이면 주간거래 코드로 */
+const overseasExcd = (exchange: string, dayMarket = false): string => {
+    const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+    return dayMarket ? (DAY_MARKET_EXCD[excd] ?? excd) : excd;
+};
+
 // 해외 심볼 예외 매핑: 우리 DB code → KIS SYMB. (예: 버크셔 B는 'BRK/B')
 const KIS_SYMBOL: Record<string, string> = {
     'BRK.B': 'BRK/B',
@@ -127,6 +168,8 @@ const TOKEN_ERROR_CODES = new Set(['EGW00121', 'EGW00123']);
 let tokenWatchInstalled = false;
 
 const REQUEST_DELAY_MS = 500;
+/** 애프터마켓에 정규장 마지막 분봉을 찾을 때 거슬러 받는 최대 횟수 — 한 번에 120줄, 애프터 3시간 50분이면 2번 */
+const REGULAR_LAST_MAX_PAGES = 4;
 const MAX_RETRY = 3;
 const RETRY_BACKOFF_MS = 1000;
 const RATE_LIMIT_CODE = 'EGW00201';
@@ -143,6 +186,8 @@ interface KisDomesticResponse {
     msg1: string;
     output: {
         stck_prpr: string;
+        prdy_vrss: string;
+        prdy_vrss_sign: string;
         prdy_ctrt: string;
         acml_tr_pbmn: string;
     };
@@ -204,6 +249,20 @@ export interface KisMinuteItem {
     stck_hgpr: string; // 고가
     stck_lwpr: string; // 저가
     cntg_vol: string; // 그 분의 체결량
+}
+
+// 해외 분봉 한 줄 (TR: HHDFS76950200) — 최신이 앞
+export interface KisUsMinuteItem {
+    tymd?: string; // 거래일 — 데이마켓의 자정 앞 줄은 xymd 보다 하루 뒤
+    xymd: string; // 현지(뉴욕) 날짜 YYYYMMDD
+    xhms: string; // 현지 시각 HHMMSS
+    kymd: string; // 한국 날짜
+    khms: string; // 한국 시각
+    open: string;
+    high: string;
+    low: string;
+    last: string; // 그 분의 마지막 가격
+    evol: string; // 그 분의 체결량
 }
 
 export interface KisDailyChartItem {
@@ -407,6 +466,7 @@ export class KisProvider {
             const price = {
                 current_price: Number(o.stck_prpr),
                 change_rate: Number(o.prdy_ctrt),
+                change_price: signedChange(o.prdy_vrss_sign, o.prdy_vrss),
                 trading_value: Number(o.acml_tr_pbmn),
             };
             // KIS가 rt_cd=0이지만 빈 값(0)을 주는 경우(주로 종목코드 오타/장전/거래정지).
@@ -430,15 +490,17 @@ export class KisProvider {
         });
     }
 
-    // 해외 단일 종목 현재가. symbol은 우리 DB code(KIS_SYMBOL 예외 변환).
+    // 해외 단일 종목 현재가 — 지금 열린 장의 마지막 체결가. 데이마켓이면 dayMarket(주간거래 코드).
+    // symbol은 우리 DB code(KIS_SYMBOL 예외 변환).
     async getOverseasPrice(
         symbol: string,
         exchange: string,
+        dayMarket = false,
     ): Promise<StockPrice> {
         return this.withRateLimitRetry(async () => {
             const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/price`;
             const headers = await this.authHeaders('HHDFS00000300');
-            const excd = OVERSEAS_EXCD[exchange] ?? exchange;
+            const excd = overseasExcd(exchange, dayMarket);
             const symb = KIS_SYMBOL[symbol] ?? symbol;
 
             const { data } = await firstValueFrom(
@@ -464,6 +526,10 @@ export class KisProvider {
             const price = {
                 current_price,
                 change_rate: Number(o.rate),
+                change_price: signedChange(
+                    o.sign as string | undefined,
+                    o.diff as string | undefined,
+                ),
                 accumulated_volume: volume,
                 trading_value,
             };
@@ -496,9 +562,96 @@ export class KisProvider {
         return result;
     }
 
+    /** 해외 — 정규장이 끝난 마지막 일봉(거래량 블럭 · 거래대금 순위용). 없으면 null */
+    async getOverseasFinishedBar(
+        symbol: string,
+        exchange: string,
+        clock: UsClock,
+    ): Promise<FinishedBar | null> {
+        return this.withRateLimitRetry(async () => {
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/dailyprice`;
+            const headers = await this.authHeaders('HHDFS76240000');
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd: string;
+                    msg_cd: string;
+                    msg1: string;
+                    output2?: UsDailyBar[];
+                }>(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: overseasExcd(exchange),
+                        SYMB: KIS_SYMBOL[symbol] ?? symbol,
+                        GUBN: '0',
+                        BYMD: '',
+                        MODP: '1',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            return lastFinishedBar(data.output2 ?? [], clock);
+        });
+    }
+
+    /**
+     * 그 뉴욕 날짜 정규장의 마지막 체결가 — 애프터마켓 동안 등락 기준(직전 정규장 종가)으로 쓴다.
+     * 그날 일봉 종가는 시간외 체결이 섞여 있어 분봉의 16:00 앞 마지막 줄(15:59) 값을 쓴다. 부르는 쪽이 날짜별로 한 번만 받는다.
+     */
+    async getOverseasRegularLast(
+        symbol: string,
+        exchange: string,
+        date: string,
+    ): Promise<number | null> {
+        const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice`;
+        const rows: UsMinuteRow[] = [];
+        let keyb = '';
+        for (let page = 0; page < REGULAR_LAST_MAX_PAGES; page++) {
+            if (page > 0) await this.sleep(REQUEST_DELAY_MS);
+            const list = await this.withRateLimitRetry(async () => {
+                const headers = await this.authHeaders('HHDFS76950200');
+                const { data } = await firstValueFrom(
+                    this.http.get<{
+                        rt_cd: string;
+                        msg_cd: string;
+                        msg1: string;
+                        output2?: UsMinuteRow[];
+                    }>(url, {
+                        headers,
+                        params: {
+                            AUTH: '',
+                            EXCD: overseasExcd(exchange),
+                            SYMB: KIS_SYMBOL[symbol] ?? symbol,
+                            NMIN: '1',
+                            PINC: '1',
+                            NEXT: keyb ? '1' : '',
+                            NREC: '120',
+                            KEYB: keyb,
+                            FILL: '',
+                        },
+                    }),
+                );
+                if (data.rt_cd !== '0') {
+                    throw new KisApiError(data.msg_cd, data.msg1);
+                }
+                return data.output2 ?? [];
+            });
+            rows.push(...list);
+            const found = regularLastFromMinutes(rows, date);
+            if (found !== null) return found;
+            const last = list[list.length - 1];
+            if (!last || list.length < 100 || (last.xymd ?? '') < date) break;
+            keyb = `${last.xymd}${last.xhms}`;
+        }
+        return null;
+    }
+
     // 여러 해외 종목. key = symbol(우리 DB code).
     async getOverseasPrices(
         items: { symbol: string; exchange: string }[],
+        dayMarket = false,
     ): Promise<Map<string, StockPrice>> {
         const result = new Map<string, StockPrice>();
         for (let i = 0; i < items.length; i++) {
@@ -507,7 +660,7 @@ export class KisProvider {
             try {
                 result.set(
                     symbol,
-                    await this.getOverseasPrice(symbol, exchange),
+                    await this.getOverseasPrice(symbol, exchange, dayMarket),
                 );
             } catch (e) {
                 this.logger.warn(`해외 시세 실패 ${symbol}: ${this.errMsg(e)}`);
@@ -823,6 +976,7 @@ export class KisProvider {
     async fetchOverseasVolumeSummary(
         stockCode: string,
         exchangeCode: string,
+        dayMarket = false,
     ): Promise<StockVolumeSummaryData> {
         // 초당 요청 제한 등에 걸렸을 경우 withRateLimitRetry에서 백오프 후 재시도
         return this.withRateLimitRetry(async () => {
@@ -849,6 +1003,11 @@ export class KisProvider {
 
             if (excd === 'AMEX') {
                 excd = 'AMS';
+            }
+
+            // 데이마켓 분봉은 주간거래 코드로만 받을 수 있다
+            if (dayMarket) {
+                excd = DAY_MARKET_EXCD[excd] ?? excd;
             }
 
             // 종목코드 정규화
@@ -1081,6 +1240,87 @@ export class KisProvider {
         });
     }
 
+    /**
+     * 국내 일별 분봉 — 그 날짜의 hhmmss 시각 이전 120개(최신이 앞). 지난 거래일도 받을 수 있다.
+     * 확인(2026-11-10 장 전): 쉬는 날을 넣으면 그 앞의 마지막 거래일 것을 주고, 09:00 줄이 그날의 첫 줄,
+     * 15:30 뒤 시간외(~ 19:59)까지 들어 있다. 아직 장이 안 열린 오늘 날짜는 빈 배열
+     */
+    async getDailyMinuteChart(
+        stockCode: string,
+        yyyymmdd: string,
+        hhmmss: string,
+    ): Promise<KisMinuteItem[]> {
+        return this.withRateLimitRetry(async () => {
+            const headers = await this.authHeaders('FHKST03010230');
+            const url = `${this.baseUrl}/uapi/domestic-stock/v1/quotations/inquire-time-dailychartprice`;
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd?: string;
+                    msg_cd?: string;
+                    msg1?: string;
+                    output2?: KisMinuteItem[];
+                }>(url, {
+                    headers,
+                    params: {
+                        FID_COND_MRKT_DIV_CODE: 'J',
+                        FID_INPUT_ISCD: stockCode,
+                        FID_INPUT_HOUR_1: hhmmss,
+                        FID_INPUT_DATE_1: yyyymmdd,
+                        FID_PW_DATA_INCU_YN: 'N',
+                        FID_FAKE_TICK_INCU_YN: '',
+                    },
+                }),
+            );
+            if (data?.rt_cd && data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd ?? '', data.msg1 ?? '');
+            }
+            return (data?.output2 ?? []).filter(
+                (r) => !!r?.stck_cntg_hour && Number(r.stck_prpr) > 0,
+            );
+        });
+    }
+
+    /**
+     * 해외 분봉 한 쪽(120개, 최신이 앞). keyb 는 앞 쪽 마지막 줄의 `xymd + xhms` — 비우면 가장 최근부터.
+     * 정규 코드는 프리 · 정규 · 애프터(뉴욕 04:00 ~ 20:00)를, dayMarket 이면 주간거래 코드로 데이마켓(20:00 ~ 04:00)을 준다
+     */
+    async getOverseasMinuteChart(
+        symbol: string,
+        exchange: string,
+        dayMarket: boolean,
+        keyb = '',
+    ): Promise<KisUsMinuteItem[]> {
+        return this.withRateLimitRetry(async () => {
+            const headers = await this.authHeaders('HHDFS76950200');
+            const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice`;
+            const { data } = await firstValueFrom(
+                this.http.get<{
+                    rt_cd: string;
+                    msg_cd: string;
+                    msg1: string;
+                    output2?: KisUsMinuteItem[];
+                }>(url, {
+                    headers,
+                    params: {
+                        AUTH: '',
+                        EXCD: overseasExcd(exchange || 'NAS', dayMarket),
+                        SYMB: KIS_SYMBOL[symbol] ?? symbol,
+                        NMIN: '1',
+                        PINC: '1',
+                        NEXT: keyb ? '1' : '',
+                        NREC: '120',
+                        KEYB: keyb,
+                        FILL: '',
+                    },
+                }),
+            );
+            if (data.rt_cd !== '0') {
+                throw new KisApiError(data.msg_cd, data.msg1);
+            }
+            return (data.output2 ?? []).filter((r) => !!r?.xymd && !!r?.xhms);
+        });
+    }
+
     //해외주식 차트조회
     async getOverseasDailyChart(
         symbol: string,
@@ -1223,7 +1463,11 @@ export class KisProvider {
 
     // 해외주식 현재가 1호가 조회
     // 해외주식 호가 조회
-    async getOverseasOrderbook(symbol: string, exchange: string) {
+    async getOverseasOrderbook(
+        symbol: string,
+        exchange: string,
+        dayMarket = false,
+    ) {
         // 해외주식 호가 조회 TR_ID
         const headers = await this.authHeaders('HHDFS76200100');
 
@@ -1231,7 +1475,7 @@ export class KisProvider {
         const url = `${this.baseUrl}/uapi/overseas-price/v1/quotations/inquire-asking-price`;
 
         // 거래소 코드 변환
-        const excd = OVERSEAS_EXCD[exchange] ?? exchange ?? 'NAS';
+        const excd = overseasExcd(exchange ?? 'NAS', dayMarket);
 
         // KIS 종목 코드 변환
         const symb = KIS_SYMBOL[symbol] ?? symbol;

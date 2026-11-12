@@ -39,16 +39,6 @@ export class HomeRoomsService {
         );
     }
 
-    // 프리셋 거실 이미지 URL 생성 헬퍼
-    private getPresetRoomImgUrl(
-        userId: bigint,
-        profileImgUrl: string | null,
-    ): string {
-        if (profileImgUrl) return profileImgUrl;
-        const presetId = (Number(userId) % 5) + 1;
-        return `https://cdn.deadcat.com/rooms/presets/preset_${presetId}.png`;
-    }
-
     // 유저 수익률 산출 헬퍼
     private async calculateUserProfitRate(holdings: any[]): Promise<number> {
         if (!holdings || holdings.length === 0) return 0;
@@ -147,7 +137,7 @@ export class HomeRoomsService {
             users.map(async (u) => ({
                 user_id: Number(u.id),
                 nickname: u.nickname,
-                room_img_url: this.getPresetRoomImgUrl(u.id, u.profile_img_url),
+                room_img_url: u.room_thumbnail_url ?? '',
                 profit_rate: await this.calculateUserProfitRate(u.holdings),
                 tags: u.have_tags.map((ht) => ht.tags.content),
             })),
@@ -181,7 +171,7 @@ export class HomeRoomsService {
                 // user_id: u.id.toString(),
                 user_id: Number(u.id),
                 nickname: u.nickname,
-                room_img_url: this.getPresetRoomImgUrl(u.id, u.profile_img_url),
+                room_img_url: u.room_thumbnail_url ?? '',
                 profit_rate: await this.calculateDailyProfitRate(u.holdings),
                 tags: u.have_tags.map((ht) => ht.tags.content),
                 holdings: u.holdings,
@@ -295,10 +285,7 @@ export class HomeRoomsService {
                 return {
                     user_id: user.id.toString(),
                     nickname: user.nickname,
-                    room_img_url: this.getPresetRoomImgUrl(
-                        user.id,
-                        user.profile_img_url,
-                    ),
+                    room_img_url: user.room_thumbnail_url ?? '',
                     profit_rate: profitRate,
                     tags: userTags,
                     matched_tags: matchedTags,
@@ -376,10 +363,7 @@ export class HomeRoomsService {
                 return {
                     user_id: user.id.toString(),
                     nickname: user.nickname,
-                    room_img_url: this.getPresetRoomImgUrl(
-                        user.id,
-                        user.profile_img_url,
-                    ),
+                    room_img_url: user.room_thumbnail_url ?? '',
                     profit_rate: profitRate,
                     tags: userTags,
                     opposite_tags: oppositeTags,

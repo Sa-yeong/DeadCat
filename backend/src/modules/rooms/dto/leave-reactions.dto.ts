@@ -1,10 +1,8 @@
-import { IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
+// 거실 반응·캐릭터 반응 공통 몸통. 캐릭터는 경로(:stockId)로 구분한다(3-⑦-c)
 export class LeaveReactionDto {
     @IsString()
+    @IsNotEmpty()
     reaction_type!: string; // "FIRE", "HEART", "SAD" 등
-
-    @IsOptional()
-    @IsNumber()
-    character_id?: number; // 거실 전체 반응일 경우 생략됨 (DB의 stock_id 역할)
 }

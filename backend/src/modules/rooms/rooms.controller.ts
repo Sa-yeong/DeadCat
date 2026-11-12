@@ -7,42 +7,107 @@ import {
     Post,
     Body,
     Put,
+    UploadedFile,
+    UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { RoomsService } from './rooms.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard'; // 실제 가드 경로에 맞게 조정
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
+import { User } from 'src/common/decorators/user.decorator';
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
+import { FarewellsService } from './farewells.service';
+import {
+    RoomThumbnailService,
+    type UploadedImage,
+} from './room-thumbnail.service';
 
 @Controller('rooms')
 export class RoomsController {
-    constructor(private readonly roomsService: RoomsService) {}
+    constructor(
+        private readonly roomsService: RoomsService,
+        private readonly farewellsService: FarewellsService,
+        private readonly roomThumbnailService: RoomThumbnailService,
+    ) {}
 
+    // 내 거실 — ':userId'보다 먼저 선언해야 'me'가 userId로 잡히지 않는다
     @UseGuards(JwtAuthGuard)
-    @Get(':targetUserId')
-    async getRoomState(
-        @Request() req: any,
-        @Param('targetUserId') targetUserId: string,
-    ) {
+    @Get('me')
+    async getMyRoom(@Request() req: any) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        const currentUserId = String(req.user.id || req.user.sub);
-        return await this.roomsService.getRoomState(
-            currentUserId,
-            targetUserId,
+        const userId = String(req.user.id || req.user.sub);
+        return await this.roomsService.getMyRoom(userId);
+    }
+
+    // 이별 흔적 (3-⑦-d)
+    @UseGuards(JwtAuthGuard)
+    @Get('me/farewells')
+    async getMyFarewells(@Request() req: any) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        const userId = String(req.user.id || req.user.sub);
+        return await this.farewellsService.getFarewells(userId);
+    }
+
+    // 거실 썸네일 업로드 (거실썸네일 지시서 S1-2) — multipart: image(파일) · is_auto("true"/"false")
+    // 500KB 검사는 서비스에서 400으로. multer 한도는 메모리 보호용으로 넉넉히
+    @UseGuards(JwtAuthGuard)
+    @Put('me/thumbnail')
+    @UseInterceptors(
+        FileInterceptor('image', { limits: { fileSize: 2 * 1024 * 1024 } }),
+    )
+    async uploadThumbnail(
+        @User() userId: bigint,
+        @UploadedFile() image: UploadedImage | undefined,
+        @Body('is_auto') isAuto: string | undefined,
+    ) {
+        return await this.roomThumbnailService.upload(userId, image, isAuto);
+    }
+
+    // 반응 종류 목록 (3-⑦-c) — 이것도 ':userId'보다 먼저
+    @Get('reaction-types')
+    async getReactionTypes() {
+        return await this.roomsService.getReactionTypes();
+    }
+
+    // 남의 거실 — 로그인 선택(없으면 GUEST), 비공개면 주인 외 403 (3-① · 3-④)
+    @UseGuards(OptionalJwtAuthGuard)
+    @Get(':userId')
+    async getRoom(
+        @User() viewerId: bigint | undefined,
+        @Param('userId') userId: string,
+    ) {
+        return await this.roomsService.getRoom(viewerId, userId);
+    }
+
+    // 거실 반응 — 1인 1개: 다른 종류면 교체, 같은 종류면 취소 (3-⑦-c)
+    @UseGuards(JwtAuthGuard)
+    @Post(':userId/reactions')
+    async toggleRoomReaction(
+        @User() reactorId: bigint,
+        @Param('userId') userId: string,
+        @Body() dto: LeaveReactionDto,
+    ) {
+        return await this.roomsService.toggleRoomReaction(
+            reactorId,
+            userId,
+            dto,
         );
     }
 
-    // 13. 타인 거실 이모티콘 반응 남기기
+    // 캐릭터 반응 — 캐릭터마다 1인 1개 (3-⑦-c)
     @UseGuards(JwtAuthGuard)
-    @Post(':targetUserId/reactions')
-    async leaveRoomReaction(
-        @Request() req: any,
-        @Param('targetUserId') targetUserId: string,
+    @Post(':userId/characters/:stockId/reactions')
+    async toggleCharacterReaction(
+        @User() reactorId: bigint,
+        @Param('userId') userId: string,
+        @Param('stockId') stockId: string,
         @Body() dto: LeaveReactionDto,
     ) {
-        const reactorId = String(req.user.id || req.user.sub);
-        return await this.roomsService.leaveRoomReaction(
+        return await this.roomsService.toggleCharacterReaction(
             reactorId,
-            targetUserId,
+            userId,
+            stockId,
             dto,
         );
     }

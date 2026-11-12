@@ -13,6 +13,7 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { CreateOrderResponseDto } from './dto/create-order-response.dto';
 import { PendingOrderDto } from './dto/pending-order.dto';
+import { OrderAvailableDto } from './dto/order-available.dto';
 import {
     JwtAuthGuard,
     type AuthenticatedRequest,
@@ -39,6 +40,15 @@ export class OrdersController {
         @Query('stock_code') stockCode?: string,
     ): Promise<PendingOrderDto[]> {
         return await this.ordersService.listPending(req.user!.id, stockCode);
+    }
+
+    // GET /orders/available?stock_code= — 주문가능 금액 · 그 종목 매도가능 수량
+    @Get('available')
+    async available(
+        @Req() req: AuthenticatedRequest,
+        @Query('stock_code') stockCode?: string,
+    ): Promise<OrderAvailableDto> {
+        return await this.ordersService.available(req.user!.id, stockCode);
     }
 
     // DELETE /orders/:orderId — 내 대기 주문 취소

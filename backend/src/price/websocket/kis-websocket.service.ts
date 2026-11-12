@@ -7,7 +7,13 @@ import {
 import WebSocket from 'ws';
 
 import { PriceService } from '../price.service';
+import { signedChange } from 'src/providers/kis/kis.provider';
+import { usClock } from '../us-session';
 import { PrismaService } from 'src/providers/database/prisma.service';
+import {
+    MarketTimeService,
+    type ForeignSession,
+} from '../../modules/character-engine/service/market-time.service';
 
 @Injectable()
 export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
@@ -25,6 +31,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
     constructor(
         private readonly priceService: PriceService,
         private readonly prisma: PrismaService,
+        private readonly marketTime: MarketTimeService,
     ) {}
 
     async onModuleInit(): Promise<void> {
@@ -267,10 +274,27 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
 
         this.socket.send(JSON.stringify(message));
 
+        // 데이마켓 체결은 주간거래 코드(R + BAQ 등)로 따로 구독해야 온다 — 같은 HDFSCNT0 로 들어온다
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const dayCode = DAY_MARKET_CODE[marketCode];
+        if (dayCode && this.socket) {
+            this.socket.send(
+                JSON.stringify({
+                    ...message,
+                    body: {
+                        input: {
+                            tr_id: 'HDFSCNT0',
+                            tr_key: `R${dayCode}${stockCode}`,
+                        },
+                    },
+                }),
+            );
+        }
+
         this.subscribedCodes.add(stockCode);
 
         this.logger.log(
-            `KIS WS 해외주식 subscribe: ${stockCode} (${marketCode})`,
+            `KIS WS 해외주식 subscribe: ${stockCode} (${marketCode} · ${dayCode ?? '-'})`,
         );
     }
 
@@ -345,6 +369,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         const stockCode = fields[0];
         const currentPrice = Number(fields[2]);
         const changeRate = Number(fields[5]);
+        const changePrice = signedChange(fields[3], fields[4]);
 
         if (
             !stockCode ||
@@ -358,6 +383,7 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
         await this.priceService.writeSinglePrice(stockCode, {
             current_price: currentPrice,
             change_rate: changeRate,
+            ...(changePrice === undefined ? {} : { change_price: changePrice }),
         });
     }
 
@@ -368,9 +394,16 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
             return;
         }
 
+        // 지금 열린 장의 체결만 받는다(닫힌 시간 · 장 경계에 늦게 온 체결 제외)
+        const session = this.marketTime.foreignSession();
+        if (!isTickOfSession(fields[0], session)) {
+            return;
+        }
+
         const stockCode = fields[1];
         const currentPrice = Number(fields[11]);
         const changeRate = Number(fields[14]);
+        const changePrice = signedChange(fields[12], fields[13]);
 
         if (
             !stockCode ||
@@ -380,9 +413,24 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
             return;
         }
 
+        // 애프터마켓 등락은 오늘 정규장 마지막 체결가 기준 — 기준을 아직 모르면(장 시작 직후) KIS 값 그대로
+        const after =
+            session === 'AFTER'
+                ? this.priceService.afterChangeOf(
+                      stockCode,
+                      usClock().date,
+                      currentPrice,
+                  )
+                : null;
+
         await this.priceService.writeSinglePrice(stockCode, {
             current_price: currentPrice,
-            change_rate: changeRate,
+            ...(after ?? {
+                change_rate: changeRate,
+                ...(changePrice === undefined
+                    ? {}
+                    : { change_price: changePrice }),
+            }),
         });
     }
 
@@ -390,6 +438,22 @@ export class KisWebSocketService implements OnModuleInit, OnModuleDestroy {
     /*private async handleMessage(rawMessage: string): Promise<void> {
         this.logger.log(`[KIS WS] message: ${rawMessage}`);
     }*/
+}
+
+/** 해외 시장코드 → 데이마켓(주간거래) 시장코드 */
+const DAY_MARKET_CODE: Record<string, string> = {
+    NAS: 'BAQ',
+    NYS: 'BAY',
+    AMS: 'BAA',
+};
+
+/** 이 체결이 지금 열린 장의 것인가 — 첫 칸(실시간코드)이 R 로 시작하면 데이마켓, D 면 프리 · 정규 · 애프터 */
+export function isTickOfSession(
+    rsym: string | undefined,
+    session: ForeignSession,
+): boolean {
+    if (session === 'CLOSED' || !rsym) return false;
+    return rsym.startsWith('R') === (session === 'DAY');
 }
 
 /** '^'로 이어진 n건짜리 체결 데이터에서 마지막 한 건만 꺼낸다. 건수를 못 읽으면 그대로 */

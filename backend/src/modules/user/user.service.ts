@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 
 import { UserRepository } from './user.repository';
+import { parseUserIdParam } from 'src/common/rooms/room-access';
 
 // 사용자 프로필 DTO (실제 파일명에 맞춤)
 import { UserProfileResponseDto } from './dto/user-profile-response.dto';
@@ -38,7 +39,10 @@ export class UserService {
         targetUserIdStr: string,
     ): Promise<ToggleFollowResponseDto> {
         const currentUserId = BigInt(currentUserIdStr);
-        const targetUserId = BigInt(targetUserIdStr);
+        const targetUserId = parseUserIdParam(targetUserIdStr);
+        if (targetUserId === currentUserId) {
+            throw new BadRequestException('자기 자신은 팔로우할 수 없습니다.');
+        }
 
         const { isFollowing, targetUser } =
             await this.userRepository.toggleFollow(currentUserId, targetUserId);

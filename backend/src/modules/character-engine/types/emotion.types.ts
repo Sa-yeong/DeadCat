@@ -2,7 +2,7 @@ export type EmotionName =
     | 'happy'
     | 'sad'
     | 'tired'
-    | 'depression'
+    | 'depress'
     | 'euphoria'
     | 'panic'
     | 'anxious'
@@ -75,7 +75,6 @@ export interface EmotionInput {
     holdingPeriodDays: number | null;
 
     fluctuationRate: number;
-    sensitivity: number;
 
     interaction?: UserInteraction;
 }
@@ -89,13 +88,8 @@ export interface EmotionOutput {
 }
 
 export interface CharacterData {
-    characterId: string; // stock_code 또는 stock_id
+    characterId: string; // String(stock_id)
     emotion: Emotion;
-}
-
-export interface FurnitureData {
-    furnitureId: string;
-    model: string;
 }
 
 // FE 전달용 SSE 이벤트 타입
@@ -104,7 +98,6 @@ export type FeedEvent =
           type: 'snapshot';
           data: {
               characters: CharacterData[];
-              furniture: FurnitureData[];
           };
       }
     | {

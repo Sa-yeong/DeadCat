@@ -10,6 +10,7 @@ interface StockItem{
     stock_code: string;
     stock_name: string;
     current_price: number;
+    current_price_krw: number;
     change_rate: number;
     trading_value: number; //r거래대금 단위 -> 시장에 따라 다름
     trading_value_krw:number; // 거래대금 단위: 원
@@ -89,7 +90,7 @@ export function StockList(){
                 <StockRow key={stock.stock_code}
                 order={stock.rank} 
                 s_name={stock.stock_name} 
-                c_price={stock.current_price} 
+                c_price={stock.current_price_krw} 
                 rise_rate={stock.change_rate}
                 t_value={stock.trading_value_krw}
                 isLike={stock.is_favorite}

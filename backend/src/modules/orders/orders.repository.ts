@@ -3,6 +3,13 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 import { Prisma } from 'generated/prisma/client';
 import { OrderSide } from './dto/create-order.dto';
 import type { StoredType } from './order-rules';
+import {
+    applyPresetAutoOnBuy,
+    applyPresetAutoOnSoldOut,
+} from '../characters/preset-auto';
+
+/** 접수 검사 — 사용자 행을 잠근 트랜잭션 안에서 불린다. 통과 못 하면 던진다(아무것도 저장되지 않음) */
+export type OrderGuard = (tx: Prisma.TransactionClient) => Promise<void>;
 
 /** 체결 한 건에 필요한 값 */
 interface TradeParams {
@@ -21,62 +28,75 @@ export class OrdersRepository {
     async findStockByCode(code: string) {
         return await this.prisma.stocks.findFirst({
             where: { code },
-            select: { id: true, code: true, stock_type: true },
-        });
-    }
-
-    async findBalance(userId: bigint): Promise<bigint | null> {
-        const u = await this.prisma.users.findUnique({
-            where: { id: userId },
-            select: { balance: true },
-        });
-        return u ? u.balance : null;
-    }
-
-    async findHoldingQuantity(
-        userId: bigint,
-        stockId: bigint,
-    ): Promise<number> {
-        const h = await this.prisma.holdings.findUnique({
-            where: { user_id_stock_id: { user_id: userId, stock_id: stockId } },
-            select: { quantity: true },
-        });
-        return h?.quantity ?? 0;
-    }
-
-    /** 대기 주문 저장(지정가·예약). price = 시장 통화 최소 단위(국내 원, 해외 센트) */
-    async createPendingOrder(data: {
-        userId: bigint;
-        stockId: bigint;
-        side: OrderSide;
-        type: StoredType;
-        quantity: number;
-        price: bigint;
-    }) {
-        return await this.prisma.orders.create({
-            data: {
-                user_id: data.userId,
-                stock_id: data.stockId,
-                side: data.side,
-                type: data.type,
-                quantity: data.quantity,
-                price: data.price,
-                status: 'PENDING',
-                create_at: new Date(),
+            select: {
+                id: true,
+                code: true,
+                name: true,
+                stock_type: true,
+                categories: { select: { name: true } },
             },
-            select: { id: true },
         });
     }
 
     /**
-     * 시장가: 체결 + 주문 기록을 **한 트랜잭션**으로. 체결이 실패하면 주문 기록도 남지 않는다.
-     * orderPrice = 주문 기록에 남길 가격(시장 통화 최소 단위)
+     * 같은 사용자의 주문 접수를 한 줄로 세운다 — 거의 동시에 들어온 두 주문이 같은 잔고를 보고 둘 다 통과하지 않게.
+     * 트랜잭션이 끝날 때 풀린다.
+     */
+    private async lockUser(
+        tx: Prisma.TransactionClient,
+        userId: bigint,
+    ): Promise<void> {
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+    }
+
+    /**
+     * 대기 주문 저장(지정가·예약). price = 시장 통화 최소 단위(국내 원, 해외 센트)
+     * 사용자 행을 잠그고 guard(접수 검사)를 통과해야 저장한다.
+     */
+    async createPendingOrder(
+        data: {
+            userId: bigint;
+            stockId: bigint;
+            side: OrderSide;
+            type: StoredType;
+            quantity: number;
+            price: bigint;
+        },
+        guard: OrderGuard,
+    ) {
+        return await this.prisma.$transaction(async (tx) => {
+            await this.lockUser(tx, data.userId);
+            await guard(tx);
+            return await tx.orders.create({
+                data: {
+                    user_id: data.userId,
+                    stock_id: data.stockId,
+                    side: data.side,
+                    type: data.type,
+                    quantity: data.quantity,
+                    price: data.price,
+                    status: 'PENDING',
+                    create_at: new Date(),
+                },
+                select: { id: true },
+            });
+        });
+    }
+
+    /**
+     * 시장가: 접수 검사 + 체결 + 주문 기록을 **한 트랜잭션**으로(사용자 행 잠금). 실패하면 주문 기록도 남지 않는다.
+     * orderPrice = 주문 기록에 남길 가격이자 체결가(시장 통화 최소 단위)
+     * 접수 응답으로 화면이 결과를 바로 알기 때문에 알림은 이미 보여준 것으로 둔다(notified_at).
      */
     async executeMarketOrder(
         params: TradeParams & { orderPrice: bigint },
-    ): Promise<{ orderId: bigint }> {
+        guard: OrderGuard,
+    ): Promise<{ orderId: bigint; filledPrice: bigint }> {
         return await this.prisma.$transaction(async (tx) => {
+            await this.lockUser(tx, params.userId);
+            await guard(tx);
             await this.applyTrade(tx, params);
+            const now = new Date();
             const order = await tx.orders.create({
                 data: {
                     user_id: params.userId,
@@ -86,11 +106,14 @@ export class OrdersRepository {
                     quantity: params.quantity,
                     price: params.orderPrice,
                     status: 'COMPLETED',
-                    create_at: new Date(),
+                    create_at: now,
+                    filled_price: params.orderPrice,
+                    filled_at: now,
+                    notified_at: now,
                 },
                 select: { id: true },
             });
-            return { orderId: order.id };
+            return { orderId: order.id, filledPrice: params.orderPrice };
         });
     }
 
@@ -106,7 +129,10 @@ export class OrdersRepository {
                 type: true,
                 quantity: true,
                 price: true,
-                stocks: { select: { code: true, stock_type: true } },
+                create_at: true,
+                stocks: {
+                    select: { code: true, name: true, stock_type: true },
+                },
             },
             orderBy: { create_at: 'asc' },
         });
@@ -139,16 +165,23 @@ export class OrdersRepository {
      * 대기 주문 체결. 먼저 PENDING → COMPLETED로 **선점**하고(다른 서버가 이미 체결했으면 0건 → 건너뜀),
      * 같은 트랜잭션에서 잔고·보유를 바꾼다. 잔고·보유 부족이면 전체가 되돌아가 PENDING으로 남는다
      * — 호출 쪽이 REJECTED로 바꾼다.
+     * filledPrice = 체결가(시장 통화 최소 단위). acknowledged = 화면이 결과를 이미 앎(접수 응답) → 알림 대상 아님.
      * @returns 이번에 체결했으면 true, 이미 다른 곳에서 처리됐으면 false
      */
     async fillPendingOrder(
         orderId: bigint,
-        params: TradeParams,
+        params: TradeParams & { filledPrice: bigint; acknowledged: boolean },
     ): Promise<boolean> {
         return await this.prisma.$transaction(async (tx) => {
+            const now = new Date();
             const claimed = await tx.orders.updateMany({
                 where: { id: orderId, status: 'PENDING' },
-                data: { status: 'COMPLETED' },
+                data: {
+                    status: 'COMPLETED',
+                    filled_price: params.filledPrice,
+                    filled_at: now,
+                    ...(params.acknowledged ? { notified_at: now } : {}),
+                },
             });
             if (claimed.count === 0) return false;
             await this.applyTrade(tx, params);
@@ -156,11 +189,15 @@ export class OrdersRepository {
         });
     }
 
-    /** 대기 → 다른 상태(REJECTED·CANCELLED). 내 주문만 바꾸려면 userId를 넘긴다. 바뀐 건수 */
+    /**
+     * 대기 → 다른 상태(REJECTED·CANCELLED). 바뀐 건수.
+     * 내 주문만 바꾸려면 userId, 화면이 결과를 이미 알면(접수 응답·본인 취소) acknowledged를 넘긴다.
+     * 만료는 CANCELLED + acknowledged 없음 — notified_at이 빈 CANCELLED가 곧 「아직 안 알린 만료」다.
+     */
     async closePendingOrder(
         orderId: bigint,
         status: 'REJECTED' | 'CANCELLED',
-        userId?: bigint,
+        { userId, acknowledged }: { userId?: bigint; acknowledged?: boolean },
     ): Promise<number> {
         const r = await this.prisma.orders.updateMany({
             where: {
@@ -168,9 +205,30 @@ export class OrdersRepository {
                 status: 'PENDING',
                 ...(userId ? { user_id: userId } : {}),
             },
-            data: { status },
+            data: {
+                status,
+                ...(acknowledged ? { notified_at: new Date() } : {}),
+            },
         });
         return r.count;
+    }
+
+    /** 내 주문 한 건 — 취소 응답용 */
+    async findMyOrder(orderId: bigint, userId: bigint) {
+        return await this.prisma.orders.findFirst({
+            where: { id: orderId, user_id: userId },
+            select: {
+                id: true,
+                side: true,
+                type: true,
+                quantity: true,
+                price: true,
+                status: true,
+                stocks: {
+                    select: { code: true, name: true, stock_type: true },
+                },
+            },
+        });
     }
 
     /**
@@ -232,6 +290,8 @@ export class OrdersRepository {
                     select: { stock_id: true },
                 });
             }
+            // 프리셋 자동 채움(M-1) — 보유 줄이 생긴 뒤에. 사용자 줄은 위 잔고 차감에서 이미 잠겼다
+            await applyPresetAutoOnBuy(tx, userId, stockId);
         } else {
             const holding = await tx.holdings.findUnique({
                 where: key,
@@ -256,7 +316,7 @@ export class OrdersRepository {
                 throw new BadRequestException('보유 수량이 부족합니다.');
             }
             // 다 팔았으면 보유 줄을 지운다
-            await tx.holdings.deleteMany({
+            const soldOut = await tx.holdings.deleteMany({
                 where: {
                     user_id: userId,
                     stock_id: stockId,
@@ -269,6 +329,11 @@ export class OrdersRepository {
                 data: { balance: { increment: totalAmount } },
                 select: { id: true },
             });
+
+            // 다 판 종목은 모든 프리셋에서 지운다(M-1) — 위 잔고 갱신으로 사용자 줄이 잠긴 뒤에
+            if (soldOut.count > 0) {
+                await applyPresetAutoOnSoldOut(tx, userId, stockId);
+            }
         }
 
         await tx.transaction_history.create({

@@ -1,35 +1,29 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/providers/database/prisma.service';
-import { CreateGuestbookDto } from './dto/guestbooks.dto';
+
+const GUESTBOOK = 'GUESTBOOK';
 
 @Injectable()
 export class GuestbooksRepository {
     constructor(private readonly prisma: PrismaService) {}
 
-    // 방명록 목록 조회
-    async findGuestbooks(
-        targetUserId: bigint,
-        take: number,
-        skip: number,
-        cursorObj?: any,
-    ) {
+    // 방명록 목록 조회 — 최신순(id 내림차순), cursor = 이전 쪽 마지막 글 id
+    async findGuestbooks(targetUserId: bigint, take: number, cursor?: bigint) {
         return await this.prisma.posts.findMany({
             where: {
-                type: 'GUESTBOOK',
+                type: GUESTBOOK,
                 target_user_id: targetUserId,
+                ...(cursor !== undefined ? { id: { lt: cursor } } : {}),
             },
             take,
-            skip,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            cursor: cursorObj,
-            orderBy: { write_time: 'desc' },
+            orderBy: { id: 'desc' },
             include: {
                 users_posts_writer_idTousers: {
                     select: { id: true, nickname: true, profile_img_url: true },
                 },
                 comments: {
-                    orderBy: { write_time: 'asc' },
-                    take: 1,
+                    orderBy: { id: 'asc' },
+                    include: { users: { select: { nickname: true } } },
                 },
             },
         });
@@ -39,34 +33,52 @@ export class GuestbooksRepository {
     async createGuestbook(
         writerId: bigint,
         targetUserId: bigint,
-        dto: CreateGuestbookDto,
+        content: string,
+        isSecret: boolean,
     ) {
         return await this.prisma.posts.create({
             data: {
-                type: 'GUESTBOOK',
+                type: GUESTBOOK,
                 target_user_id: targetUserId,
                 writer_id: writerId,
-                content: dto.content,
-                is_secret: dto.is_secret,
+                content,
+                is_secret: isSecret,
             },
         });
     }
 
-    // 방명록 원본 조회 (답글 권한 체크용)
-    async findGuestbookById(guestbookId: bigint) {
-        return await this.prisma.posts.findUnique({
-            where: { id: guestbookId },
+    // 그 거실의 방명록 글 하나 (답글 권한 체크용)
+    async findGuestbook(targetUserId: bigint, postId: bigint) {
+        return await this.prisma.posts.findFirst({
+            where: {
+                id: postId,
+                type: GUESTBOOK,
+                target_user_id: targetUserId,
+            },
         });
     }
 
     // 방명록 답글 생성
-    async createAnswer(writerId: bigint, guestbookId: bigint, content: string) {
+    async createReply(writerId: bigint, postId: bigint, content: string) {
         return await this.prisma.comments.create({
             data: {
-                post_id: guestbookId,
+                post_id: postId,
                 user_id: writerId,
-                content: content,
+                content,
+                type: GUESTBOOK,
             },
         });
+    }
+
+    // 방명록 글 삭제 — 그 거실의 방명록 글일 때만. 지운 줄 수를 돌려준다(답글은 DB cascade)
+    async deleteGuestbook(targetUserId: bigint, postId: bigint) {
+        const { count } = await this.prisma.posts.deleteMany({
+            where: {
+                id: postId,
+                type: GUESTBOOK,
+                target_user_id: targetUserId,
+            },
+        });
+        return count;
     }
 }

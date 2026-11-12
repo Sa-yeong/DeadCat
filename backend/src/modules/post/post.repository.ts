@@ -169,6 +169,27 @@ export class PostRepository {
     }
 
     /**
+     * 내가(followerId) 팔로우 중인 사람만 골라낸다 — 글 목록의 글쓴이들을 한 번에 묻는다.
+     * 돌려주는 것은 팔로우 중인 글쓴이 번호 목록
+     */
+    async findFollowedWriterIds(
+        followerId: bigint,
+        writerIds: bigint[],
+    ): Promise<bigint[]> {
+        if (writerIds.length === 0) return [];
+
+        const rows = await this.prisma.follow.findMany({
+            where: {
+                follower_id: followerId,
+                followee_id: { in: writerIds },
+            },
+            select: { followee_id: true },
+        });
+
+        return rows.map((row) => row.followee_id);
+    }
+
+    /**
      * 게시글 존재 여부 확인
      */
     async findPostById(postId: string) {
@@ -180,6 +201,37 @@ export class PostRepository {
                 id: true,
             },
         });
+    }
+
+    /**
+     * 글 하나 조회 — 누가 썼는지 · 어떤 글인지(type)만
+     */
+    async findPostOwner(postId: string) {
+        return this.prisma.posts.findUnique({
+            where: {
+                id: BigInt(postId),
+            },
+            select: {
+                id: true,
+                writer_id: true,
+                type: true,
+            },
+        });
+    }
+
+    /**
+     * 글 삭제 — posts 줄 하나만 지운다.
+     * 그 글의 댓글 · 좋아요 · 투표(선택지 · 투표 기록)는 DB의 외래 키(ON DELETE CASCADE)가 같이 지운다.
+     * 그 사이 이미 지워졌으면 0, 지웠으면 1
+     */
+    async deletePost(postId: string): Promise<number> {
+        const result = await this.prisma.posts.deleteMany({
+            where: {
+                id: BigInt(postId),
+            },
+        });
+
+        return result.count;
     }
 
     /**
@@ -253,6 +305,36 @@ export class PostRepository {
                 post_id: BigInt(postId),
             },
         });
+    }
+
+    /**
+     * 댓글 하나 조회 — 어느 글의 댓글인지 · 누가 썼는지만
+     */
+    async findCommentById(commentId: string) {
+        return this.prisma.comments.findUnique({
+            where: {
+                id: BigInt(commentId),
+            },
+            select: {
+                id: true,
+                post_id: true,
+                user_id: true,
+            },
+        });
+    }
+
+    /**
+     * 댓글 삭제 — comments 줄 하나만 지운다.
+     * 그 사이 이미 지워졌으면 0, 지웠으면 1
+     */
+    async deleteComment(commentId: string): Promise<number> {
+        const result = await this.prisma.comments.deleteMany({
+            where: {
+                id: BigInt(commentId),
+            },
+        });
+
+        return result.count;
     }
 
     /**

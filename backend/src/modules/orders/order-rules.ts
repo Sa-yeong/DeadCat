@@ -62,6 +62,92 @@ export function isTriggered(
     }
 }
 
+/** 장 시간 판정(MarketTimeService)에 넘기는 시장 구분 */
+export const marketOf = (foreign: boolean): 'DOMESTIC' | 'FOREIGN' =>
+    foreign ? 'FOREIGN' : 'DOMESTIC';
+
+// 호가 단위 — 프론트(fe/src/page/stockDetail/tick.ts)도 같은 표를 쓴다.
+//   국내 일반 주식·ETF: 한국거래소 호가가격단위(코스피·코스닥 공통)
+//   해외(미국): $0.01. 우리 해외 종목은 전부 $1 이상이라 1달러 미만 단위는 다루지 않는다
+export type TickRule = 'KRX_STOCK' | 'KRX_ETF' | 'USD_CENT';
+
+/** [이 가격 미만, 단위] — 마지막 구간 위는 1,000원 */
+const KRX_STOCK_BANDS: readonly (readonly [number, number])[] = [
+    [2000, 1],
+    [5000, 5],
+    [20000, 10],
+    [50000, 50],
+    [200000, 100],
+    [500000, 500],
+];
+
+/** 종목의 호가 단위 규칙. ETF는 카테고리 이름이 「ETF」인 국내 종목 */
+export function tickRuleOf(
+    foreign: boolean,
+    categoryName: string | null | undefined,
+): TickRule {
+    if (foreign) return 'USD_CENT';
+    return categoryName === 'ETF' ? 'KRX_ETF' : 'KRX_STOCK';
+}
+
+/** 이 가격이 속한 구간의 호가 단위(시장 통화) */
+export function tickSize(price: number, rule: TickRule): number {
+    if (rule === 'USD_CENT') return 0.01;
+    if (rule === 'KRX_ETF') return price < 2000 ? 1 : 5;
+    return KRX_STOCK_BANDS.find(([below]) => price < below)?.[1] ?? 1000;
+}
+
+/** 호가 단위에 맞는 가격인가 */
+export function isOnTick(price: number, rule: TickRule): boolean {
+    if (rule === 'USD_CENT') {
+        // 달러 소수는 곱하면 오차가 남는다(228.86 × 100 = 22886.000000000004)
+        const cents = price * 100;
+        return Math.abs(cents - Math.round(cents)) < 1e-6;
+    }
+    return Number.isInteger(price) && price % tickSize(price, rule) === 0;
+}
+
+/** 호가 단위 표시 — 100원 / $0.01 */
+export function formatTick(price: number, rule: TickRule): string {
+    if (rule === 'USD_CENT') return '$0.01';
+    return `${tickSize(price, rule).toLocaleString('ko-KR')}원`;
+}
+
+/* ── 쓸 수 있는 양 — 돈 · 주식을 옮기지 않고 대기 주문만큼 빼서 계산한다 ── */
+
+export interface PendingBuy {
+    /** 시장 통화 최소 단위 */
+    price: bigint | null;
+    quantity: number;
+    foreign: boolean;
+}
+
+/**
+ * 주문가능 금액(원) = 잔고 − 대기 매수의 지정가 × 수량. 해외는 usdKrw로 환산.
+ * 이미 걸려 있던 초과 대기 주문 · 환율 변동으로 음수가 될 수 있어 0 아래로 내려가지 않게 한다.
+ */
+export function availableCash(
+    balance: bigint,
+    pendingBuys: readonly PendingBuy[],
+    usdKrw: number,
+): bigint {
+    const locked = pendingBuys.reduce((sum, o) => {
+        if (o.price == null) return sum;
+        const unit = toKrw(fromMinor(o.price, o.foreign), o.foreign, usdKrw);
+        return sum + unit * BigInt(o.quantity);
+    }, 0n);
+    return balance > locked ? balance - locked : 0n;
+}
+
+/** 매도가능 수량 = 보유 수량 − 그 종목 대기 매도 수량(0 아래로 내려가지 않음) */
+export function sellableQuantity(
+    held: number,
+    pendingSells: readonly { quantity: number }[],
+): number {
+    const locked = pendingSells.reduce((sum, o) => sum + o.quantity, 0);
+    return Math.max(0, held - locked);
+}
+
 /** 저장 유형 → API 유형 */
 export const apiType = (stored: string): 'MARKET' | 'LIMIT' | 'RESERVED' =>
     stored === 'RSV_UP' || stored === 'RSV_DOWN'

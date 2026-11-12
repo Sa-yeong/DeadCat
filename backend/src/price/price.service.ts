@@ -1,9 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../providers/redis/redis.service';
 import {
+    KisProvider,
     StockPrice,
     StockVolumeSummaryData,
 } from '../providers/kis/kis.provider';
+import { changeAgainst } from './us-session';
+import {
+    DEFAULT_USD_KRW,
+    KrwQuote,
+    quoteFromCloses,
+    toKrwQuote,
+    toValuationKrw,
+} from './valuation';
+import { isForeignStock } from '../modules/orders/order-rules';
 
 // 차트 캔들 데이터 인터페이스
 export interface StockChartItem {
@@ -44,7 +54,12 @@ export interface CachedPrice extends StockPrice {
 
 @Injectable()
 export class PriceService {
-    constructor(private readonly redis: RedisService) {}
+    private readonly logger = new Logger(PriceService.name);
+
+    constructor(
+        private readonly redis: RedisService,
+        private readonly kis: KisProvider,
+    ) {}
 
     // 시세 적재
 
@@ -99,6 +114,8 @@ export class PriceService {
 
             const updated: CachedPrice = {
                 ...base,
+                // 현재가 · 등락은 웹소켓 담당이지만, 체결이 없어(장외 · 재시작 직후) 금액이 아직 없으면 REST 값으로 채운다
+                change_price: base.change_price ?? price.change_price,
                 trading_value: price.trading_value,
                 accumulated_volume: price.accumulated_volume,
                 trading_value_krw: Math.round(rankingScore),
@@ -119,12 +136,45 @@ export class PriceService {
     // 그래서 ① 마지막 값을 메모리에 들고 있어 읽기를 없애고 ② 1초에 한 번 몰아서 쓴다.
     // 종목당 Redis 쓰기 ≤ 1회/초. 화면은 2초마다 읽으므로 체감 지연 없음.
     private readonly latest = new Map<string, CachedPrice>(); // 종목별 최신 시세(메모리)
+    private readonly latestVolume = new Map<string, StockVolumeSummaryData>(); // 종목별 최신 거래량 요약(메모리)
     private readonly dirty = new Set<string>(); // 아직 Redis에 안 쓴 종목
     private flushTimer: NodeJS.Timeout | null = null;
     private static readonly FLUSH_MS = 1000;
     // 장 마감·주말·연휴에도 마지막 체결가가 남아야 한다 — 다음 첫 체결이 덮어쓴다.
     // (120초였을 때: 15:30 마감 2분 뒤 현재가가 지워져 0으로 응답했다)
     private static readonly LIVE_TTL_S = 60 * 60 * 24 * 7;
+
+    /** 이 서버가 들고 있는 마지막 시세 — 닫힌 시간 · 빈 응답 때 그 값을 지킨다. 없으면 null */
+    latestPriceOf(code: string): CachedPrice | null {
+        const v = this.latest.get(code);
+        return v && v.current_price > 0 ? v : null;
+    }
+
+    /** 애프터마켓 등락 기준 — 종목별 오늘 정규장 마지막 체결가(스케줄러가 뉴욕 날짜마다 한 번 채운다) */
+    private readonly afterBases = new Map<
+        string,
+        { etDate: string; close: number }
+    >();
+
+    setAfterBase(code: string, etDate: string, close: number): void {
+        this.afterBases.set(code, { etDate, close });
+    }
+
+    hasAfterBase(code: string, etDate: string): boolean {
+        return this.afterBases.get(code)?.etDate === etDate;
+    }
+
+    /** 애프터마켓 등락(오늘 정규장 마지막 체결가 대비) — 기준을 아직 모르면 null */
+    afterChangeOf(
+        code: string,
+        etDate: string,
+        price: number,
+    ): { change_rate: number; change_price: number } | null {
+        const base = this.afterBases.get(code);
+        return base?.etDate === etDate
+            ? changeAgainst(base.close, price)
+            : null;
+    }
 
     // 웹소켓 수신 시 단일 종목 실시간 시세 반영 (Redis에는 FLUSH_MS마다 몰아서)
     async writeSinglePrice(
@@ -204,8 +254,108 @@ export class PriceService {
         const values = await this.redis.mget(codes.map(priceKey));
         codes.forEach((code, i) => {
             const raw = values[i];
-            if (raw) result.set(code, JSON.parse(raw) as CachedPrice);
+            if (!raw) return;
+            // 같은 Redis 에 옛 코드 서버가 쓰면 프리 · 애프터 값이 들어오고 금액 칸이 빠진다
+            // — 이 서버가 받은 값이 있으면 그것을 믿는다(현재가 · 체결 판단 모두 여기를 본다)
+            result.set(code, {
+                ...(JSON.parse(raw) as CachedPrice),
+                ...this.latest.get(code),
+            });
         });
+        return result;
+    }
+
+    // ── 평가용 원화 현재가 ──────────────────────────────────────────
+    // 평단가(원)와 비교하는 곳(보유 목록·자산·감정 수익률) 전용. readPrices는 시장 통화 그대로(화면 표시용).
+    private usdKrwCache: { rate: number; at: number } | null = null;
+    private static readonly USD_KRW_CACHE_MS = 60 * 1000;
+
+    /** 평가용 원/달러 — KIS 환율(Redis 1시간 캐시 위에 메모리 1분), 실패하면 기본값 */
+    async usdKrwForValuation(): Promise<number> {
+        const now = Date.now();
+        if (
+            this.usdKrwCache &&
+            now - this.usdKrwCache.at < PriceService.USD_KRW_CACHE_MS
+        ) {
+            return this.usdKrwCache.rate;
+        }
+        let rate = DEFAULT_USD_KRW;
+        try {
+            const r = await this.kis.getUsdKrwRate();
+            if (r > 0) rate = r;
+        } catch (e) {
+            this.logger.warn(
+                `환율 조회 실패, 평가에 기본값 ${DEFAULT_USD_KRW} 사용: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        }
+        this.usdKrwCache = { rate, at: now };
+        return rate;
+    }
+
+    /** 시장 통화 가격 하나 → 원화 평가 가격 (국내는 그대로 반올림, 해외는 × 환율) */
+    async toValuationKrw(
+        price: number,
+        stockType: string | null | undefined,
+    ): Promise<bigint> {
+        return toValuationKrw(
+            price,
+            stockType,
+            await this.usdKrwForValuation(),
+        );
+    }
+
+    /**
+     * 종목코드별 원화 평가 현재가. 캐시 현재가 → 없으면 last_close(stock_history 종가, 시장 통화).
+     * 둘 다 없는 종목은 결과에 없다(부르는 쪽이 평단가로 대신).
+     */
+    async readValuationPricesKrw(
+        stocks: {
+            code: string;
+            stock_type: string | null | undefined;
+            last_close?: number | bigint | { toString(): string } | null;
+        }[],
+    ): Promise<Map<string, bigint>> {
+        const result = new Map<string, bigint>();
+        if (stocks.length === 0) return result;
+        const cached = await this.readPrices(stocks.map((s) => s.code));
+        const rate = stocks.some((s) => isForeignStock(s.stock_type))
+            ? await this.usdKrwForValuation()
+            : 1;
+        for (const s of stocks) {
+            const live = cached.get(s.code)?.current_price;
+            const price = live ? live : Number(s.last_close ?? 0);
+            if (price > 0)
+                result.set(s.code, toValuationKrw(price, s.stock_type, rate));
+        }
+        return result;
+    }
+
+    /**
+     * 종목코드별 원화 시세(현재가 · 등락 금액 · 등락률) — 사이드바 보유 · 관심 줄.
+     * 캐시 현재가 → 없으면 closes(stock_history 최신순 종가, 시장 통화). 둘 다 없는 종목은 결과에 없다.
+     */
+    async readKrwQuotes(
+        stocks: {
+            code: string;
+            stock_type: string | null | undefined;
+            closes: readonly (number | bigint | { toString(): string })[];
+        }[],
+    ): Promise<Map<string, KrwQuote>> {
+        const result = new Map<string, KrwQuote>();
+        if (stocks.length === 0) return result;
+        const cached = await this.readPrices(stocks.map((s) => s.code));
+        const usdKrw = stocks.some((s) => isForeignStock(s.stock_type))
+            ? await this.usdKrwForValuation()
+            : 1;
+        for (const s of stocks) {
+            const live = cached.get(s.code);
+            const price = live?.current_price
+                ? live
+                : quoteFromCloses(s.closes);
+            if (price && price.current_price > 0) {
+                result.set(s.code, toKrwQuote(price, s.stock_type, usdKrw));
+            }
+        }
         return result;
     }
 
@@ -215,6 +365,7 @@ export class PriceService {
         data: StockVolumeSummaryData,
         ttlSeconds: number,
     ): Promise<void> {
+        this.latestVolume.set(code, data);
         await this.redis.set(
             volumeSummaryKey(code),
             JSON.stringify(data),
@@ -226,6 +377,9 @@ export class PriceService {
     async readVolumeSummary(
         code: string,
     ): Promise<StockVolumeSummaryData | null> {
+        // 같은 Redis 에 옛 코드 서버가 시간외 거래량을 쓴다 — 이 서버가 받은 값을 믿는다(readPrices 와 같음)
+        const mine = this.latestVolume.get(code);
+        if (mine) return mine;
         const raw = await this.redis.get(volumeSummaryKey(code));
         return raw ? (JSON.parse(raw) as StockVolumeSummaryData) : null;
     }
