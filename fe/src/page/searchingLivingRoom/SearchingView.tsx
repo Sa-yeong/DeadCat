@@ -1,6 +1,6 @@
 import './SearchingView.css'
 import { SearchBar } from '../../common/SearchBar';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Dropdown, Space, Popover, type MenuProps } from 'antd';
 import { FaAngleDown, FaPlus, FaCheck } from 'react-icons/fa6';
@@ -8,6 +8,7 @@ import { LuSparkles, LuArrowUpDown } from 'react-icons/lu';
 import { GoMirror } from 'react-icons/go';
 import { api } from '../../api/axios';
 import { LoginModal } from '../../modal/LoginModal';
+import { useAuthToken } from '../../common/authToken';
 
 
 interface RoomDetail{
@@ -26,7 +27,9 @@ interface StockInfo{
 
 export function SearchingView(){
     const navigate = useNavigate();
-    const token = localStorage.getItem('token');
+    // 로그인 · 로그아웃(네비 팝업 등)이 바뀌면 다시 그려지고, 아래 조회들이 다시 돈다
+    const token = useAuthToken();
+    const prevToken = useRef(token);
 
     const [tags, setTags] = useState<{ tag_id: number, name: string }[]>([]);
     const [searchedKeyword, setSearchedKeyword] = useState<StockInfo[]>([]);
@@ -145,7 +148,7 @@ export function SearchingView(){
 
         fetchTags();
         fetchRooms();
-    }, [])
+    }, [token])
 
     // 유사, 반대 조회
     useEffect(() => {
@@ -251,18 +254,22 @@ export function SearchingView(){
             queryString += "sort=" + order;
         }
 
+        // 로그인 상태만 바뀐 것이면 같은 주소를 다시 받기만 하고 방문 기록은 늘리지 않는다
+        const replace = prevToken.current !== token;
+        prevToken.current = token;
+
         if(queryString.length > 0 && !queryString.startsWith('sort')){
             fetchRoomsList();
-            navigate(`./search?${queryString}`);
+            navigate(`./search?${queryString}`, { replace });
         }else{
             // 기본 거실 탐색
             fetchRoomsList();
             if(queryString.length > 0)
-                navigate(`/explore?${queryString}`);
+                navigate(`/explore?${queryString}`, { replace });
             else
-                navigate('/explore');
+                navigate('/explore', { replace });
         }
-    }, [selectedTags, keywords, navigate, order])
+    }, [selectedTags, keywords, navigate, order, token])
 
     return <div className='rooms-container'>
         <div className='rooms-content'>
