@@ -429,6 +429,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
     const add = vi.fn();
     const del = vi.fn();
     const visit = vi.fn();
+    const slotDrop = vi.fn();
     let engine: LivingRoomEngine | undefined;
     const loop = new RoomLoop({
       renderer: r.renderer,
@@ -457,7 +458,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       characters,
       furniture,
       motions: ROOM_MOTIONS,
-      events: { onPicked: () => {}, onEmptyPick: () => {}, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {} },
+      events: { onPicked: () => {}, onEmptyPick: () => {}, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {}, onSlotDrop: slotDrop },
     });
     loop.load({ mode: 'OWNER', shareOption: true, characters: chars, placements, roomReactions: { counts: {}, mine: null } });
     emit({ type: 'snapshot', data: { characters: emotions.map((emotion, i) => ({ characterId: String(i + 1), emotion })) } });
@@ -474,7 +475,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       const a = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
       return q.x > a.x0 && q.x < a.x1 && q.y > a.y0 && q.y < a.y1;
     };
-    return { loop, engine, add, del, visit, drop, clock, commands, logs, playsOf, inside, ...r };
+    return { loop, engine, add, del, visit, slotDrop, drop, clock, commands, logs, playsOf, inside, ...r };
   }
 
   /** 다 걸어 나올 때까지(또는 시간 끝까지) 돌린다 */
@@ -603,6 +604,55 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       t.loop.setInteractionMode('PLACEMENT');
       t.loop.onDragEnd('1');
       expect(t.visit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('슬롯머신 뽑기 알리기 (마무리 M-4)', () => {
+    it('캐릭터를 끌어 슬롯머신에 놓으면 엔진에도 알리고(play_slot) 뽑기 시도도 알린다 — 단계(29 · 30 · 31) 모두', () => {
+      for (const id of [29, 30, 31]) {
+        const t = room([pl(16, id)]);
+        t.drop('1', { x: 15, y: 15 });
+        expect(t.visit).toHaveBeenCalledWith('1', 16);
+        expect(t.slotDrop.mock.calls).toEqual([['1', 16]]);
+        expect(t.playsOf('1')).toEqual([['play_slot']]);
+      }
+    });
+
+    it('엔진이 반응하지 않아도(쿨다운) 놓을 때마다 알린다', () => {
+      const t = room([pl(16, SLOT)]);
+      t.drop('1', { x: 15, y: 15 });
+      t.drop('1', { x: 15, y: 15 });
+      expect(t.playsOf('1')).toHaveLength(1);
+      expect(t.slotDrop).toHaveBeenCalledTimes(2);
+    });
+
+    it('엔진이 스스로 고른 play_slot 은 뽑기가 아니다 — 알리지 않는다', () => {
+      const t = room([pl(16, SLOT)]);
+      t.engine?.visitFurniture('1', 16);
+      expect(t.playsOf('1')).toEqual([['play_slot']]);
+      expect(t.slotDrop).not.toHaveBeenCalled();
+    });
+
+    it('다른 상호작용 가구 · 가구 밖 · 배치 모드에서는 알리지 않는다', () => {
+      const t = room([pl(14, PIANO), pl(16, SLOT, 5, 5)]);
+      t.drop('1', { x: 15, y: 15 });
+      t.drop('1', { x: 25, y: 25 });
+      t.loop.onDragStart('1');
+      t.loop.onDragMove('1', { x: 5, y: 5 });
+      t.loop.setInteractionMode('PLACEMENT');
+      t.loop.onDragEnd('1');
+      expect(t.slotDrop).not.toHaveBeenCalled();
+    });
+
+    it('타이머는 배치와 함께 들고 있고, 뽑은 뒤 그 기계만 바꾼다 — 자리 · 씬은 그대로', () => {
+      const t = room([{ ...pl(16, SLOT), slot: { readyAt: null } }, { ...pl(17, SLOT, 5, 5), slot: { readyAt: 500 } }]);
+      const before = t.loop.currentPlacements;
+      t.loop.setSlotTimer(16, { readyAt: 9000 });
+      expect(t.loop.currentPlacements).toBe(before); // 배치가 바뀐 것으로 치지 않는다(배치 모드에서 나올 때 다시 세우지 않게)
+      expect(t.loop.currentPlacements.map((p) => p.slot)).toEqual([{ readyAt: 9000 }, { readyAt: 500 }]);
+      // 서버에서 다시 받은 값으로 맞추기 — 타이머가 있는 것만
+      t.loop.refreshSlotTimers([{ ...pl(16, SLOT), slot: { readyAt: null } }, pl(17, SLOT, 5, 5)]);
+      expect(t.loop.currentPlacements.map((p) => p.slot)).toEqual([{ readyAt: null }, { readyAt: 500 }]);
     });
   });
 

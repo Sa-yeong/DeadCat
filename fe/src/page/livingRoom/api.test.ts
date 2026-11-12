@@ -303,6 +303,71 @@ describe('출석 (GET · POST /rooms/me/attendance) — 첫 슬롯머신 (M-3)',
   });
 });
 
+describe('슬롯머신 (마무리 M-4)', () => {
+  const furn = (placement_id: number, furniture_id: number, extra: object = {}) => ({
+    placement_id, furniture_id, furniture_name: '가구', position: { x: 4, y: 6, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, ...extra,
+  });
+  const myRoom = (placed_furniture: unknown[], server_now?: string) => ({
+    viewer_mode: 'OWNER', share_option: true, owner_info: { nickname: '나' }, received_reactions: [], placed_characters: [], placed_furniture, ...(server_now ? { server_now } : {}),
+  });
+
+  it('내 거실 — 슬롯머신에만 타이머, 남은 시간은 서버 지금 시각 기준', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    serve(() => ({
+      data: myRoom(
+        [
+          furn(11, 2),
+          furn(12, 29, { last_draw_at: null, next_draw_at: null }),
+          furn(13, 30, { last_draw_at: '2026-11-12T02:00:00.000Z', next_draw_at: '2026-11-12T05:00:00.000Z' }),
+        ],
+        '2026-11-12T03:00:00.000Z',
+      ),
+    }));
+    const snap = await api.getRoom(undefined);
+    expect(snap.placements.map((p) => p.slot)).toEqual([undefined, { readyAt: null }, { readyAt: 1_000_000 + 2 * 3_600_000 }]);
+    expect('slot' in snap.placements[0]).toBe(false);
+  });
+
+  it('옛 서버(시각 칸 없음) · 남의 거실은 타이머 없음', async () => {
+    serve(() => ({ data: myRoom([furn(12, 29)]) }));
+    expect((await api.getRoom(undefined)).placements[0].slot).toBeUndefined();
+    vi.restoreAllMocks();
+    serve(() => ({ data: { ...visitorRoom, placed_furniture: [furn(12, 29)] } }));
+    expect((await api.getRoom('22')).placements[0].slot).toBeUndefined();
+  });
+
+  it('배치 저장 응답에도 타이머가 실려 온다(보관함에서 꺼낸 기계)', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5000);
+    serve(() => ({ data: { placed_furniture: [furn(40, 29, { last_draw_at: '2026-11-12T02:59:00.000Z', next_draw_at: '2026-11-12T08:59:00.000Z' })], server_now: '2026-11-12T03:00:00.000Z' } }));
+    const saved = await api.savePlacements([{ placementId: -1, furnitureId: 29, positionX: 4, positionY: 6, rotation: 0 }]);
+    expect(saved[0].slot).toEqual({ readyAt: 5000 + 5 * 3_600_000 + 59 * 60_000 });
+  });
+
+  it('뽑기 — POST /rooms/me/furniture/:placementId/draw, 결과와 새 타이머', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(7000);
+    const calls = serve(() => ({
+      data: {
+        placement_id: 12, kind: 'FIRST', grade: 'NORMAL',
+        furniture: [{ furniture_id: 1, furniture_name: '책상' }, { furniture_id: 25, furniture_name: '독서 책상' }],
+        item: { item_id: 3, item_name: '쿠키', item_level: 'RARE', quantity: 1 },
+        last_draw_at: '2026-11-12T03:00:00.000Z', next_draw_at: '2026-11-12T09:00:00.000Z', server_now: '2026-11-12T03:00:00.000Z',
+      },
+    }));
+    expect(await api.drawSlot(12)).toEqual({
+      placementId: 12, kind: 'FIRST', grade: 'NORMAL',
+      furniture: [{ furnitureId: 1, name: '책상' }, { furnitureId: 25, name: '독서 책상' }],
+      item: { itemId: 3, name: '쿠키', grade: 'RARE', quantity: 1 },
+      slot: { readyAt: 7000 + 6 * 3_600_000 },
+    });
+    expect(calls[0]).toMatchObject({ method: 'post', url: '/rooms/me/furniture/12/draw' });
+  });
+
+  it('뽑기 — 아직 못 뽑으면(400) 서버 안내 글을 담은 에러', async () => {
+    serve(() => ({ status: 400, message: '아직 뽑을 수 없습니다.' }));
+    await expect(api.drawSlot(12)).rejects.toThrow('아직 뽑을 수 없습니다.');
+  });
+});
+
 describe('내 번호 (토큰 sub)', () => {
   it('JWT 가운데 조각의 sub — 없거나 깨졌으면 null', () => {
     expect(api.myUserId()).toBe('7');

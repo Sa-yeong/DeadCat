@@ -708,7 +708,7 @@ export class RoomScene implements RoomRenderer {
 
   /**
    * 슬롯머신 한 판 — 레버를 당겼다 놓고, 릴 셋이 돌다가 왼쪽부터 차례로 선다(서는 그림은 무작위).
-   * 지금은 미리보기 버튼만 부른다 {잠정 — 캐릭터가 당기는 상호작용(엔진 명령)이 정해지면 RoomRenderer 약속으로 올린다}.
+   * 뽑기 결과를 서버에서 받은 뒤 HUD 가 부른다(RoomRenderer.pullLever, 마무리 M-4) — 캐릭터 모션과는 따로 돈다.
    * 모델을 아직 못 받았거나 Lever · Reel_* 이 없으면 false. 도는 중이면 새로 시작하지 않는다
    */
   pullLever(placementId: number): boolean {

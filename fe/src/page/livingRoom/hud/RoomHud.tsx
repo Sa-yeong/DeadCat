@@ -18,6 +18,7 @@ import {
   type RoomCharacterDto,
   type RoomReactions,
   type RoomSnapshot,
+  type SlotDrawResult,
 } from '../types';
 import { AssetSummary } from './AssetSummary';
 import { CameraButton } from './CameraMode';
@@ -32,6 +33,8 @@ import { OwnerProfileHud } from './OwnerProfileHud';
 import { PlacementEditor } from './PlacementEditor';
 import { PressRing } from './PressRing';
 import { SidePanel } from './SidePanel';
+import { SlotResultModal, SlotTimers } from './SlotMachine';
+import { remainingMs, SLOT_NOTE_MS, SLOT_SPIN_MS, waitNotice, type SlotNote } from './slotText';
 import { StatRing, type BadgeKind } from './StatRing';
 import { useEscape } from './useEscape';
 import { useRedDots } from './useRedDots';
@@ -51,6 +54,11 @@ export interface RoomHudApi {
   onItemDrop(charId: string, itemId: number, screen: Pt): void;
   /** 끌고 있는 아이템 밑의 캐릭터가 바뀌었다(없으면 null) */
   onItemOver(charId: string | null): void;
+  /**
+   * 캐릭터를 끌어 슬롯머신에 놓았다(M-4) — 주인의 일반 모드에서만 뽑는다. 타이머가 안 찼으면 뽑지 않고 남은 시간만 알린다.
+   * 뽑으면 서버 결과를 받은 뒤 레버 · 릴 → 결과 창 → 빨간점 다시 살피기
+   */
+  onSlotDrop(charId: string, placementId: number): void;
   /**
    * 빨간점 **다시 살피기**(M-2) — 가구 · 아이템 · 출석 · 이별 · 방명록을 서버에서 다시 조회해 버튼 점을 맞춘다(조회만, 주인이 아니면 아무것도 안 함).
    * 가구 · 아이템이 생긴 직후에 부른다 — 뽑기 직후(M-4)는 페이지에서 `hud.current?.recheckDots()`
@@ -277,6 +285,60 @@ export function RoomHud({
     onRoster(next);
   };
 
+  /* ── 슬롯머신 뽑기 (M-4) ── */
+
+  /** 뽑기 결과 창 — 레버 · 릴이 선 뒤에 뜬다 */
+  const [slotResult, setSlotResult] = useState<SlotDrawResult | null>(null);
+  /** 못 뽑을 때 안내(남은 시간 · 서버 거절 글) — 그 기계 위에 잠깐 */
+  const [slotNote, setSlotNote] = useState<SlotNote | null>(null);
+  /** 뽑는 중(서버 응답 ~ 결과 창이 뜰 때까지) — 그동안 또 놓아도 뽑지 않는다 */
+  const drawing = useRef(false);
+  const spinTimer = useRef(0);
+  /** 결과가 뜰 때의 최신 「다시 살피기」 — 레버가 도는 사이 탭을 여닫았을 수 있다 */
+  const recheckRef = useRef(recheckDots);
+  useEffect(() => {
+    recheckRef.current = recheckDots;
+  });
+  useEffect(() => () => window.clearTimeout(spinTimer.current), []);
+  useEffect(() => {
+    if (!slotNote) return;
+    const t = window.setTimeout(() => setSlotNote(null), SLOT_NOTE_MS);
+    return () => window.clearTimeout(t);
+  }, [slotNote]);
+
+  const slotDrop = async (placementId: number) => {
+    if (!owner || interaction !== 'NORMAL' || drawing.current) return;
+    const p = loop.currentPlacements.find((q) => q.placementId === placementId);
+    if (!p) return;
+    // 아직 못 뽑는다 — 서버를 부르지 않고 남은 시간만(판정 자체는 서버가 한다)
+    const left = remainingMs(p.slot, Date.now());
+    if (left > 0) return setSlotNote({ placementId, text: waitNotice(left), key: Date.now() });
+    drawing.current = true;
+    let r: SlotDrawResult;
+    try {
+      r = await api.drawSlot(placementId);
+    } catch (e) {
+      drawing.current = false;
+      if (e instanceof api.AuthRequiredError) return askLogin();
+      setSlotNote({ placementId, text: e instanceof api.HttpError ? e.message : '뽑지 못했어요', key: Date.now() });
+      // 서버와 타이머가 어긋났을 수 있다(다른 기기에서 뽑았다) — 다시 받아 맞춘다
+      if (e instanceof api.HttpError) void api.getRoom(undefined).then((s) => loop.refreshSlotTimers(s.placements), () => {});
+      return;
+    }
+    // 서버에 이미 반영됐다 — 타이머부터 맞추고, 레버 · 릴이 선 뒤 결과를 띄운다(모델이 없으면 바로)
+    loop.setSlotTimer(placementId, r.slot);
+    setSlotNote(null);
+    const spinning = renderer.pullLever?.(placementId) ?? false;
+    spinTimer.current = window.setTimeout(
+      () => {
+        drawing.current = false;
+        setSlotResult(r);
+        recheckRef.current(); // 받은 가구 · 아이템이 배치 · 아이템 버튼의 빨간점으로 뜬다
+      },
+      spinning ? SLOT_SPIN_MS : 0,
+    );
+  };
+
   /* ── 증여 ── */
 
   const give = async (charId: string, itemId: number, at: Pt) => {
@@ -348,11 +410,15 @@ export function RoomHud({
       if (!owner || interaction !== 'NORMAL') return;
       setItemOver(charId);
     },
+    onSlotDrop(_charId, placementId) {
+      void slotDrop(placementId);
+    },
     recheckDots,
   }));
 
   // Esc — 창 → 링 순으로 닫는다. 로그인 창은 자기가 받고, 배치 모드는 편집기가 받는다
-  useEscape(loginOpen || interaction === 'PLACEMENT' ? null : openPanel ? closePanel : selected ? deselect : null);
+  const closeSlotResult = () => setSlotResult(null);
+  useEscape(loginOpen || interaction === 'PLACEMENT' ? null : slotResult ? closeSlotResult : openPanel ? closePanel : selected ? deselect : null);
 
   const onBadge = (kind: BadgeKind) => {
     if (!selected) return;
@@ -414,6 +480,10 @@ export function RoomHud({
           onNeedLogin={askLogin}
         />
       )}
+
+      {/* 슬롯머신 위 타이머 — 주인의 일반 모드에서만(M-4). 남의 거실 · 배치 모드에는 없다 */}
+      {normal && owner && <SlotTimers placements={loop.currentPlacements} furniture={furniture} anchorOf={(id) => renderer.furnitureAnchor(id)} note={slotNote} />}
+      {slotResult && <SlotResultModal result={slotResult} furniture={furniture} onClose={closeSlotResult} />}
 
       {chargeAt && charge && <PressRing key={charge.key} x={chargeAt.x} y={chargeAt.y} ms={charge.ms} />}
       {flash && <AffinityFlash key={flash.key} x={flash.at.x} y={flash.at.y} text={flash.text} level={flash.level} progress={flash.progress} sub={flash.sub} />}

@@ -1,4 +1,5 @@
-import { charIdOf, type InteractionMode, type PlacementDto, type RoomCharacterDto, type RoomSnapshot } from '../types';
+import { SLOT_MACHINE } from '../furnitureCatalog';
+import { charIdOf, type InteractionMode, type PlacementDto, type RoomCharacterDto, type RoomSnapshot, type SlotTimer } from '../types';
 import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
 import type { CharacterEngine, Emotion, EngineCommand, EngineFactory } from './CharacterEngine';
 import { createHandle, type ActRun, type CharacterHandle } from './CharacterHandle';
@@ -24,6 +25,11 @@ export interface RoomLoopEvents {
   onLiftChargeEnd(charId: string): void;
   /** 캐릭터를 길게 눌러 들었다 — 그 캐릭터에 열린 스탯 링은 닫는다 (추가) */
   onLifted(charId: string): void;
+  /**
+   * 캐릭터를 끌어 슬롯머신에 놓았다 — 뽑기 시도(마무리 M-4). 뽑을지(주인인지 · 타이머) · 서버 호출은 HUD 가 한다.
+   * 엔진이 스스로 고른 play_slot(캐릭터가 혼자 슬롯머신에 감)은 여기로 오지 않는다 — 뽑기가 아니다
+   */
+  onSlotDrop?(charId: string, placementId: number): void;
 }
 
 /** 개발 모드 머리 위 글자의 지금 단계 — 엔진 이름 · 몇 번째(1부터) / 전체 단계 수 · 남은 시간 */
@@ -194,6 +200,19 @@ export class RoomLoop {
   /** 지금 방에 놓인 배치 — 배치 편집을 시작할 때 오버레이가 읽는다. 배치의 원본은 여기 하나 */
   get currentPlacements(): readonly PlacementDto[] {
     return this.placements;
+  }
+
+  /**
+   * 슬롯머신 타이머를 바꾼다(마무리 M-4) — 뽑은 직후 그 기계 하나, 또는 서버에서 다시 받은 배치(fresh)의 타이머 전부.
+   * 자리 · 씬은 건드리지 않는다. 배치의 원본이 여기라 타이머도 여기 둔다
+   */
+  setSlotTimer(placementId: number, slot: SlotTimer): void {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    if (p) p.slot = slot;
+  }
+
+  refreshSlotTimers(fresh: readonly PlacementDto[]): void {
+    for (const f of fresh) if (f.slot) this.setSlotTimer(f.placementId, f.slot);
   }
 
   /**
@@ -673,6 +692,8 @@ export class RoomLoop {
     // 가구는 엔진에 알린다. 내려놓은 자리에 그대로 서 있는다 — 설치 영역 안 어디에 설지 · 방향은 앵커(#7)에서
     if (target?.kind === 'furniture' && this.mode === 'NORMAL') {
       this.engine.visitFurniture(charId, target.placementId);
+      // 슬롯머신에 직접 끌어다 놓았을 때만 뽑기 시도(M-4) — 엔진이 반응하든 말든(쿨다운 · 감정 대기) 알린다. 캐릭터 동작은 엔진 play_slot 그대로
+      if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE) this.events.onSlotDrop?.(charId, target.placementId);
       return;
     }
     this.stepAside(h); // 장식 가구 위에 내려놓았으면 내려온다

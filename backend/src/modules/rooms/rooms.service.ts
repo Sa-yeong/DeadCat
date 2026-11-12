@@ -19,6 +19,9 @@ import { PrismaService } from 'src/providers/database/prisma.service';
 import { LeaveReactionDto } from './dto/leave-reactions.dto';
 import { UpdateRoomLayoutDto } from './dto/update-room.dto';
 import { applyRoomLayout } from './room-layout';
+import { drawSlotMachine } from './slot-draw';
+import { SlotDrawResponseDto } from './dto/slot-draw-response.dto';
+import { canDrawAt, nextDrawAt, slotStageOf } from 'src/common/slot/slot-rules';
 import { HoldingService } from '../holding/holding.service';
 import { HoldingItemDto } from '../holding/dto/holding-list.response.dto';
 import { toAffinityInfo } from 'src/common/affinity/affinity-level';
@@ -72,6 +75,9 @@ export class RoomsService {
                 this.findPlacedFurniture(this.prisma, userId),
             ]);
 
+        // 슬롯머신 남은 시간의 기준 — 서버 시계 (마무리 M-4)
+        const now = new Date();
+
         return {
             viewer_mode: 'OWNER',
             share_option: owner.share_option ?? true,
@@ -98,9 +104,24 @@ export class RoomsService {
                 };
             }),
             placed_furniture: placedFurnitures.map((f) =>
-                this.formatFurniture(f),
+                this.formatFurniture(f, now),
             ),
+            server_now: now.toISOString(),
         };
+    }
+
+    // POST /rooms/me/furniture/:placementId/draw — 슬롯머신 뽑기 (마무리 M-4). 판정 · 지급 · 시각 기록은 한 트랜잭션(slot-draw.ts)
+    async drawSlotMachine(
+        userId: bigint,
+        placementIdParam: string,
+    ): Promise<SlotDrawResponseDto> {
+        if (!/^\d+$/.test(placementIdParam)) {
+            throw new NotFoundException('내 가구가 아닙니다.');
+        }
+        const placementId = BigInt(placementIdParam);
+        return this.prisma.$transaction((tx) =>
+            drawSlotMachine(tx, userId, placementId, new Date()),
+        );
     }
 
     // 거실이 받은 반응 — 종류별 개수
@@ -174,15 +195,30 @@ export class RoomsService {
         });
     }
 
-    // placement_id = 방에 놓인 그 한 개, furniture_id = 종류
-    private formatFurniture(f: {
-        id: bigint;
-        furniture_id: bigint;
-        position_x: unknown;
-        position_y: unknown;
-        rotation: unknown;
-        furnitures: { name: string };
-    }): PlacedFurnitureDto {
+    // placement_id = 방에 놓인 그 한 개, furniture_id = 종류.
+    // now 를 주면(주인 응답) 슬롯머신에 마지막 뽑기 시각 · 다음 가능 시각(지금 가능이면 null)을 싣는다 (마무리 M-4)
+    private formatFurniture(
+        f: {
+            id: bigint;
+            furniture_id: bigint;
+            position_x: unknown;
+            position_y: unknown;
+            rotation: unknown;
+            last_draw_at: Date | null;
+            furnitures: { name: string };
+        },
+        now?: Date,
+    ): PlacedFurnitureDto {
+        const stage = now ? slotStageOf(f.furniture_id) : null;
+        const slot =
+            now && stage !== null
+                ? {
+                      last_draw_at: f.last_draw_at?.toISOString() ?? null,
+                      next_draw_at: canDrawAt(stage, f.last_draw_at, now)
+                          ? null
+                          : nextDrawAt(stage, f.last_draw_at)!.toISOString(),
+                  }
+                : {};
         return {
             placement_id: Number(f.id),
             furniture_id: Number(f.furniture_id),
@@ -193,6 +229,7 @@ export class RoomsService {
                 z: 0,
             },
             rotation: { x: 0, y: Number(f.rotation), z: 0 },
+            ...slot,
         };
     }
 
@@ -219,10 +256,11 @@ export class RoomsService {
             return {
                 is_success: true,
                 updated_at: updatedAt,
-                // 새로 꺼낸 가구의 placement_id를 프론트가 알 수 있게
+                // 새로 꺼낸 가구의 placement_id를 프론트가 알 수 있게. 슬롯머신 시각도 같이(보관함에서 꺼낸 기계의 타이머)
                 placed_furniture: placedFurnitures.map((f) =>
-                    this.formatFurniture(f),
+                    this.formatFurniture(f, now),
                 ),
+                server_now: now.toISOString(),
             };
         } catch (error) {
             if (error instanceof HttpException) throw error;

@@ -49,6 +49,16 @@ export class RoomsController {
         return await this.farewellsService.getFarewells(userId);
     }
 
+    // 슬롯머신 뽑기 (마무리 M-4) — 주인만(내 가구 줄이 아니면 404). 방에 놓인 슬롯머신 · 타이머가 찼을 때만(아니면 400)
+    @UseGuards(JwtAuthGuard)
+    @Post('me/furniture/:placementId/draw')
+    async drawSlotMachine(
+        @User() userId: bigint,
+        @Param('placementId') placementId: string,
+    ) {
+        return await this.roomsService.drawSlotMachine(userId, placementId);
+    }
+
     // 거실 썸네일 업로드 (거실썸네일 지시서 S1-2) — multipart: image(파일) · is_auto("true"/"false")
     // 500KB 검사는 서비스에서 400으로. multer 한도는 메모리 보호용으로 넉넉히
     @UseGuards(JwtAuthGuard)

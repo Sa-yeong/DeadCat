@@ -17,6 +17,13 @@ export class PlacedFurnitureDto {
     furniture_name!: string;
     position!: Vector3Dto;
     rotation!: Vector3Dto;
+    /**
+     * 슬롯머신(가구 29 · 30 · 31)일 때만, 주인에게만 — 마지막 뽑기 시각(UTC ISO). 한 번도 안 뽑았으면 null (마무리 M-4).
+     * 그 밖의 가구 · 남의 거실 응답에는 이 칸이 없다
+     */
+    last_draw_at?: string | null;
+    /** 슬롯머신일 때만, 주인에게만 — 다음 뽑기 가능 시각(UTC ISO). 지금 뽑을 수 있으면 null */
+    next_draw_at?: string | null;
 }
 
 // ── GET /rooms/me (내 거실, 지시서 3-①) ──
@@ -50,6 +57,8 @@ export class MyRoomResponseDto {
     placed_characters!: MyRoomCharacterDto[];
     /** 가구는 가구 묶음 결정 전까지 기존 모양 그대로 */
     placed_furniture!: PlacedFurnitureDto[];
+    /** 서버 지금 시각(UTC ISO) — 슬롯머신 남은 시간을 브라우저 시계와 무관하게 셈한다 (마무리 M-4) */
+    server_now!: string;
 }
 
 // ── GET /rooms/:userId (남의 거실 — 방문자 VISITOR · 비로그인 GUEST, 지시서 3-① · 3-⑨ · 3-⑦-c) ──

@@ -70,6 +70,32 @@ export interface PlacementDto {
   positionY: number;
   /** 0 · 90 · 180 · 270 */
   rotation: number;
+  /** 슬롯머신 타이머 — 내 거실의 놓인 슬롯머신에만(서버가 시각을 줄 때). 그 밖의 가구 · 남의 거실은 없다 (마무리 M-4) */
+  slot?: SlotTimer;
+}
+
+/**
+ * 슬롯머신 한 대의 타이머 — 기계(user_furniture 한 줄)마다 따로.
+ * readyAt = 다음 뽑기가 되는 때(**이 브라우저 시계** ms — 서버가 준 「남은 시간」을 받은 순간의 내 시계에 더한 값이라 내 시계가 틀려도 남은 시간은 맞다).
+ * null = 지금 뽑을 수 있다(한 번도 안 뽑았거나 다 찼다)
+ */
+export interface SlotTimer {
+  readyAt: number | null;
+}
+
+/** 슬롯머신 뽑기 결과 — POST /rooms/me/furniture/:placementId/draw (마무리 M-4) */
+export interface SlotDrawResult {
+  placementId: number;
+  /** FIRST = 첫 뽑기(노말 가구 팩 + 아이템) · FURNITURE = 가구 팩 · ITEM = 아이템 1개 */
+  kind: 'FIRST' | 'FURNITURE' | 'ITEM';
+  /** 뽑힌 등급(NORMAL · RARE · EPIC · UNIQUE) — FIRST 는 가구 팩 등급 */
+  grade: string;
+  /** 받은 가구 — 전부 보관함에. 이름은 서버 이름(화면은 카탈로그 이름을 먼저 쓴다) */
+  furniture: { furnitureId: number; name: string }[];
+  /** 받은 아이템 — 없으면 null */
+  item: { itemId: number; name: string; grade: string; quantity: number } | null;
+  /** 이 기계의 새 타이머 */
+  slot: SlotTimer;
 }
 
 /** 거실 썸네일 상태(내 거실만) — url 이 없거나 isAuto 면 화면이 자동으로 찍는다 */

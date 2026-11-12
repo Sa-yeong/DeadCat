@@ -118,6 +118,11 @@ export interface RoomRenderer {
    * 화면은 찍은 뒤 원래대로. 파일로 바꾸는 건 thumbImage
    */
   capture?(view: CaptureView, rect: CaptureRect, size?: CaptureSize): HTMLCanvasElement;
+  /**
+   * 슬롯머신 한 판(3D 만 — 평면 더미는 없음) — 레버를 당겼다 놓고 릴이 돈다. 뽑기 결과를 서버에서 받은 뒤 HUD 가 부른다(마무리 M-4).
+   * 모델을 못 받았거나 이미 도는 중이면 false
+   */
+  pullLever?(placementId: number): boolean;
   /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
   whenSettled?(): Promise<void>;
   dispose(): void;

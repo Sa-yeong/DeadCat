@@ -180,6 +180,8 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
           onLiftCharge: (id, ms) => hud.current?.onLiftCharge(id, ms),
           onLiftChargeEnd: (id) => hud.current?.onLiftChargeEnd(id),
           onLifted: (id) => hud.current?.onLifted(id),
+          // 캐릭터를 끌어 슬롯머신에 놓았다 — 뽑기(M-4). 주인인지 · 타이머는 HUD 가 본다
+          onSlotDrop: (id, placementId) => hud.current?.onSlotDrop(id, placementId),
         },
       });
       loop.load(snap);

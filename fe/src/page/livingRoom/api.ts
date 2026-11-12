@@ -29,6 +29,8 @@ import type {
   RoomReactions,
   RoomSnapshot,
   RoomThumbnail,
+  SlotDrawResult,
+  SlotTimer,
   StorageItem,
 } from './types';
 
@@ -112,14 +114,34 @@ interface PlacedFurnitureRes {
   furniture_name: string;
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
+  /** 슬롯머신일 때만, 주인에게만(마무리 M-4) — 마지막 뽑기 시각 · 다음 뽑기 가능 시각(지금 가능이면 null). UTC ISO */
+  last_draw_at?: string | null;
+  next_draw_at?: string | null;
 }
-const placementOf = (f: PlacedFurnitureRes): PlacementDto => ({
-  placementId: f.placement_id,
-  furnitureId: f.furniture_id,
-  positionX: f.position.x,
-  positionY: f.position.y,
-  rotation: f.rotation.y,
-});
+
+/**
+ * 서버의 「다음 뽑기 가능 시각」 → 슬롯머신 타이머(이 브라우저 시계 기준).
+ * 남은 시간 = next_draw_at − server_now 를 받은 순간(clientNow)에 더한다 — 브라우저 시계가 틀려도 남은 시간은 맞다.
+ * next_draw_at 칸이 없으면(슬롯머신이 아님 · 남의 거실 · 옛 서버) undefined, null 이면 지금 뽑을 수 있음
+ */
+export function slotTimerOf(nextDrawAt: string | null | undefined, serverNow: string | undefined, clientNow: number): SlotTimer | undefined {
+  if (nextDrawAt === undefined) return undefined;
+  if (nextDrawAt === null) return { readyAt: null };
+  const left = Date.parse(nextDrawAt) - (serverNow ? Date.parse(serverNow) : clientNow);
+  return { readyAt: Number.isFinite(left) && left > 0 ? clientNow + left : null };
+}
+
+const placementOf = (f: PlacedFurnitureRes, serverNow?: string, clientNow = Date.now()): PlacementDto => {
+  const slot = slotTimerOf(f.next_draw_at, serverNow, clientNow);
+  return {
+    placementId: f.placement_id,
+    furnitureId: f.furniture_id,
+    positionX: f.position.x,
+    positionY: f.position.y,
+    rotation: f.rotation.y,
+    ...(slot ? { slot } : {}),
+  };
+};
 
 /** GET /rooms/me 응답 (백엔드 MyRoomResponseDto) — 자기 id 로 GET /rooms/:userId 를 불러도 이 모양 */
 interface MyRoomRes {
@@ -142,6 +164,8 @@ interface MyRoomRes {
     received_reactions: ReactionCountRes[];
   }[];
   placed_furniture: PlacedFurnitureRes[];
+  /** 서버 지금 시각(UTC ISO) — 슬롯머신 남은 시간의 기준(마무리 M-4). 옛 서버는 없다 */
+  server_now?: string;
 }
 
 /** GET /rooms/:userId 응답 (백엔드 VisitorRoomResponseDto) — 수량 · 평단가는 없다(남에게 투자금 비공개) */
@@ -206,7 +230,7 @@ function myRoomSnapshot(d: MyRoomRes): RoomSnapshot {
       receivedReactionCount: sumCounts(c.received_reactions),
       receivedReactions: countsOf(c.received_reactions),
     })),
-    placements: d.placed_furniture.map(placementOf),
+    placements: d.placed_furniture.map((f) => placementOf(f, d.server_now)),
     roomReactions: { counts: countsOf(d.received_reactions), mine: null },
     roomThumbnail: { url: d.room_thumbnail?.url ?? null, isAuto: d.room_thumbnail?.is_auto ?? true },
   };
@@ -237,7 +261,7 @@ function visitorRoomSnapshot(d: VisitorRoomRes): RoomSnapshot {
       receivedReactions: countsOf(c.received_reactions),
       myReaction: c.my_reaction,
     })),
-    placements: d.placed_furniture.map(placementOf),
+    placements: d.placed_furniture.map((f) => placementOf(f)),
     roomReactions: { counts: countsOf(d.received_reactions), mine: d.my_reaction },
     roomReturnRate: d.room_return_rate,
   };
@@ -296,7 +320,7 @@ export async function getStorage(): Promise<StorageItem[]> {
  * 보관함에서 꺼낸 가구(음수 임시 id)는 placement_id 없이 보내고, 진짜 id 는 응답에서 받는다
  */
 export async function savePlacements(placements: readonly PlacementDto[]): Promise<PlacementDto[]> {
-  const res = await authed<{ placed_furniture: PlacedFurnitureRes[] }>('put', '/rooms/layout', {
+  const res = await authed<{ placed_furniture: PlacedFurnitureRes[]; server_now?: string }>('put', '/rooms/layout', {
     furniture_layout: placements.map((p) => ({
       ...(p.placementId > 0 ? { placement_id: p.placementId } : {}),
       furniture_id: p.furnitureId,
@@ -304,7 +328,34 @@ export async function savePlacements(placements: readonly PlacementDto[]): Promi
       rotation: p.rotation,
     })),
   });
-  return res.placed_furniture.map(placementOf);
+  return res.placed_furniture.map((f) => placementOf(f, res.server_now));
+}
+
+/* ── 슬롯머신 뽑기 (OWNER, 마무리 M-4) ─────────────────────────────── */
+
+/**
+ * POST /rooms/me/furniture/:placementId/draw — 방에 놓인 내 슬롯머신으로 뽑는다. 판정(타이머)은 서버 시계.
+ * 아직 못 뽑으면(400) · 내 가구가 아니면(404) 서버 안내 글을 담은 HttpError.
+ * 받은 가구는 보관함에, 아이템은 보유 아이템에 들어간다 — 화면은 결과를 보여 주고 빨간점을 다시 살핀다
+ */
+export async function drawSlot(placementId: number): Promise<SlotDrawResult> {
+  const r = await authed<{
+    placement_id: number;
+    kind: 'FIRST' | 'FURNITURE' | 'ITEM';
+    grade: string;
+    furniture: { furniture_id: number; furniture_name: string }[];
+    item: { item_id: number; item_name: string; item_level: string; quantity: number } | null;
+    next_draw_at: string;
+    server_now: string;
+  }>('post', `/rooms/me/furniture/${placementId}/draw`);
+  return {
+    placementId: r.placement_id,
+    kind: r.kind,
+    grade: r.grade,
+    furniture: r.furniture.map((f) => ({ furnitureId: f.furniture_id, name: f.furniture_name })),
+    item: r.item && { itemId: r.item.item_id, name: r.item.item_name, grade: r.item.item_level, quantity: r.item.quantity },
+    slot: slotTimerOf(r.next_draw_at, r.server_now, Date.now()) ?? { readyAt: null },
+  };
 }
 
 /* ── Preset API — 캐릭터 탭 (OWNER, 3-⑥) ─────────────────────────────── */

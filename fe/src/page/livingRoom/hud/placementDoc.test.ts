@@ -21,8 +21,8 @@ const docOf = (...placements: PlacementDto[]): PlacementDoc => ({ placements, st
 const cand = (furnitureId: number, x: number, y: number, rotation = 0, placementId: number | null = null) => ({ placementId, furnitureId, pos: { x, y }, rotation });
 
 describe('카탈로그', () => {
-  it('DB furnitures 29줄 전부 — 키는 1~29', () => {
-    expect(FURNITURE_CATALOG.map((d) => d.furnitureId)).toEqual(Array.from({ length: 29 }, (_, i) => i + 1));
+  it('DB furnitures 31줄 전부 — 키는 1~31(30 · 31 = 슬롯머신 2 · 3단계)', () => {
+    expect(FURNITURE_CATALOG.map((d) => d.furnitureId)).toEqual(Array.from({ length: 31 }, (_, i) => i + 1));
   });
 
   it('등급별 스킨은 크기 · 엔진 이름이 같다', () => {

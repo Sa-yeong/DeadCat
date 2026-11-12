@@ -1,5 +1,5 @@
 /**
- * 가구 카탈로그 — DB furnitures 29줄 전부. 키 = furnitures.id. 서버는 번호 · 이름 · 등급만 알고, 화면에 필요한 건 여기 있다.
+ * 가구 카탈로그 — DB furnitures 31줄 전부. 키 = furnitures.id. 서버는 번호 · 이름 · 등급만 알고, 화면에 필요한 건 여기 있다.
  *   이름      화면 이름 — 아직 미정이라 DB 이름 그대로(「빈티지 소파」 같은 이름은 나중에 여기서 짓는다)
  *   w · d     설치 영역(칸) = 본체 + 사용 자리. 사용 자리를 따로 적는 칸은 없다 — 겹침 검사는 이 사각형과 회전만 본다
  *   h · colors 모델이 없을 때 세우는 상자의 높이 · 색(지금은 전부 상자)
@@ -21,6 +21,8 @@ const carpet = (color: string, border: string): Colors => [color, border, ''];
 
 const DESK = 'desk_small';
 const SOFA = 'sofa_2seat';
+/** 슬롯머신의 엔진 이름 — 캐릭터를 끌어 놓으면 뽑기(RoomLoop.onDragEnd), 위에 타이머(hud/SlotMachine) */
+export const SLOT_MACHINE = 'slot_machine';
 
 function box(furnitureId: number, name: string, w: number, d: number, h: number, colors: Colors, engineName?: string): FurnitureDef {
   return { furnitureId, name, kind: 'box', w, d, h, colors, engineName, model: furnitureModelUrl(furnitureId) };
@@ -65,5 +67,8 @@ export const FURNITURE_CATALOG: FurnitureDef[] = [
   box(26, '스피커', 2, 4, 1.6, RARE, 'speaker'),
   box(27, '컴퓨터 책상', 4, 4, 1.0, EPIC, 'desk_computer'),
   box(28, '피아노', 3, 4, 1.4, UNIQUE, 'piano'),
-  box(29, '슬롯머신', 2, 4, 2.5, NORMAL, 'slot_machine'),
+  // 슬롯머신 — 단계 = 가구 번호(29 = 1단계 · 30 = 2단계 · 31 = 3단계, 마무리 M-4). 크기 · 엔진 이름은 같고 모델만 다르다(레버 · 릴 노드 이름도 같다)
+  box(29, '슬롯머신', 2, 4, 2.5, NORMAL, SLOT_MACHINE),
+  box(30, '슬롯머신 2단계', 2, 4, 2.5, NORMAL, SLOT_MACHINE),
+  box(31, '슬롯머신 3단계', 2, 4, 2.5, NORMAL, SLOT_MACHINE),
 ];
