@@ -68,7 +68,7 @@ export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
                     setNewName(e.target.value)
                     setIsNameChecked(false);
                     }}  />
-            <button onClick={duplicate_name}>중복 확인</button>
+            <button onClick={duplicate_name} disabled={isNameChecked}>중복 확인</button>
             </div>
             <button className='footer' disabled={!isNameChecked} onClick={changeNickname}>입력 완료</button>
         </div>

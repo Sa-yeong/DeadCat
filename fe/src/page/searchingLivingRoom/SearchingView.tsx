@@ -103,7 +103,7 @@ export function SearchingView(){
                 })
             }else{
                 response = await api.get('/home/stocks/search',{
-                    params: {keywords: input}
+                    params: {keyword: input}
                 })
             }
             

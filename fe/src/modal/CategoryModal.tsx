@@ -29,7 +29,7 @@ export function CategoryModal({isOpen, onClose, category, stocks}:any){
                     <StockRow order={stock.rank}
                         s_name={stock.stock_name}
                         s_code={stock.stock_code}
-                        c_price={stock.current_price}
+                        c_price={stock.current_price_krw}
                         rise_rate={stock.change_rate}
                         t_value={stock.trading_value}
                         isLike={stock.is_favorite}

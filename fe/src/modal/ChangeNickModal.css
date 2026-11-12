@@ -56,8 +56,16 @@
     color: #8b95a1;
 }
 .nick-change-modal .middle button{
-    border: 1px solid gray;
+    /* border: 1px solid gray; */
+    border: none;
     border-radius: 5px;
+    background: #3B82F6;
+    color: white;
+    cursor: pointer;
+}
+.nick-change-modal .middle button:disabled{
+    cursor: auto;
+    border: 1px solid #8b95a1;
     background: transparent;
     color: #8b95a1;
 }
@@ -69,7 +77,11 @@
     border: none;
     border-radius: 5px;
     color: #fafafa;
+    cursor: pointer;
 }
 .nick-change-modal .footer:disabled{
-    background: #8b95a1;
+    border: 1px solid #8b95a1;
+    background: transparent;
+    color: #8b95a1;
+    cursor: auto;
 }

@@ -1,6 +1,6 @@
 import './Follow.css'
 import { useState, useEffect } from 'react';
-import { Outlet, useOutletContext } from 'react-router-dom';
+import { Outlet, useOutletContext, useNavigate } from 'react-router-dom';
 import { ListTab } from '../common/ListTab';
 import { SearchBar } from '../common/SearchBar';
 import { IoClose } from 'react-icons/io5';
@@ -14,6 +14,8 @@ interface Follower{
 }
 
 export function FollowModal({isOpen, onClose}: any){
+    const navigate = useNavigate();
+
     const [followers, setFollowers] = useState<Follower[]>([]);
     const [followees, setFollowees] = useState<Follower[]>([]);
 
@@ -62,6 +64,10 @@ export function FollowModal({isOpen, onClose}: any){
         fetchFollowees();
     }
 
+    const click = (targetId: number) => {
+        navigate(`/room/${targetId}`)
+    }
+
     useEffect(() => {
       if(isOpen){
         fetchFollowers();
@@ -78,13 +84,13 @@ export function FollowModal({isOpen, onClose}: any){
                 <ListTab list={[["팔로워", "/mypage/assets/follower"], ["팔로잉", "/mypage/assets/followee"]]} />
                 <IoClose onClick={onClose} />
             </div>
-            <Outlet context={{followers, followees, processFollow}} />
+            <Outlet context={{followers, followees, processFollow, click}} />
         </div>
     </div>;
 }
 
 export function Follower(){
-    const {followers, followees, processFollow}: any = useOutletContext();
+    const {followers, followees, processFollow, click}: any = useOutletContext();
 
     return <div className='content'>
         <SearchBar placeholder='검색' />
@@ -96,7 +102,8 @@ export function Follower(){
                     <Row key={user?.target_user_id} id={user?.target_user_id}
                 img={user?.profile_img_url} amount={user?.follower_count}
                 name={user.nickname} onProcess={processFollow}
-                isFollowing={followees.some((f: Follower) => f.target_user_id === user?.target_user_id)} />
+                isFollowing={followees.some((f: Follower) => f.target_user_id === user?.target_user_id)}
+                click={click} />
                 )
             }
         </div>
@@ -104,7 +111,7 @@ export function Follower(){
 }
 
 export function Followee(){
-    const {followees, processFollow}: any = useOutletContext();
+    const {followees, processFollow, click}: any = useOutletContext();
 
     return <div className='content'>
         <SearchBar placeholder='검색' />
@@ -115,15 +122,16 @@ export function Followee(){
                 followees.map((user: Follower) => 
                     <Row key={user.target_user_id} id={user.target_user_id} img={user.profile_img_url} 
                      name={user.nickname} onProcess={processFollow} amount={user.follower_count}
-                     isFollowing={followees.some((f: Follower) => f.target_user_id === user.target_user_id)} />
+                     isFollowing={followees.some((f: Follower) => f.target_user_id === user.target_user_id)}
+                     click={click} />
                 )
             }
         </div>
     </div>;
 }
 
-function Row({id, img, name, amount, onProcess, isFollowing}: any){
-    return <div className='follow-row'>
+function Row({id, img, name, amount, onProcess, isFollowing, click}: any){
+    return <div className='follow-row' onClick={() => click(id)}>
         <span className='left-side'>
             <img alt='타 사용자 프로필 이미지' src={img} />
             <span className='user-info'>
@@ -133,8 +141,8 @@ function Row({id, img, name, amount, onProcess, isFollowing}: any){
         </span>
         {
             isFollowing ?
-            <button onClick={() => onProcess(id)}>팔로우 취소</button>:
-            <button onClick={() => onProcess(id)}>팔로우</button>
+            <button onClick={(e) => { e.stopPropagation(); onProcess(id); }}>팔로우 취소</button>:
+            <button onClick={(e) => { e.stopPropagation(); onProcess(id); }}>팔로우</button>
         }
         
     </div>;
