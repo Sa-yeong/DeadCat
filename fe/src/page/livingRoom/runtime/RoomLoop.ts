@@ -14,6 +14,23 @@ import { footprint } from './furnitureShape';
 import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import type { MotionTable } from './roomEngine';
 
+/**
+ * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
+ * 슬롯머신 모델 가운데(설치 영역 가운데 = 모델 경계 상자 가운데) 기준, 모델 좌표로
+ *   front  정면(+Z) 쪽으로 — 0.41m − 경계 상자 가운데 치우침 0.022m = 0.388m ÷ (0.731m / 2.5칸)
+ *   side   모델 +X(레버 쪽) — 경계 상자 가운데가 레버 쪽으로 0.030m 치우쳐 있어서 캐릭터는 그만큼 반대쪽
+ * 캐릭터는 슬롯머신 정면을 마주 본다 — 레버가 오른손 쪽
+ */
+const SLOT_STAND = { front: 1.327, side: -0.103 };
+/** 슬롯머신 앞에 세운 뒤 모션까지 뜸(초) — 모션이 휙 나가지 않게 (2026-11-14 도휘 — 0.5 → 0.75초) */
+const SLOT_PAUSE_S = 0.75;
+
+/** 슬롯머신 앞에 서서 뜸을 들이는 중 — wait 초 뒤 엔진에 알린다 */
+interface SlotWait {
+  placementId: number;
+  wait: number;
+}
+
 export interface RoomLoopEvents {
   /** 짧게 누름 — 페이지가 RoomHud.onSelect 에 잇는다. 화면 좌표는 방 기준 */
   onPicked(charId: string, screen: Pt): void;
@@ -30,6 +47,11 @@ export interface RoomLoopEvents {
    * 엔진이 스스로 고른 play_slot(캐릭터가 혼자 슬롯머신에 감)은 여기로 오지 않는다 — 뽑기가 아니다
    */
   onSlotDrop?(charId: string, placementId: number): void;
+  /**
+   * 슬롯머신 앞에 세워 뜸을 들인 뒤 엔진에 알렸다 — playing 이면 지금 play_slot 모션이 시작됐다(레버 · 결과 창 타이밍의 기준).
+   * 그사이 다시 들었거나 배치 모드로 갔거나 엔진이 반응하지 않으면 playing = false (2026-11-14)
+   */
+  onSlotStart?(charId: string, placementId: number, playing: boolean): void;
 }
 
 /** 개발 모드 머리 위 글자의 지금 단계 — 엔진 이름 · 몇 번째(1부터) / 전체 단계 수 · 남은 시간 */
@@ -113,6 +135,8 @@ export class RoomLoop {
   private raf = 0;
   private last = 0;
   private fieldTimer = 0;
+  /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
+  private readonly slotWaits = new Map<string, SlotWait>();
 
   constructor(deps: {
     renderer: RoomRenderer;
@@ -341,6 +365,11 @@ export class RoomLoop {
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
+      const sw = this.slotWaits.get(h.id);
+      if (sw) {
+        this.waitAtSlot(h, sw, dt);
+        continue;
+      }
       // 엔진 모션 중엔 제자리 — 가구 위에 내려놓았으면 그 자리 그대로. 끝나면 평소처럼 걸어 나온다(findPath 가 가장 가까운 빈 칸으로 먼저 비킨다)
       if (h.acting) continue;
       if (h.away) {
@@ -373,7 +402,8 @@ export class RoomLoop {
     if (this.fieldTimer > 0.5) {
       this.fieldTimer = 0;
       // 들린 캐릭터는 판정에서 뺀다 — 놓은 자리에서 새로 마주친다
-      const list = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
+      // 슬롯머신 앞에서 뜸을 들이는 캐릭터도 뺀다 — 그사이 마주쳐 다른 모션으로 새지 않게
+      const list = [...this.handles.values()].filter((h) => !h.lifted && !this.slotWaits.has(h.id)).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
       for (const e of this.field.evaluate(list)) this.onFieldEnter(e.a, e.b);
     }
   }
@@ -436,6 +466,7 @@ export class RoomLoop {
         return;
       case 'play': {
         if (h.lifted) return;
+        this.dropSlotWait(h); // 뜸을 들이던 중 다른 명령이 오면 슬롯머신은 그만둔다
         const run: ActRun = { steps: cmd.steps, i: -1 };
         h.run = run; // 앞 명령은 여기서 끝 — 끝 신호 없이(렌더러도 새 play 가 앞 요청을 밀어낸다)
         this.nextStep(h, run);
@@ -540,6 +571,7 @@ export class RoomLoop {
     }
     for (const h of this.handles.values()) {
       h.held = false;
+      if (m === 'PLACEMENT') this.dropSlotWait(h);
       this.renderer.setCharacterState(h.id, { hidden: m === 'PLACEMENT', selected: false });
     }
   }
@@ -608,6 +640,7 @@ export class RoomLoop {
   onDragStart(charId: string): void {
     const h = this.handles.get(charId);
     if (!h) return;
+    this.dropSlotWait(h);
     h.lifted = true;
     h.path = [];
     h.held = false;
@@ -691,12 +724,60 @@ export class RoomLoop {
     // 놓은 상대 — 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
     // 가구는 엔진에 알린다. 내려놓은 자리에 그대로 서 있는다 — 설치 영역 안 어디에 설지 · 방향은 앵커(#7)에서
     if (target?.kind === 'furniture' && this.mode === 'NORMAL') {
+      // 슬롯머신은 앞 자리에 바로 세워 마주 보게 하고 뜸을 들인 뒤에 엔진에 알린다(2026-11-14 도휘) — 모션이 그 거리에서 레버를 당기도록 만들어졌다.
+      // 걸어가게도 해 봤지만 오래 걸리고 주변 가구를 뚫고 지나가서 바로 세운다.
+      // 뽑기(서버)는 놓는 순간 시작하고, 레버 · 결과 창 타이밍은 onSlotStart 에서 맞춘다
+      if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE && this.standAtSlot(h, target.placementId)) {
+        this.events.onSlotDrop?.(charId, target.placementId);
+        return;
+      }
       this.engine.visitFurniture(charId, target.placementId);
       // 슬롯머신에 직접 끌어다 놓았을 때만 뽑기 시도(M-4) — 엔진이 반응하든 말든(쿨다운 · 감정 대기) 알린다. 캐릭터 동작은 엔진 play_slot 그대로
       if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE) this.events.onSlotDrop?.(charId, target.placementId);
       return;
     }
     this.stepAside(h); // 장식 가구 위에 내려놓았으면 내려온다
+  }
+
+  /** 슬롯머신 앞 자리(SLOT_STAND)에 바로 세워 마주 보게 한다. 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y) — RoomScene.attachFurnitureModel 과 같은 규칙 */
+  private standAtSlot(h: CharacterHandle, placementId: number): boolean {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    const def = p && this.furniture.def(p.furnitureId);
+    if (!p || !def) return false;
+    const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+    const r = (p.rotation * Math.PI) / 180;
+    const front = { x: -Math.sin(r), y: Math.cos(r) };
+    const side = { x: Math.cos(r), y: Math.sin(r) };
+    const spot = {
+      x: (f.x0 + f.x1) / 2 + front.x * SLOT_STAND.front + side.x * SLOT_STAND.side,
+      y: (f.y0 + f.y1) / 2 + front.y * SLOT_STAND.front + side.y * SLOT_STAND.side,
+    };
+    h.position = spot;
+    h.path = [];
+    this.renderer.move(h.id, spot);
+    this.renderer.face?.(h.id, { x: -front.x, y: -front.y }, true);
+    this.slotWaits.set(h.id, { placementId, wait: SLOT_PAUSE_S });
+    return true;
+  }
+
+  /** 슬롯머신 앞에서 뜸을 들이는 중 — 다 되면 엔진에 알린다 */
+  private waitAtSlot(h: CharacterHandle, sw: SlotWait, dt: number): void {
+    sw.wait -= dt;
+    if (sw.wait > 0) return;
+    this.slotWaits.delete(h.id);
+    h.rest = between(REST_MIN, REST_SPAN);
+    this.engine.visitFurniture(h.id, sw.placementId);
+    const playing = h.acting && !!h.run?.steps.some((s) => s.name === 'play_slot');
+    this.events.onSlotStart?.(h.id, sw.placementId, playing);
+  }
+
+  /** 슬롯머신 앞에서 뜸을 들이던 것을 그만둔다(다시 들었다 · 다른 명령 · 배치 모드) — HUD 가 기다리지 않게 알린다 */
+  private dropSlotWait(h: CharacterHandle): void {
+    const sw = this.slotWaits.get(h.id);
+    if (!sw) return;
+    this.slotWaits.delete(h.id);
+    h.path = [];
+    this.events.onSlotStart?.(h.id, sw.placementId, false);
   }
 
   /* ── 포인터 → 위 진입점들. 좌표는 방 기준 px ─────────────────────── */

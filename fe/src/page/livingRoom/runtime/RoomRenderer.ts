@@ -120,9 +120,12 @@ export interface RoomRenderer {
   capture?(view: CaptureView, rect: CaptureRect, size?: CaptureSize): HTMLCanvasElement;
   /**
    * 슬롯머신 한 판(3D 만 — 평면 더미는 없음) — 레버를 당겼다 놓고 릴이 돈다. 뽑기 결과를 서버에서 받은 뒤 HUD 가 부른다(마무리 M-4).
+   * delayS 초 뒤에 레버가 내려가기 시작한다 — 캐릭터 모션(play_slot)의 레버 타이밍에 맞춘다(2026-11-14). 그동안 레버 · 릴은 가만히 있다.
    * 모델을 못 받았거나 이미 도는 중이면 false
    */
-  pullLever?(placementId: number): boolean;
+  pullLever?(placementId: number, delayS?: number): boolean;
+  /** 캐릭터가 dir 쪽(방 좌표)을 보도록 돈다 — 걸을 때처럼 부드럽게, snap 이면 바로(3D 만). 슬롯머신 앞에 세울 때 (2026-11-14) */
+  face?(charId: string, dir: Pt, snap?: boolean): void;
   /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
   whenSettled?(): Promise<void>;
   dispose(): void;

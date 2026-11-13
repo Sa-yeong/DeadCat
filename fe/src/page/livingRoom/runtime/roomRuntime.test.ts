@@ -430,6 +430,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
     const del = vi.fn();
     const visit = vi.fn();
     const slotDrop = vi.fn();
+    const slotStart = vi.fn();
     let engine: LivingRoomEngine | undefined;
     const loop = new RoomLoop({
       renderer: r.renderer,
@@ -458,7 +459,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       characters,
       furniture,
       motions: ROOM_MOTIONS,
-      events: { onPicked: () => {}, onEmptyPick: () => {}, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {}, onSlotDrop: slotDrop },
+      events: { onPicked: () => {}, onEmptyPick: () => {}, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {}, onSlotDrop: slotDrop, onSlotStart: slotStart },
     });
     loop.load({ mode: 'OWNER', shareOption: true, characters: chars, placements, roomReactions: { counts: {}, mine: null } });
     emit({ type: 'snapshot', data: { characters: emotions.map((emotion, i) => ({ characterId: String(i + 1), emotion })) } });
@@ -475,7 +476,13 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       const a = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
       return q.x > a.x0 && q.x < a.x1 && q.y > a.y0 && q.y < a.y1;
     };
-    return { loop, engine, add, del, visit, slotDrop, drop, clock, commands, logs, playsOf, inside, ...r };
+    /** 슬롯머신까지 걸어가 뜸을 들이고 엔진에 알릴 때까지 돌린다 */
+    const arrive = () => {
+      for (let i = 0; i < 200 && slotStart.mock.calls.length === slotDone.n; i++) loop.tick(0.1);
+      slotDone.n = slotStart.mock.calls.length;
+    };
+    const slotDone = { n: 0 };
+    return { loop, engine, add, del, visit, slotDrop, slotStart, arrive, drop, clock, commands, logs, playsOf, inside, ...r };
   }
 
   /** 다 걸어 나올 때까지(또는 시간 끝까지) 돌린다 */
@@ -523,7 +530,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       [26, 'listen_music', '음악 듣기'],
       [27, 'use_computer', '컴퓨터 하기'],
       [28, 'play_piano', '피아노 치기'],
-      [29, 'play_slot', '슬롯머신 하기'],
+      // 29 슬롯머신은 걸어가서 트니(2026-11-14) 아래 「슬롯머신 뽑기 알리기」에서 본다
     ])('특수 가구 %i 에 내려놓으면 그 가구 모션 %s 를 play — 개발 모드 글자 「%s」', (furnitureId, motion, label) => {
       const t = room([pl(14, furnitureId)]);
       t.timeLeft.v = 'loop';
@@ -608,22 +615,59 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
   });
 
   describe('슬롯머신 뽑기 알리기 (마무리 M-4)', () => {
-    it('캐릭터를 끌어 슬롯머신에 놓으면 엔진에도 알리고(play_slot) 뽑기 시도도 알린다 — 단계(29 · 30 · 31) 모두', () => {
+    it('캐릭터를 끌어 슬롯머신에 놓으면 뽑기 시도는 바로, 엔진(play_slot)은 앞 자리에 서서 뜸을 들인 뒤 — 단계(29 · 30 · 31) 모두', () => {
       for (const id of [29, 30, 31]) {
         const t = room([pl(16, id)]);
         t.drop('1', { x: 15, y: 15 });
-        expect(t.visit).toHaveBeenCalledWith('1', 16);
         expect(t.slotDrop.mock.calls).toEqual([['1', 16]]);
+        expect(t.visit).not.toHaveBeenCalled();
+        t.arrive();
+        expect(t.visit).toHaveBeenCalledWith('1', 16);
         expect(t.playsOf('1')).toEqual([['play_slot']]);
+        expect(t.slotStart.mock.calls).toEqual([['1', 16, true]]);
       }
+    });
+
+    it('어디에 놓아도 바로 앞 자리(정면 1.327칸)에 선다 — 슬롯머신을 돌려 놓아도', () => {
+      for (const rotation of [0, 90, 180, 270]) {
+        const p = pl(16, SLOT, 15, 15, rotation);
+        const t = room([p]);
+        const f = footprint(FURNITURE_CATALOG.find((d) => d.furnitureId === SLOT)!, { x: 15, y: 15 }, rotation);
+        const r = (rotation * Math.PI) / 180;
+        const c = { x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 };
+        t.drop('1', c);
+        expect(t.slotDrop).toHaveBeenCalledTimes(1);
+        const want = { x: c.x - Math.sin(r) * 1.327 + Math.cos(r) * -0.103, y: c.y + Math.cos(r) * 1.327 + Math.sin(r) * -0.103 };
+        const got = t.at.get('1')!;
+        expect(got.x).toBeCloseTo(want.x, 5);
+        expect(got.y).toBeCloseTo(want.y, 5);
+        expect(t.visit).not.toHaveBeenCalled(); // 서 있기만 — 엔진은 뜸을 들인 뒤
+        t.loop.tick(0.35);
+        t.loop.tick(0.35);
+        expect(t.visit).not.toHaveBeenCalled();
+        t.loop.tick(0.1);
+        expect(t.visit).toHaveBeenCalledWith('1', 16);
+      }
+    });
+
+    it('뜸을 들이는 도중 다시 들면 그만두고 알린다(playing = false)', () => {
+      const t = room([pl(16, SLOT)]);
+      t.drop('1', { x: 15, y: 15 });
+      t.loop.tick(0.1);
+      t.loop.onDragStart('1');
+      expect(t.slotStart.mock.calls).toEqual([['1', 16, false]]);
+      expect(t.visit).not.toHaveBeenCalled();
     });
 
     it('엔진이 반응하지 않아도(쿨다운) 놓을 때마다 알린다', () => {
       const t = room([pl(16, SLOT)]);
       t.drop('1', { x: 15, y: 15 });
+      t.arrive();
       t.drop('1', { x: 15, y: 15 });
+      t.arrive();
       expect(t.playsOf('1')).toHaveLength(1);
       expect(t.slotDrop).toHaveBeenCalledTimes(2);
+      expect(t.slotStart.mock.calls.at(-1)).toEqual(['1', 16, false]);
     });
 
     it('엔진이 스스로 고른 play_slot 은 뽑기가 아니다 — 알리지 않는다', () => {

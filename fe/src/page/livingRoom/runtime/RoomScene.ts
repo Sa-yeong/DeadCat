@@ -15,6 +15,7 @@ import { CHAR } from './characterSize';
 import { Swing } from './swing';
 import { ROOM_ASSETS } from './roomAssets';
 import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
+import { SLOT_MACHINE } from '../furnitureCatalog';
 import { CHIBI_FACE, stepFaceLevels, type EmotionName, type FaceLevels } from '../../stockDetail/runtime/motionTable';
 
 /**
@@ -70,6 +71,11 @@ type Pose = 'rest' | 'idle' | 'walk' | 'pickup' | 'engine'; // 'engine' = 엔진
  * 미리보기 한 장(vite.preview-room.config.ts)은 아직 이 폴더를 넣지 않는다 — 모션 파일이 생기면 그쪽도 넣을 것
  */
 const MOTION_URL = (clip: string) => `${import.meta.env.BASE_URL}characters/chibi/motions/${clip}.vrma`;
+/**
+ * 슬롯머신 모션 파일(motions.json play_slot 의 clip) — 슬롯머신 모델을 세울 때 미리 받아 둔다(2026-11-14).
+ * 놓자마자 모션이 시작돼야 레버 타이밍(HUD 가 놓은 순간부터 잰다)이 맞는다. motions.json 의 이름을 바꾸면 여기도
+ */
+const SLOT_MOTION_CLIP = 'play_slot';
 
 /** 엔진 요청 하나 — 몇 번째 단계를 틀고 있는지, 끝나면 부를 것 */
 interface EngineRun {
@@ -158,10 +164,11 @@ function paint(style: string): { color: THREE.Color; opacity: number } {
  * 릴은 둘레 6칸이라 k×60° 면 k번 그림이 정면 — reel_symbols.py)
  */
 const SLOT = {
-  pull: 0.22,
-  back: 0.4,
+  // 2026-11-14 도휘 — 캐릭터 모션(play_slot.vrma) 50~60프레임(30fps) 안에 레버가 확 내려갔다 돌아온다: 내림 4프레임 + 돌아옴 6프레임
+  pull: 4 / 30,
+  back: 6 / 30,
   leverMax: (100 * Math.PI) / 180,
-  reelStart: 0.18,
+  reelStart: 4 / 30,
   /** 릴마다 서는 시각과 그때까지 도는 바퀴 수 */
   reelStop: [1.1, 1.5, 1.9],
   turns: [3, 4, 5],
@@ -169,13 +176,48 @@ const SLOT = {
   bounce: 0.14,
   bounceT: 0.25,
 } as const;
+/**
+ * 레버를 당길 때 슬롯머신 몸통의 덜컹(카툰풍) — 2026-11-14 도휘가 미리보기에서 고른 값(기울기 4° · 찌그러짐 13% · 튀어오름 3%).
+ * 레버가 내려가는 동안 레버 쪽(모델 +X)으로 기울며 눌리고, 놓는 순간 살짝 튀어 오른 뒤 출렁이다 멎는다. 바닥 가운데가 축.
+ * 슬롯머신 단계(29 · 30 · 31)는 모델만 다르고 크기 · 레버 위치가 같아서 모두 같은 값
+ */
+const SLOT_SHAKE = {
+  leanDeg: 4,
+  squash: 0.13,
+  /** 튀어오름 — 슬롯머신 키에 대한 비율 */
+  hop: 0.03,
+  leanDecay: 7,
+  leanHz: 4.5,
+  squashDecay: 9,
+  squashHz: 5.5,
+  hopT: 0.16,
+} as const;
 const easeIn = (u: number) => u * u;
 const easeOutCubic = (u: number) => 1 - (1 - u) ** 3;
 const easeOutBack = (u: number, k = 1.6) => 1 + (k + 1) * (u - 1) ** 3 + k * (u - 1) ** 2;
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
 
+/** 레버 시작(t=0)부터 덜컹 — lean 라디안(음수 = 레버 쪽으로), squash 눌림 비율(음수면 늘어남), lift 키에 대한 비율 */
+function slotShake(t: number): { lean: number; squash: number; lift: number } {
+  if (t <= 0) return { lean: 0, squash: 0, lift: 0 };
+  const A = (SLOT_SHAKE.leanDeg * Math.PI) / 180;
+  if (t < SLOT.pull) {
+    const p = easeIn(t / SLOT.pull);
+    return { lean: -A * p, squash: SLOT_SHAKE.squash * p, lift: 0 };
+  }
+  const u = t - SLOT.pull;
+  return {
+    lean: -A * Math.exp(-SLOT_SHAKE.leanDecay * u) * Math.cos(2 * Math.PI * SLOT_SHAKE.leanHz * u),
+    squash: SLOT_SHAKE.squash * Math.exp(-SLOT_SHAKE.squashDecay * u) * Math.cos(2 * Math.PI * SLOT_SHAKE.squashHz * u),
+    lift: u < SLOT_SHAKE.hopT ? SLOT_SHAKE.hop * Math.sin((Math.PI * u) / SLOT_SHAKE.hopT) : 0,
+  };
+}
+
 interface SlotRun {
   t: number;
+  /** 덜컹을 거는 자리(모델과 설치 자리 사이 그룹) · 슬롯머신 키(칸) */
+  rig: THREE.Object3D | null;
+  height: number;
   lever: THREE.Object3D | null;
   reels: { node: THREE.Object3D; from: number; to: number; t1: number }[];
 }
@@ -192,7 +234,7 @@ interface FurnNode {
   /** 다시 지을 때마다 올라간다 — 늦게 도착한 모델이 옛 모양에 붙지 않게 */
   build: number;
   /** 3D 모델을 세웠으면 그 배율(모델 1m → 칸)과 외곽선 재질 — 외곽선은 캐릭터처럼 모양을 부풀려 그린다 */
-  model: { scale: number } | null;
+  model: { scale: number; rig: THREE.Group; height: number } | null;
   rim: { width: { value: number }; mat: THREE.MeshBasicMaterial } | null;
   /** 슬롯머신 한 판이 도는 중(pullLever) */
   anim: SlotRun | null;
@@ -647,7 +689,9 @@ export class RoomScene implements RoomRenderer {
     obj.scale.setScalar(scale);
     obj.position.set(-((box.min.x + box.max.x) / 2) * scale, -box.min.y * scale, -((box.min.z + box.max.z) / 2) * scale);
     const holder = new THREE.Group();
-    holder.add(obj);
+    const rig = new THREE.Group(); // 슬롯머신 덜컹을 거는 자리 — 바닥 가운데가 원점이라 그대로 축이 된다
+    rig.add(obj);
+    holder.add(rig);
     const area = footprint(def, f.pos, f.rotation);
     holder.position.copy(v3((area.x0 + area.x1) / 2, (area.y0 + area.y1) / 2, 0));
     holder.rotation.y = -(f.rotation * Math.PI) / 180;
@@ -664,7 +708,8 @@ export class RoomScene implements RoomRenderer {
     });
     if (isRug) holder.traverse((o) => o.layers.set(GROUND_LAYER));
     f.group.add(holder);
-    f.model = { scale };
+    f.model = { scale, rig, height };
+    if (def.engineName === SLOT_MACHINE) void this.motionFile(SLOT_MOTION_CLIP); // 놓자마자 모션이 시작되게 미리 받아 둔다
     if (this.highlighted === placementId) this.highlightFurniture(placementId);
     if (this.dropTarget?.kind === 'furniture' && this.dropTarget.placementId === placementId) this.applyDropTarget();
     this.invalidate();
@@ -711,7 +756,7 @@ export class RoomScene implements RoomRenderer {
    * 뽑기 결과를 서버에서 받은 뒤 HUD 가 부른다(RoomRenderer.pullLever, 마무리 M-4) — 캐릭터 모션과는 따로 돈다.
    * 모델을 아직 못 받았거나 Lever · Reel_* 이 없으면 false. 도는 중이면 새로 시작하지 않는다
    */
-  pullLever(placementId: number): boolean {
+  pullLever(placementId: number, delayS = 0): boolean {
     const f = this.furn.get(placementId);
     if (!f?.model || f.anim) return false;
     const lever = f.group.getObjectByName('Lever') ?? null;
@@ -728,7 +773,7 @@ export class RoomScene implements RoomRenderer {
       if (to < least) to += turn;
       return { node, from, to, t1: SLOT.reelStop[i] };
     });
-    f.anim = { t: 0, lever, reels };
+    f.anim = { t: -Math.max(0, delayS), lever, reels, rig: f.model.rig, height: f.model.height }; // 0 이 될 때까지는 레버 · 릴이 제자리(animateSlot)
     this.invalidate();
     return true;
   }
@@ -740,6 +785,12 @@ export class RoomScene implements RoomRenderer {
     if (a.lever) {
       const pulled = t < SLOT.pull ? easeIn(clamp01(t / SLOT.pull)) : 1 - easeOutBack(clamp01((t - SLOT.pull) / SLOT.back));
       a.lever.rotation.x = SLOT.leverMax * pulled;
+    }
+    if (a.rig) {
+      const s = slotShake(t);
+      a.rig.rotation.z = s.lean;
+      a.rig.scale.set(1 + s.squash * 0.5, 1 - s.squash, 1 + s.squash * 0.5);
+      a.rig.position.y = s.lift * a.height;
     }
     let done = t >= SLOT.pull + SLOT.back;
     for (const r of a.reels) {
@@ -755,6 +806,11 @@ export class RoomScene implements RoomRenderer {
     }
     if (done) {
       if (a.lever) a.lever.rotation.x = 0;
+      if (a.rig) {
+        a.rig.rotation.z = 0;
+        a.rig.scale.set(1, 1, 1);
+        a.rig.position.y = 0;
+      }
       f.anim = null;
     }
   }
@@ -1472,6 +1528,17 @@ export class RoomScene implements RoomRenderer {
     } else if (!c.lifted && dx * dx + dy * dy > 1e-8) c.heading = Math.atan2(dx, dy); // 방 y 가 three 의 +Z(모델이 보는 쪽). 들고 끄는 동안은 방향을 바꾸지 않는다
     c.pos = pos;
     this.drawChar(c);
+    this.invalidate();
+  }
+
+  face(charId: string, dir: Pt, snap = false): void {
+    const c = this.chars.get(charId);
+    if (!c || dir.x * dir.x + dir.y * dir.y < 1e-8) return;
+    c.heading = Math.atan2(dir.x, dir.y); // move 와 같은 규칙 — 방 y 가 three 의 +Z. 몸은 animate 가 TURN_RATE 로 돌린다
+    if (snap) {
+      c.yaw = c.heading;
+      c.holder.rotation.y = c.yaw;
+    }
     this.invalidate();
   }
 
