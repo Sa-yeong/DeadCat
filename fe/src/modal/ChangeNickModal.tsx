@@ -23,9 +23,6 @@ export function ChangeNickModal({isOpen, onClose, c_nickname}:any){
             } else{ // 중복된 닉네임일 경우
                 alert('이미 존재하는 닉네임입니다.');
             }
-            
-
-            console.log('닉네임 중복 확인 성공!', response.data);
         } catch(e){console.error('닉네임 중복 확인 실패: ', e);}
     }
     const changeNickname = async () => {

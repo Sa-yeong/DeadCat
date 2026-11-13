@@ -45,6 +45,7 @@
     align-items: center;
     gap: 30px;
     margin-top: 10px;
+    overflow-y: auto;
 }
 
 /* 탐색창 */
@@ -89,7 +90,12 @@
 .follow-container .content .follow-rows .follow-row{
     display: flex;
     justify-content: space-between;
-    margin-bottom: 20px;
+    align-items: center;
+    padding: 10px 5px;
+    cursor: pointer;
+}
+.follow-container .content .follow-rows .follow-row:hover{
+    background: #1b212d;
 }
 .follow-container .content .follow-rows .follow-row img{
     width: 50px;
@@ -113,4 +119,10 @@
     color: #8b95a1;
     padding: 0 10px;
     height: 30px;
+}
+.follow-container .content .follow-rows .follow-row button:hover{
+    border: none;
+    background: #3B82F6;
+    color: white;
+    cursor: pointer;
 }

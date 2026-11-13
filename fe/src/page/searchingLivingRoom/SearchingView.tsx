@@ -1,6 +1,6 @@
 import './SearchingView.css'
 import { SearchBar } from '../../common/SearchBar';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Dropdown, Space, Popover, type MenuProps } from 'antd';
 import { FaAngleDown, FaPlus, FaCheck } from 'react-icons/fa6';
@@ -27,6 +27,7 @@ interface StockInfo{
 export function SearchingView(){
     const navigate = useNavigate();
     const token = localStorage.getItem('token');
+    const latestSearchRef = useRef("");
 
     const [tags, setTags] = useState<{ tag_id: number, name: string }[]>([]);
     const [searchedKeyword, setSearchedKeyword] = useState<StockInfo[]>([]);
@@ -104,6 +105,9 @@ export function SearchingView(){
                 })
             }
             
+            if(latestSearchRef.current !== input)
+                return;
+
             setSearchedKeyword(response.data.data.stocks);
             console.log('종목 검색 성공: ', response.data.data.stocks);
         }catch(e){console.error('종목 검색 실패: ', e)}
@@ -270,7 +274,8 @@ export function SearchingView(){
             setKeywords={setKeywords} setClickSim={setClickSim} setClickOpp={setClickOpp}
             findTag={findTag} findKeyword={findKeyword}
             searchedKeyword={searchedKeyword} token={token}
-            setSearchedKeyword={setSearchedKeyword} searchStock={searchStock} />
+            setSearchedKeyword={setSearchedKeyword} searchStock={searchStock}
+            latestSearchRef={latestSearchRef} />
             <Outlet context={{selectedTags, cancelAll, deleteTag, deleteKeyword, 
                 setClickOpp, setClickSim,
                 riseRooms, fallRooms, rooms, currentUser}} />
@@ -281,7 +286,7 @@ export function SearchingView(){
 
 function Header({token, tags, order, setOrder, setSelectedTags, setKeywords,
     setClickSim, setClickOpp, findTag, findKeyword, searchedKeyword,
-    setSearchedKeyword, searchStock}:any){  
+    setSearchedKeyword, searchStock, latestSearchRef}:any){  
     
     const [searchText, setSearchText] = useState<string>("");
     const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -355,8 +360,11 @@ function Header({token, tags, order, setOrder, setSelectedTags, setKeywords,
                     setKeywords((prev: string[]) => [...prev, keyword])
                 setClickOpp(false); setClickSim(false);
                 setSearchedKeyword([])}}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {searchStock(e.target.value);
-                    setSearchText(e.target.value);
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const val = e.target.value;
+                    latestSearchRef.current = val;
+                    searchStock(val);
+                    setSearchText(val);
                 }} value={searchText} />
             {
                 searchedKeyword.length === 0 ?
