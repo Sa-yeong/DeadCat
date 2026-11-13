@@ -13,7 +13,7 @@ interface Follower{
     follower_count: number;
 }
 
-export function FollowModal({isOpen, onClose}: any){
+export function FollowModal({isOpen, onClose, setFolloweeNum}: any){
     const navigate = useNavigate();
 
     const [followers, setFollowers] = useState<Follower[]>([]);
@@ -53,11 +53,11 @@ export function FollowModal({isOpen, onClose}: any){
                 headers: {Authorization: `Bearer ${token}`}
             })
 
-            console.log(response.data.data.data.target_user);
-            if(response.data.data.data.is_following) // 팔로우를 함
-                setFollowers((prev) => [...prev, response.data.data.data.target_use])
-            else // 팔로우 취소
-                setFollowers((prev) => prev.filter((user) => user?.target_user_id !== response.data.data.data.target_user))
+            if(response.data.data.is_following){// 팔로우를 함
+                setFolloweeNum((prev: number) => prev + 1);
+            } else { // 팔로우 취소
+                setFolloweeNum((prev: number) => prev - 1);
+            }
         }catch(e){console.error("팔로우 취소 실패: ", e)}
 
         fetchFollowers();

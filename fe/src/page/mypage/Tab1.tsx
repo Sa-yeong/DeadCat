@@ -69,6 +69,7 @@ function Represent({token, mydata, setMydata}:any){
     const [isOpenNick, setIsOpenNick] = useState<boolean>(false);
     const [isOpenFollow, setIsOpenFollow] = useState<boolean>(false);
     const [imgUrl, setImgUrl] = useState<string>(mydata?.profile_img_url);
+    const [followeeNum, setFolloweeNum] = useState<number>(mydata?.followee_num);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,11 +116,12 @@ function Represent({token, mydata, setMydata}:any){
     }
 
     useEffect(() => {
-    if (mydata?.profile_img_url) {
-        setImgUrl(mydata.profile_img_url);
-    }
-}, [mydata?.profile_img_url]);
-
+        if (mydata?.profile_img_url) {
+            setImgUrl(mydata.profile_img_url);
+        }
+        
+        setFolloweeNum(mydata?.followee_num);
+    }, [mydata?.profile_img_url, mydata?.followee_num]);
 
     return<>
         <div>
@@ -141,10 +143,11 @@ function Represent({token, mydata, setMydata}:any){
                         </span>
                         <span>
                             <span>팔로잉</span>
-                            <span className='amount'>{mydata?.followee_num}</span>
+                            <span className='amount'>{followeeNum}</span>
                         </span>
                     </div>
-                    <FollowModal isOpen={isOpenFollow} onClose={() => {setIsOpenFollow(false); navigate('../')}} />
+                    <FollowModal isOpen={isOpenFollow} onClose={() => setIsOpenFollow(false)}
+                    setFolloweeNum={setFolloweeNum} />
                 </div>
             </div>
             <div className='checkbox'>
