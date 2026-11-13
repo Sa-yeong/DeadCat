@@ -26,15 +26,14 @@ import { CommentModule } from './modules/comment/comment-module';
 import { NicknameModule } from './modules/nickname/nickname.module';
 import { LikePostModule } from './modules/like-post/like-post.module';
 import { OrdersModule } from './modules/orders/orders.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';
 import { CompanyInfoModule } from './modules/company-info/company-info.module';
 import { EmotionModule } from './modules/character-engine/emotion.module';
 import { ItemsModule } from './modules/items/items.module';
 
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { CharactersModule } from './modules/characters/characters.module';
+import { WardrobesModule } from './modules/wardrobes/wardrobes.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
-import { GuestbooksModule } from './modules/guestbooks/guestbooks.module';
 import { HomeRoomsModule } from './modules/home/home-room.module';
 import { TagModule } from './modules/tags/tag.module';
 import { HomeModule } from './modules/home-stock/home-stock.module';
@@ -61,7 +60,6 @@ import { HomeModule } from './modules/home-stock/home-stock.module';
         IndicesModule,
         AuthModule,
         OrdersModule,
-        NotificationsModule,
 
         // 마이페이지
         UserModule,
@@ -77,9 +75,9 @@ import { HomeModule } from './modules/home-stock/home-stock.module';
         EmotionModule,
         ItemsModule,
         RoomsModule,
+        WardrobesModule,
         AttendanceModule,
         CharactersModule,
-        GuestbooksModule,
         HomeRoomsModule,
         TagModule,
         HomeModule,

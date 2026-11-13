@@ -31,7 +31,7 @@ export class LikePostService {
                     comment_count: post._count?.comments ?? 0,
                     like_count: post._count?.like_posts ?? 0,
                     created_at: createdAtStr,
-                    source_type: post.type ?? 'COMMUNITY',
+                    source_type: 'COMMUNITY',
                 });
             })
             .filter((item): item is LikedPostItemDto => item !== null);

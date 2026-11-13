@@ -1,6 +1,5 @@
 import {
     Controller,
-    Delete,
     Get,
     UseGuards,
     Request,
@@ -18,8 +17,6 @@ import { MyPostItemDto } from './dto/my-posts-response.dto';
 import { StockPostsResponseDto } from './dto/stock-post-response.dto';
 import { CreateCommentRequestDto } from './dto/create-comment-request.dto';
 import { CreateCommentResponseDto } from './dto/create-comment-response.dto';
-import { DeleteCommentResponseDto } from './dto/delete-comment-response.dto';
-import { DeletePostResponseDto } from './dto/delete-post-response.dto';
 import { PostCommentsResponseDto } from './dto/post-comment-response.dto';
 import { VoteResponseDto } from './dto/vote-response.dto';
 import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
@@ -120,29 +117,6 @@ export class PostController {
     }
 
     /**
-     * 댓글 삭제 — 쓴 사람 본인만
-     *
-     * DELETE /posts/{postId}/comments/{commentId}
-     *
-     * 로그인 필수
-     */
-    @UseGuards(JwtAuthGuard)
-    @Delete('posts/:postId/comments/:commentId')
-    async deleteComment(
-        @Param('postId') postId: string,
-        @Param('commentId') commentId: string,
-        @Request() req: AuthenticatedRequest,
-    ): Promise<DeleteCommentResponseDto> {
-        const userId = String(req.user.id);
-
-        return await this.postService.deleteComment(
-            postId,
-            commentId,
-            userId,
-        );
-    }
-
-    /**
      * POST /posts/{postId}/vote/options/{optionNo}
      *
      * 5.투표 참여
@@ -186,23 +160,5 @@ export class PostController {
         //const userId = '2';
 
         return await this.postService.createPost(userId, body);
-    }
-
-    /**
-     * 글 삭제 — 쓴 사람 본인만
-     *
-     * DELETE /posts/{postId}
-     *
-     * 로그인 필수
-     */
-    @UseGuards(JwtAuthGuard)
-    @Delete('posts/:postId')
-    async deletePost(
-        @Param('postId') postId: string,
-        @Request() req: AuthenticatedRequest,
-    ): Promise<DeletePostResponseDto> {
-        const userId = String(req.user.id);
-
-        return await this.postService.deletePost(postId, userId);
     }
 }

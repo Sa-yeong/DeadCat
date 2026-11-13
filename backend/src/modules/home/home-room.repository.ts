@@ -22,15 +22,12 @@ export class HomeRoomsRepository {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             where: {
                 share_option: true,
-                // 썸네일 없는 사람은 탐색에서 뺀다(더미 이미지 없음)
-                room_thumbnail_url: { not: null },
                 ...whereCondition,
             },
             select: {
                 id: true,
                 nickname: true,
                 profile_img_url: true,
-                room_thumbnail_url: true,
                 have_tags: {
                     select: {
                         tags: {

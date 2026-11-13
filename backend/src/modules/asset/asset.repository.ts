@@ -12,6 +12,7 @@ export class AssetRepository {
         return await this.prisma.users.findUnique({
             where: { id: bigIntUserId },
             select: {
+                balance: true,
                 holdings: {
                     select: {
                         stock_id: true,
@@ -20,7 +21,6 @@ export class AssetRepository {
                         stocks: {
                             select: {
                                 code: true,
-                                stock_type: true,
                                 stock_history: {
                                     orderBy: { record_date: 'desc' },
                                     take: 1,

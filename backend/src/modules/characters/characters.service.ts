@@ -5,181 +5,94 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { CharactersRepository } from './characters.repository';
-import { MaxClothesDto } from './dto/clothes-response.dto';
+import { CostumeResponseDto } from './dto/costume-response.dto';
 import { UpdateCharacterPlacementDto } from './dto/update-placement.dto';
-import { UpdateClothesDto } from './dto/update-clothes.dto';
+import { UpdateCostumeDto } from './dto/update-costume.dto';
 import { CreatePresetDto } from './dto/create-preset.dto';
 import { UpdatePresetDto } from './dto/update-preset.dto';
-import { GiftItemDto } from './dto/gift-item.dto';
-import {
-    AFFINITY_MAX_LEVEL,
-    AFFINITY_MAX_SCORE,
-    toAffinityInfo,
-} from 'src/common/affinity/affinity-level';
-import { giftAffinityPoints } from 'src/common/items/item-grade';
-import { PRESET_LIMIT_MESSAGE } from './preset-auto';
 
 @Injectable()
 export class CharactersService {
     constructor(private readonly charactersRepository: CharactersRepository) {}
 
-    // 캐릭터의 고를 수 있는 옷 (3-⑩: 기본 · MAX 보상 옷 둘, 해금 · 착용 여부) + 호감도 (3-⑤).
-    // 헤진 · 일반 · 좋은 상태는 수익률로 프론트가 정한다 — 서버는 고른 옷만 저장
-    async getCharacterClothes(userIdStr: string, stockIdStr: string) {
+    //캐릭터의 의상 조회
+    async getCharacterCostumes(
+        userIdStr: string,
+        characterIdStr: string,
+    ): Promise<CostumeResponseDto[]> {
         const userId = BigInt(userIdStr);
-        const stockId = BigInt(stockIdStr);
+        const characterId = BigInt(characterIdStr);
 
-        const holding = await this.charactersRepository.findHolding(
-            userId,
-            stockId,
-        );
-        if (!holding) {
-            throw new NotFoundException('보유 중인 캐릭터(주식)가 아닙니다.');
-        }
-
-        const [max, score] = await Promise.all([
-            this.charactersRepository.findMaxClothes(
-                stockId,
+        const clothesList =
+            await this.charactersRepository.findCharacterCostumes(
+                characterId,
                 userId,
-                AFFINITY_MAX_LEVEL,
-            ),
-            this.charactersRepository.findAffinityScore(userId, stockId),
-        ]);
+            );
 
-        // 그 종목의 MAX 옷이 DB 에 아직 없으면 null — 고를 수 있는 건 기본 옷뿐
-        const maxClothes: MaxClothesDto | null = max && {
-            clothes_id: Number(max.id),
-            clothes_name: max.name,
+        return clothesList.map((clothes) => {
             // 옷장(wardrobe) 배열에 데이터가 있으면 획득(해금)한 상태
-            is_unlocked: max.wardrobe.length > 0,
-            is_equipped: holding.equipped_clothes_id === max.id,
-        };
+            const isUnlocked = clothes.wardrobe.length > 0;
 
-        return {
-            stock_id: Number(stockId),
-            equipped_clothes_id:
-                holding.equipped_clothes_id === null
-                    ? null
-                    : Number(holding.equipped_clothes_id),
-            ...toAffinityInfo(score),
-            max_clothes: maxClothes,
-        };
+            // 미해금 상태일 경우 잠금 해제 조건 텍스트 생성 (스키마의 unlock_affinity 등 활용)
+            let unlockCondition;
+            if (!isUnlocked) {
+                unlockCondition = clothes.unlock_affinity
+                    ? `호감도 ${clothes.unlock_affinity} 달성 시 해금`
+                    : '이벤트 혹은 상점에서 획득 가능';
+            }
+
+            return {
+                costume_id: Number(clothes.id),
+                costume_name: clothes.name,
+                is_unlocked: isUnlocked,
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                unlock_condition: unlockCondition,
+                costume_img_url: `https://assets.deadcat.com/costumes/${clothes.id}.png`,
+            };
+        });
     }
 
-    // 11. 캐릭터 옷 변경 (옷 입히기)
-    async changeClothes(
+    // 11. 캐릭터 의상 변경 (옷 입히기)
+    async changeCostume(
         userIdStr: string,
-        stockIdStr: string,
-        dto: UpdateClothesDto,
+        characterIdStr: string,
+        dto: UpdateCostumeDto,
     ) {
         const userId = BigInt(userIdStr);
-        const stockId = BigInt(stockIdStr);
-        // null = 기본 옷으로(벗기) — 옷장 검사 없이 착용 칸을 비운다
-        const clothesId =
-            dto.clothes_id === null ? null : BigInt(dto.clothes_id);
+        const characterId = BigInt(characterIdStr);
+        const costumeId = BigInt(dto.costume_id);
 
         // 1. 유저가 해당 캐릭터를 보유 중인지 검증
         const holding = await this.charactersRepository.findHolding(
             userId,
-            stockId,
+            characterId,
         );
         if (!holding) {
             throw new NotFoundException('보유 중인 캐릭터(주식)가 아닙니다.');
         }
 
-        // 2. 고를 수 있는 건 기본(null) · 이 캐릭터의 MAX 옷뿐(3-⑩) — 다른 종목 옷 · 공용 옷은 거절. 그다음 해금(옷장) 여부
-        if (clothesId !== null) {
-            const max = await this.charactersRepository.findMaxClothes(
-                stockId,
-                userId,
-                AFFINITY_MAX_LEVEL,
+        // 2. 유저가 변경하려는 의상을 보유 중인지 검증
+        const hasCostume = await this.charactersRepository.findWardrobe(
+            userId,
+            costumeId,
+        );
+        if (!hasCostume) {
+            throw new ForbiddenException(
+                '해당 의상을 보유하고 있지 않아 착용할 수 없습니다.',
             );
-            if (!max || max.id !== clothesId) {
-                throw new BadRequestException(
-                    '이 캐릭터가 입을 수 있는 옷이 아닙니다.',
-                );
-            }
-            const hasClothes = await this.charactersRepository.findWardrobe(
-                userId,
-                clothesId,
-            );
-            if (!hasClothes) {
-                throw new ForbiddenException(
-                    '해당 옷을 보유하고 있지 않아 착용할 수 없습니다.',
-                );
-            }
         }
 
-        // 3. 착용 상태 업데이트
-        await this.charactersRepository.updateEquippedClothes(
+        // 3. 의상 장착 상태 업데이트
+        await this.charactersRepository.updateEquippedCostume(
             userId,
-            stockId,
-            clothesId,
+            characterId,
+            costumeId,
         );
 
         return {
-            stock_id: Number(stockId),
-            clothes_id: clothesId === null ? null : Number(clothesId),
-        };
-    }
-
-    // 아이템 선물 (3-⑦-a) — 한 번에 1개, MAX 캐릭터에게는 받지 않음
-    async giftItem(userIdStr: string, stockIdStr: string, dto: GiftItemDto) {
-        const userId = BigInt(userIdStr);
-        const stockId = BigInt(stockIdStr);
-        const itemId = BigInt(dto.item_id);
-
-        const holding = await this.charactersRepository.findHolding(
-            userId,
-            stockId,
-        );
-        if (!holding) {
-            throw new NotFoundException('보유 중인 캐릭터(주식)가 아닙니다.');
-        }
-
-        const owned = await this.charactersRepository.findInventoryItem(
-            userId,
-            itemId,
-        );
-        if (!owned || owned.quantity <= 0) {
-            throw new BadRequestException('보유하지 않은 아이템입니다.');
-        }
-
-        const points = giftAffinityPoints(owned.items.level);
-        if (points === null) {
-            throw new BadRequestException(
-                `선물할 수 없는 아이템 등급입니다(${owned.items.level}).`,
-            );
-        }
-
-        const result = await this.charactersRepository.applyGift(
-            userId,
-            stockId,
-            itemId,
-            points,
-            AFFINITY_MAX_SCORE,
-            (score) => toAffinityInfo(score).affinity_level,
-        );
-        if (result.reason === 'max') {
-            throw new BadRequestException(
-                '호감도가 이미 MAX라 선물을 받지 않습니다.',
-            );
-        }
-        if (result.reason === 'no_item') {
-            throw new BadRequestException('보유하지 않은 아이템입니다.');
-        }
-
-        const info = toAffinityInfo(result.after);
-        // 지금 설계는 MAX 고유 옷 1벌이라 한 번에 한 벌. 여러 벌이 풀리면 첫 벌만 싣는다
-        const first = result.unlocked[0];
-        return {
-            stock_id: Number(stockId),
-            ...info,
-            delta: result.after - result.before,
-            is_max: info.affinity_progress === null,
-            unlocked_clothes: first
-                ? { clothes_id: Number(first.id), clothes_name: first.name }
-                : null,
+            character_id: Number(characterId),
+            applied_costume_id: Number(costumeId),
+            result_message: '의상 변경 완료',
         };
     }
 
@@ -188,7 +101,19 @@ export class CharactersService {
         const userId = BigInt(userIdStr);
         const stockIds = dto.stock_ids.map((id) => BigInt(id));
 
-        await this.assertHoldsAll(userId, stockIds);
+        if (stockIds.length > 0) {
+            // 유저가 요청한 stock_ids를 모두 보유하고 있는지 검증
+            const holdCount = await this.charactersRepository.countUserHoldings(
+                userId,
+                stockIds,
+            );
+
+            if (holdCount !== stockIds.length) {
+                throw new BadRequestException(
+                    '보유하지 않은 주식이 포함되어 있어 배치할 수 없습니다.',
+                );
+            }
+        }
 
         // 트랜잭션으로 배치 상태 갱신
         await this.charactersRepository.updatePlacedCharacters(
@@ -211,7 +136,6 @@ export class CharactersService {
         return presets.map((preset) => ({
             preset_id: Number(preset.id),
             preset_name: preset.preset_name,
-            is_active: preset.is_active,
             stocks: preset.preset_items.map((item) => ({
                 stock_id: Number(item.stocks.id),
                 stock_name: item.stocks.name,
@@ -223,18 +147,26 @@ export class CharactersService {
     // 19. 프리셋 생성
     async createPreset(userIdStr: string, dto: CreatePresetDto) {
         const userId = BigInt(userIdStr);
-        // 다 판 종목(보유하지 않은 종목)은 빼고 저장한다(D4) — 거절하지 않음
-        const stockIds = await this.heldOnly(userId, dto.stock_ids);
+        const stockIds = dto.stock_ids.map((id) => BigInt(id));
+
+        // 유저가 보유하지 않은 주식이 포함되어 있는지 검증
+        if (stockIds.length > 0) {
+            const holdCount = await this.charactersRepository.countUserHoldings(
+                userId,
+                stockIds,
+            );
+            if (holdCount !== stockIds.length) {
+                throw new BadRequestException(
+                    '보유하지 않은 주식이 포함되어 있어 배치할 수 없습니다.',
+                );
+            }
+        }
 
         const created = await this.charactersRepository.createPreset(
             userId,
             dto.preset_name,
             stockIds,
         );
-        // 프리셋 개수 한도(M-1) — 화면도 같은 수에서 막지만 서버가 최종으로 본다
-        if (!created) {
-            throw new BadRequestException(PRESET_LIMIT_MESSAGE);
-        }
 
         return {
             code: 'success',
@@ -250,15 +182,33 @@ export class CharactersService {
     ) {
         const userId = BigInt(userIdStr);
         const presetId = BigInt(presetIdStr);
+        const stockIds = dto.stock_ids.map((id) => BigInt(id));
 
         // 프리셋 존재 여부 및 본인 소유 확인
-        await this.findOwnPreset(userId, presetId);
+        const preset = await this.charactersRepository.findPresetById(presetId);
+        if (!preset) {
+            throw new NotFoundException('존재하지 않는 프리셋입니다.');
+        }
+        if (preset.user_id !== userId) {
+            throw new ForbiddenException(
+                '해당 프리셋을 수정할 권한이 없습니다.',
+            );
+        }
 
-        // 다 판 종목은 빼고 저장(D4) — 화면이 옛 목록을 들고 있다가 보내도 400 이 나지 않게
-        const stockIds = await this.heldOnly(userId, dto.stock_ids);
+        // 유저 소유 주식 검증
+        if (stockIds.length > 0) {
+            const holdCount = await this.charactersRepository.countUserHoldings(
+                userId,
+                stockIds,
+            );
+            if (holdCount !== stockIds.length) {
+                throw new BadRequestException(
+                    '보유하지 않은 주식이 포함되어 있어 배치할 수 없습니다.',
+                );
+            }
+        }
 
         await this.charactersRepository.updatePreset(
-            userId,
             presetId,
             dto.preset_name,
             stockIds,
@@ -275,62 +225,21 @@ export class CharactersService {
         const userId = BigInt(userIdStr);
         const presetId = BigInt(presetIdStr);
 
-        await this.findOwnPreset(userId, presetId);
-
-        await this.charactersRepository.deletePreset(userId, presetId);
-
-        return {
-            code: 'success',
-            message: '프리셋이 삭제되었습니다.',
-        };
-    }
-
-    // 프리셋 선택 (3-⑥). 끝나면 런타임이 SSE를 다시 연결한다(1-5 B)
-    async activatePreset(userIdStr: string, presetIdStr: string) {
-        const userId = BigInt(userIdStr);
-        const presetId = BigInt(presetIdStr);
-
-        await this.findOwnPreset(userId, presetId);
-
-        await this.charactersRepository.activatePreset(userId, presetId);
-
-        return {
-            preset_id: Number(presetId),
-            is_active: true,
-        };
-    }
-
-    private async findOwnPreset(userId: bigint, presetId: bigint) {
         const preset = await this.charactersRepository.findPresetById(presetId);
         if (!preset) {
             throw new NotFoundException('존재하지 않는 프리셋입니다.');
         }
         if (preset.user_id !== userId) {
-            throw new ForbiddenException('해당 프리셋에 대한 권한이 없습니다.');
-        }
-        return preset;
-    }
-
-    // 요청 순서를 지키며 지금 보유 중인 종목만 남긴다
-    private async heldOnly(userId: bigint, ids: number[]) {
-        const stockIds = ids.map((id) => BigInt(id));
-        if (stockIds.length === 0) return stockIds;
-        const held = new Set(
-            await this.charactersRepository.findHeldStockIds(userId, stockIds),
-        );
-        return stockIds.filter((id) => held.has(id));
-    }
-
-    private async assertHoldsAll(userId: bigint, stockIds: bigint[]) {
-        if (stockIds.length === 0) return;
-        const holdCount = await this.charactersRepository.countUserHoldings(
-            userId,
-            stockIds,
-        );
-        if (holdCount !== stockIds.length) {
-            throw new BadRequestException(
-                '보유하지 않은 주식이 포함되어 있어 배치할 수 없습니다.',
+            throw new ForbiddenException(
+                '해당 프리셋을 삭제할 권한이 없습니다.',
             );
         }
+
+        await this.charactersRepository.deletePreset(presetId);
+
+        return {
+            code: 'success',
+            message: '프리셋이 삭제되었습니다.',
+        };
     }
 }

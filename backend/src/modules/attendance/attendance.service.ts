@@ -1,51 +1,67 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { AttendanceRepository } from './attendance.repository';
 import {
-    AttendanceResponseDto,
-    AttendanceStateDto,
-} from './dto/attendance-response.dto';
-import { ATTENDANCE_REWARDS, isClaimedOn } from './attendance-claim';
-import { kstDateOnly } from 'src/common/time/kst-date';
+    Injectable,
+    BadRequestException,
+    NotFoundException,
+} from '@nestjs/common';
+import { AttendanceRepository } from './attendance.repository';
+import { AttendanceResponseDto } from './dto/attendance-response.dto';
 
 @Injectable()
 export class AttendanceService {
     constructor(private readonly attendanceRepository: AttendanceRepository) {}
 
-    // 출석 보드 — 누적 방식: 빠진 날이 있어도 이어서 다음 칸, 7번마다 처음 칸으로
-    async getAttendance(userIdStr: string): Promise<AttendanceStateDto> {
+    async checkAttendance(userIdStr: string): Promise<AttendanceResponseDto> {
         const userId = BigInt(userIdStr);
         const user = await this.attendanceRepository.findUserAttendance(userId);
+
         if (!user) {
             throw new NotFoundException('사용자를 찾을 수 없습니다.');
         }
-        // 하루 기준 = 한국 시간 자정 (조회 · 받기 같은 함수)
-        const claimedToday = isClaimedOn(
-            user.last_attendance_date,
-            kstDateOnly(),
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // 시간 단위를 0으로 초기화하여 날짜만 비교
+
+        // 이미 오늘 출석했는지 확인
+        if (
+            user.last_attendance_date &&
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+            user.last_attendance_date.getTime() === today.getTime()
+        ) {
+            throw new BadRequestException(
+                '오늘은 이미 출석체크를 완료했습니다.',
+            );
+        }
+
+        // 보상 아이템 선정 (예: 참치캔)
+        const rewardItem =
+            await this.attendanceRepository.getRandomRewardItem();
+        if (!rewardItem) {
+            throw new NotFoundException(
+                '지급할 보상 아이템이 시스템에 존재하지 않습니다.',
+            );
+        }
+
+        const rewardQuantity = 1; // 1개 지급
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const newCount = user.attendance_count + 1;
+
+        // 트랜잭션 실행 (출석 일수 증가 + 인벤토리 지급)
+        await this.attendanceRepository.processAttendanceAndReward(
+            userId,
+            rewardItem.id,
+            rewardQuantity,
+            newCount,
+            today,
         );
-        const count = user.attendance_count;
 
         return {
-            attendance_count: count,
-            claimed_today: claimedToday,
-            today_index: claimedToday
-                ? (count - 1) % ATTENDANCE_REWARDS.length
-                : count % ATTENDANCE_REWARDS.length,
-            rewards: ATTENDANCE_REWARDS.map((r) => ({ ...r })),
-            // 오늘 아직 안 받았고 슬롯머신이 한 대도 없으면 — 오늘 칸은 아이템 대신 슬롯머신
-            today_reward_furniture: claimedToday
-                ? null
-                : await this.attendanceRepository.findSlotMachineToGrant(
-                      userId,
-                  ),
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            attendance_day_count: newCount,
+            reward_item: {
+                item_id: Number(rewardItem.id),
+                item_name: rewardItem.name,
+                quantity: rewardQuantity,
+            },
         };
-    }
-
-    // 오늘 출석 받기 — 이미 받았으면 400. 슬롯머신이 없으면 그날 보상 대신 슬롯머신(attendance-claim.ts)
-    async checkAttendance(userIdStr: string): Promise<AttendanceResponseDto> {
-        return await this.attendanceRepository.claim(
-            BigInt(userIdStr),
-            kstDateOnly(),
-        );
     }
 }

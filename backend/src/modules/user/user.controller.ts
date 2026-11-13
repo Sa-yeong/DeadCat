@@ -79,10 +79,10 @@ export class UserController {
     @UseGuards(JwtAuthGuard)
     @Patch('users/me/share-option')
     async updateShareOption(
-        @User() userId: bigint,
+        @User() userId: string,
         @Body() dto: UpdateShareOptionDto,
     ): Promise<ShareOptionResponseDto> {
-        return await this.userService.updateShareOption(String(userId), dto);
+        return await this.userService.updateShareOption(userId, dto);
     }
 
     // 20. 프로필 이미지 파일 업로드 및 DB 저장

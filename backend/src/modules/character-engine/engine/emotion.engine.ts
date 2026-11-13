@@ -7,6 +7,8 @@ import {
 } from '../types/emotion.types';
 
 export class EmotionEngine {
+    constructor(private readonly sensitivity = 1.0) {}
+
     updateMarketEmotion(input: EmotionInput): EmotionOutput[] {
         const {
             isOperatingTime,
@@ -46,28 +48,52 @@ export class EmotionEngine {
             usr_tendency.loss >= 0.5
         ) {
             marketEmotions.push(
-                this.createOutput('tired', 'tired', 0.4, null, true),
+                this.createOutput(
+                    'tired',
+                    'tired',
+                    this.applySensitivity(0.4),
+                    null,
+                    true,
+                ),
             );
         }
 
         // 수익 중
         if (userProfitRate !== null && userProfitRate > 0) {
             marketEmotions.push(
-                this.createOutput('happy', 'idle', 0.7, null, true),
+                this.createOutput(
+                    'happy',
+                    'idle',
+                    this.applySensitivity(0.7),
+                    null,
+                    true,
+                ),
             );
         }
 
         // 손실 중
         if (userProfitRate !== null && userProfitRate < 0) {
             marketEmotions.push(
-                this.createOutput('sad', 'idle', 0.7, null, true),
+                this.createOutput(
+                    'sad',
+                    'idle',
+                    this.applySensitivity(0.7),
+                    null,
+                    true,
+                ),
             );
         }
 
         // 변동성 높음
         if (usr_tendency.volatility >= 0.7) {
             marketEmotions.push(
-                this.createOutput('anxious', 'anxious', 0.7, null, isHolding),
+                this.createOutput(
+                    'anxious',
+                    'anxious',
+                    this.applySensitivity(0.7),
+                    null,
+                    isHolding,
+                ),
             );
         }
 
@@ -75,17 +101,17 @@ export class EmotionEngine {
         if (usr_tendency.momentum <= -0.5 && usr_tendency.loss >= 0.5) {
             marketEmotions.push(
                 this.createOutput(
-                    'depress',
                     'depression',
-                    0.8,
+                    'depression',
+                    this.applySensitivity(0.8),
                     null,
                     isHolding,
                 ),
             );
         }
 
-        // 등락률이 이 값(%) 이상이면 큰 변동
-        const threshold = 16;
+        // sensitivity가 높을수록 더 작은 변동에도 반응하도록 한다.
+        const threshold = 16 / this.sensitivity;
 
         // 큰 변동
         if (Math.abs(fluctuationRate) >= threshold) {
@@ -104,7 +130,13 @@ export class EmotionEngine {
         // 상승 모멘텀
         if (usr_tendency.momentum >= 0.5 && usr_tendency.profit >= 0) {
             marketEmotions.push(
-                this.createOutput('euphoria', 'idle', 0.8, null, isHolding),
+                this.createOutput(
+                    'euphoria',
+                    'idle',
+                    this.applySensitivity(0.8),
+                    null,
+                    isHolding,
+                ),
             );
         }
 
@@ -203,7 +235,7 @@ export class EmotionEngine {
                 // 기존 감정 유지
                 return [];
 
-            case 'depress':
+            case 'depression':
                 // sadly_smile VRMA가 확정되지 않아 보류
                 return [];
 
@@ -220,7 +252,7 @@ export class EmotionEngine {
         isHolding: boolean,
     ): EmotionOutput[] {
         switch (currentEmotion.emotion) {
-            case 'depress':
+            case 'depression':
                 return [
                     this.createOutput('happy', 'idle', 1.0, 2000, isHolding),
                 ];
@@ -268,7 +300,7 @@ export class EmotionEngine {
         isHolding: boolean,
     ): EmotionOutput[] {
         switch (currentEmotion.emotion) {
-            case 'depress':
+            case 'depression':
             case 'anxious':
                 return [
                     this.createOutput(
@@ -349,7 +381,7 @@ export class EmotionEngine {
                 // 기존 감정 유지
                 return [];
 
-            case 'depress':
+            case 'depression':
                 // sadlyAnnoying VRMA가 확정되지 않아 보류
                 return [];
 
@@ -396,6 +428,10 @@ export class EmotionEngine {
             duration,
             is_holding: isHolding,
         };
+    }
+
+    private applySensitivity(weight: number): number {
+        return Math.min(weight * this.sensitivity, 1);
     }
 
     private sortByPriority(output: EmotionOutput[]): EmotionOutput[] {

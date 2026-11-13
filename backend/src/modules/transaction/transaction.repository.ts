@@ -32,16 +32,16 @@ export class TransactionRepository {
             whereClause.trade_type = type;
         }
 
-        //  2. 기간 필터링 (start_date ~ end_date) — 화면에 보이는 거래 일자와 같은 한국 시간 하루로 자른다
+        //  2. 기간 필터링 (start_date ~ end_date)
         if (start_date || end_date) {
             // 시간 조건 객체 정의
             const timeFilter: Prisma.DateTimeNullableFilter = {};
 
             if (start_date) {
-                timeFilter.gte = new Date(`${start_date}T00:00:00.000+09:00`);
+                timeFilter.gte = new Date(`${start_date}T00:00:00.000Z`);
             }
             if (end_date) {
-                timeFilter.lte = new Date(`${end_date}T23:59:59.999+09:00`);
+                timeFilter.lte = new Date(`${end_date}T23:59:59.999Z`);
             }
 
             whereClause.transaction_time = timeFilter;

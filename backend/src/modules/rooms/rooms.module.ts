@@ -1,15 +1,14 @@
 import { Module } from '@nestjs/common';
 import { RoomsController } from './rooms.controller';
 import { RoomsService } from './rooms.service';
-import { FarewellsService } from './farewells.service';
-import { RoomThumbnailService } from './room-thumbnail.service';
 import { PrismaModule } from 'src/providers/database/prisma.module';
-import { HoldingModule } from '../holding/holding.module';
+import { AssetModule } from '../asset/asset.module';
+import { PriceModule } from 'src/price/price.module';
 
 @Module({
-    imports: [PrismaModule, HoldingModule],
+    imports: [PrismaModule, AssetModule, PriceModule],
     controllers: [RoomsController],
-    providers: [RoomsService, FarewellsService, RoomThumbnailService],
+    providers: [RoomsService],
     exports: [RoomsService],
 })
 export class RoomsModule {}

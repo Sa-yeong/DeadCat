@@ -52,15 +52,8 @@ export class FavoritesRepository {
                     select: {
                         code: true,
                         name: true,
-                        stock_type: true,
                         characters: {
                             select: { img_url: true },
-                        },
-                        // 캐시에 시세가 없을 때 쓰는 마지막 두 종가
-                        stock_history: {
-                            orderBy: { record_date: 'desc' },
-                            take: 2,
-                            select: { close_price: true },
                         },
                     },
                 },
