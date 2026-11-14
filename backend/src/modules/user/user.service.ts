@@ -1,6 +1,7 @@
 import {
     BadRequestException,
     Injectable,
+    InternalServerErrorException,
     Logger,
     NotFoundException,
 } from '@nestjs/common';
@@ -185,7 +186,7 @@ export class UserService {
     }
 
     // 20. 사용자 프로필 이미지 파일 저장 및 수정
-    async updateProfileImage(
+    /* async updateProfileImage(
         userId: string,
         filename: string,
     ): Promise<ProfileImageResponseDto> {
@@ -256,7 +257,7 @@ export class UserService {
             // 원래 발생한 오류 전달
             throw error;
         }
-    }
+    }*/
 
     // 기존 프로필 이미지가 삭제 가능한 로컬 업로드 파일인지 확인
     private getOldProfileImagePath(
@@ -301,86 +302,296 @@ export class UserService {
         }
     }
 
-    // 20. 사용자 프로필 이미지 파일 저장 및 수정
-    /*async updateProfileImage(
+    // 프로필 이미지 업로드 및 DB 저장
+    async updateProfileImage(
         userId: string,
-        filename: string,
+        file: Express.Multer.File,
     ): Promise<ProfileImageResponseDto> {
-        // 1. 기존 프로필 이미지 URL 조회
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+        // 1. 기존 사용자 확인
         const previousUser = await this.userRepository.findProfileImage(userId);
 
         if (!previousUser) {
-            // 사용자가 존재하지 않으면 새로 업로드한 파일 삭제
-            const newFilePath = join(
-                process.cwd(),
-                'uploads',
-                'profiles',
-                filename,
-            );
-
-            await unlink(newFilePath).catch(() => undefined);
-
             throw new NotFoundException('사용자를 찾을 수 없습니다.');
         }
 
-        // 2. 새 이미지 URL 생성
-        const profileImgUrl = `http://localhost:3000/uploads/profiles/${filename}`;
+        // 2. Supabase 환경 변수 확인
+        const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, '');
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const bucket = process.env.PROFILE_IMAGE_BUCKET;
+
+        if (!supabaseUrl || !serviceKey || !bucket) {
+            throw new InternalServerErrorException(
+                '프로필 이미지 저장소 설정이 없습니다.',
+            );
+        }
+
+        // 3. 파일 확장자 확인
+        const ext = file.mimetype === 'image/png' ? 'png' : 'jpg';
+
+        // 사용자별 고유 파일명 생성
+        const filename = `profile_${userId}_${Date.now()}.${ext}`;
+
+        // Storage에 저장할 파일 경로
+        const filePath = `${userId}/${filename}`;
+
+        // 4. Supabase Storage 업로드 URL 생성
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${filePath}`;
+
+        // ========================================
+        // [디버깅] Supabase 업로드 헤더 검사
+        // ========================================
+
+        const headers = {
+            apikey: serviceKey,
+            'Content-Type': file.mimetype,
+            'x-upsert': 'true',
+            'cache-control': '31536000',
+        };
+
+        // 4-1. 헤더에 비ASCII 문자 포함 여부 확인
+        // HTTP 헤더별 비ASCII 문자 검사
+        for (const [name, value] of Object.entries(headers)) {
+            // 비ASCII 문자가 포함된 위치 확인
+            const invalidChars = [...value]
+                .filter((char) => char.charCodeAt(0) > 255)
+                .map((char) => ({
+                    character: char,
+                    code: char.charCodeAt(0),
+                }));
+
+            if (invalidChars.length > 0) {
+                this.logger.error(
+                    `[헤더 비정상] ${name}: 비정상 문자 발견 (${invalidChars.length}개)`,
+                );
+            } else {
+                this.logger.log(`[헤더 정상] ${name}`);
+            }
+        }
+
+        // 4-2. Secret Key 형식 확인 (실제 키는 출력하지 않음)
+        this.logger.log(
+            `[Secret Key] ${
+                serviceKey.startsWith('sb_secret_')
+                    ? 'sb_secret 형식'
+                    : '형식 확인 필요'
+            }`,
+        );
+
+        // 4-3. 파일 MIME 타입 확인
+        this.logger.log(`[파일 MIME 타입] ${file.mimetype}`);
+
+        // 4-4. HTTP 헤더 생성 테스트
+        try {
+            new Headers(headers);
+            this.logger.log('[HTTP 헤더] 생성 성공');
+        } catch (error) {
+            this.logger.error(`[HTTP 헤더] 생성 실패: ${String(error)}`);
+        }
+
+        // ========================================
+        // 5. Supabase Storage 업로드
+        // ========================================
+
+        let uploadResponse: Response;
 
         try {
-            // 3. DB에 새 이미지 URL 저장
+            uploadResponse = await fetch(uploadUrl, {
+                method: 'POST',
+                headers,
+                body: new Uint8Array(file.buffer),
+            });
+        } catch (error) {
+            this.logger.error(
+                `프로필 이미지 업로드 요청 실패: ${String(error)}`,
+            );
+
+            throw new InternalServerErrorException(
+                '프로필 이미지 업로드에 실패했습니다.',
+            );
+        }
+
+        // Supabase 업로드 응답 확인
+        if (!uploadResponse.ok) {
+            const detail = await uploadResponse.text().catch(() => '');
+
+            this.logger.error(
+                `Supabase 업로드 실패 (${uploadResponse.status}): ${detail}`,
+            );
+
+            throw new InternalServerErrorException(
+                '프로필 이미지 저장에 실패했습니다.',
+            );
+        }
+
+        // 6. 공개 이미지 URL 생성
+        const profileImgUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+
+        // 7. DB에 새 프로필 이미지 URL 저장
+        try {
             const updatedUser = await this.userRepository.updateProfileImage(
                 userId,
                 profileImgUrl,
             );
 
-            if (!updatedUser) {
-                throw new NotFoundException('사용자를 찾을 수 없습니다.');
-            }
-
-            // 4. 기존 이미지가 있을 때만 삭제
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const oldImageUrl = previousUser.profile_img_url;
-
-            if (oldImageUrl) {
-                const pathname = new URL(oldImageUrl).pathname;
-                const oldFilename = basename(pathname);
-
-                // 해당 사용자가 직접 업로드한 이미지인지 확인
-                if (oldFilename.startsWith(`profile_${userId}_`)) {
-                    const oldFilePath = join(
-                        process.cwd(),
-                        'uploads',
-                        'profiles',
-                        oldFilename,
-                    );
-
-                    // 새 이미지와 다른 파일인 경우에만 삭제
-                    if (
-                        oldFilePath !==
-                        join(process.cwd(), 'uploads', 'profiles', filename)
-                    ) {
-                        await unlink(oldFilePath).catch(() => undefined);
-                    }
-                }
-            }
-
-            // 5. 새 이미지 URL 반환
             return {
                 profile_img_url: updatedUser.profile_img_url,
             };
         } catch (error) {
-            // DB 업데이트 실패 시 새로 업로드한 파일 삭제
-            const newFilePath = join(
-                process.cwd(),
-                'uploads',
-                'profiles',
-                filename,
+            this.logger.error(`프로필 이미지 DB 저장 실패: ${String(error)}`);
+
+            // DB 저장 실패 시 새로 업로드한 파일 정리
+            await fetch(uploadUrl, {
+                method: 'DELETE',
+                headers: {
+                    apikey: serviceKey,
+                    Authorization: `Bearer ${serviceKey}`,
+                },
+            }).catch((deleteError) => {
+                this.logger.error(
+                    `업로드 파일 삭제 실패: ${String(deleteError)}`,
+                );
+            });
+
+            throw error;
+        }
+    }
+
+    // 프로필 이미지 업로드 및 DB 저장
+    /* async updateProfileImage(
+        userId: string,
+        file: Express.Multer.File,
+    ): Promise<ProfileImageResponseDto> {
+        // 1. 기존 사용자 확인
+        const previousUser = await this.userRepository.findProfileImage(userId);
+
+        if (!previousUser) {
+            throw new NotFoundException('사용자를 찾을 수 없습니다.');
+        }
+
+        // 2. Supabase 환경 변수 확인
+        const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/+$/, '');
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const bucket = process.env.PROFILE_IMAGE_BUCKET;
+
+        if (!supabaseUrl || !serviceKey || !bucket) {
+            throw new InternalServerErrorException(
+                '프로필 이미지 저장소 설정이 없습니다.',
+            );
+        }
+
+        // 3. 파일 확장자 확인
+        const ext = file.mimetype === 'image/png' ? 'png' : 'jpg';
+
+        // 사용자별 고유 파일명 생성
+        const filename = `profile_${userId}_${Date.now()}.${ext}`;
+
+        // Storage에 저장할 파일 경로
+        const filePath = `${userId}/${filename}`;
+
+        // 4. Supabase Storage 업로드
+        const uploadUrl = `${supabaseUrl}/storage/v1/object/${bucket}/${filePath}`;
+
+        let uploadResponse: Response;
+
+        try {
+            uploadResponse = await fetch(uploadUrl, {
+                method: 'POST',
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                headers,
+                body: new Uint8Array(file.buffer),
+            });
+        } catch (error) {
+            this.logger.error(
+                `프로필 이미지 업로드 요청 실패: ${String(error)}`,
             );
 
-            await unlink(newFilePath).catch(() => undefined);
+            throw new InternalServerErrorException(
+                '프로필 이미지 업로드에 실패했습니다.',
+            );
+        }
 
-            // 원래 오류 전달
+        try {
+            uploadResponse = await fetch(uploadUrl, {
+                method: 'POST',
+                headers: {
+                    // Service Role Key는 백엔드에서만 사용
+                    apikey: serviceKey,
+                    // Authorization: `Bearer ${serviceKey}`,
+                    'Content-Type': file.mimetype,
+                    'x-upsert': 'true',
+                    'cache-control': '31536000',
+                },
+                body: new Uint8Array(file.buffer),
+            });
+        } catch (error) {
+            this.logger.error(
+                `프로필 이미지 업로드 요청 실패: ${String(error)}`,
+            );
+
+            throw new InternalServerErrorException(
+                '프로필 이미지 업로드에 실패했습니다.',
+            );
+        }
+
+        if (!uploadResponse.ok) {
+            const detail = await uploadResponse.text().catch(() => '');
+
+            this.logger.error(
+                `Supabase 업로드 실패 (${uploadResponse.status}): ${detail}`,
+            );
+
+            throw new InternalServerErrorException(
+                '프로필 이미지 저장에 실패했습니다.',
+            );
+        }
+
+        // 5. 공개 이미지 URL 생성
+        const profileImgUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${filePath}`;
+
+        try {
+            // 6. DB에 새 프로필 이미지 URL 저장
+            const updatedUser = await this.userRepository.updateProfileImage(
+                userId,
+                profileImgUrl,
+            );
+
+            return {
+                profile_img_url: updatedUser.profile_img_url,
+            };
+        } catch (error) {
+            // HTTP 헤더에 한글 등 비ASCII 문자가 있는지 검사
+            const headers = {
+                apikey: serviceKey,
+                'Content-Type': file.mimetype,
+                'x-upsert': 'true',
+                'cache-control': '31536000',
+            };
+
+            // 값 자체나 Secret Key는 출력하지 않고 문제 여부만 확인
+            for (const [name, value] of Object.entries(headers)) {
+                const hasInvalidChar = /[^\x00-\x7F]/.test(value);
+
+                this.logger.log(
+                    `헤더 검사: ${name} = ${hasInvalidChar ? '비정상 문자 포함' : '정상'}`,
+                );
+            }
+
+            // Secret Key의 형식만 확인 (실제 키는 출력하지 않음)
+            this.logger.log(
+                `Secret Key 형식: ${serviceKey.startsWith('sb_secret_') ? '정상' : '확인 필요'}`,
+            );
+
+            this.logger.log(`파일 MIME 타입: ${file.mimetype}`);
+
+            // DB 저장 실패 시 새로 업로드한 파일 정리
+            await fetch(uploadUrl, {
+                method: 'DELETE',
+                headers: {
+                    apikey: serviceKey,
+                    Authorization: `Bearer ${serviceKey}`,
+                },
+            }).catch(() => undefined);
+
             throw error;
         }
     }*/
