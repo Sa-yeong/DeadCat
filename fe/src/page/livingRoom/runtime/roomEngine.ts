@@ -6,6 +6,7 @@ import motions from '../engine/data/motions.json';
 import poses from '../engine/data/poses.json';
 import { LivingRoomEngine, type EmotionFeed, type EngineCommand } from '../engine/Engine';
 import { loadRules, type RuleSet } from '../engine/ruleLoader';
+import type { ForceMeet } from '../engine/matcher';
 import type { MotionDef, RawData } from '../engine/type/type';
 
 /** 엔진 규칙 — 엔진 데이터(engine/data)를 한 번 읽는다. 틀린 데이터면 여기서 바로 오류(엔진 테스트가 같은 데이터를 검사한다) */
@@ -21,6 +22,8 @@ export function createRoomEngine(opts: {
   onCommand: (cmd: EngineCommand) => void;
   log?: (line: string) => void;
   labelOf?: (characterId: string) => string | undefined;
+  /** 정해 둔 만남(데모 연출, roomDemo.ts) */
+  forceMeet?: ForceMeet;
 }): LivingRoomEngine {
   return new LivingRoomEngine({ rules: ROOM_RULES, ...opts });
 }

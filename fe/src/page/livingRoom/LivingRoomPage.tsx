@@ -20,6 +20,8 @@ import { PlaceholderScene } from './runtime/PlaceholderScene';
 import { RoomFeed } from './runtime/RoomFeed';
 import { createRoomEngine, ROOM_MOTIONS } from './runtime/roomEngine';
 import { RoomLoop } from './runtime/RoomLoop';
+import { roomDemoOf, type RoomDemo } from './runtime/roomDemo';
+import { useDemoMode } from '../../common/demo/demoMode';
 import type { RoomRenderer } from './runtime/RoomRenderer';
 import { encodeThumb } from './runtime/thumbImage';
 import { charIdOf, type OwnedStock, type Quote, type ReactionKind, type RoomSnapshot, type RoomThumbnail } from './types';
@@ -84,6 +86,12 @@ export function LivingRoomPage() {
 }
 
 function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; use3d: boolean; debug: boolean; lab: boolean }) {
+  // 데모 계정이 내 거실을 볼 때만 연출(runtime/roomDemo.ts) — 판정이 늦게 와도 런타임이 매번 읽는다
+  const { demo } = useDemoMode();
+  const demoOn = useRef(false);
+  useEffect(() => {
+    demoOn.current = demo && !userId;
+  }, [demo, userId]);
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -152,6 +160,14 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
 
       const characters = new CharacterCatalog();
       characters.load(charDefs);
+      // 데모 연출 — 캐릭터 수가 바뀔 때만 다시 만든다(종목 코드 → 거실 캐릭터 id)
+      let demoCache: { n: number; v: RoomDemo } | null = null;
+      const roomDemo = (): RoomDemo | null => {
+        if (!demoOn.current) return null;
+        const all = characters.all();
+        if (demoCache?.n !== all.length) demoCache = { n: all.length, v: roomDemoOf(all.map((d) => ({ id: charIdOf(d), stockCode: d.stockCode }))) };
+        return demoCache.v;
+      };
       const furniture = new FurnitureCatalog();
       furniture.load(FURNITURE_CATALOG);
       // 축척은 아래 layout effect 가 rt 가 생기자마자(첫 화면을 그리기 전에) 맞춘다
@@ -174,6 +190,7 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
               onCommand,
               log: debug ? (line) => console.log(`[엔진] ${line}`) : undefined,
               labelOf: (id) => characters.def(id)?.stockName,
+              forceMeet: (a, b) => roomDemo()?.forceMeet(a, b) ?? null,
             })
         : () => new NullEngine();
       loop = new RoomLoop({
@@ -182,6 +199,7 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
         characters,
         furniture,
         motions: ROOM_MOTIONS,
+        demo: roomDemo,
         events: {
           onPicked: (id, screen) => hud.current?.onSelect(id, screen),
           onEmptyPick: () => hud.current?.onEmptyPick(),

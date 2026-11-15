@@ -1,7 +1,7 @@
 // 그룹, 끼어들기, startCooldown 호출 추가하기
 import type { CharState } from "./type/type"
 import type { RuleSet } from "./ruleLoader"
-import type { MatchContext } from "./matcher"
+import type { ForceMeet, MatchContext } from "./matcher"
 
 // 캐릭터 상태, 쿨다운 기록, 가구 점유, 그룹
 export type Clock = () => number
@@ -120,11 +120,12 @@ export class InteractionState {
     }
 
     // ---------- 매처 연결 ----------
-    createMatchContext(rules: RuleSet, random: () => number = Math.random): MatchContext {
+    createMatchContext(rules: RuleSet, random: () => number = Math.random, forceMeet?: ForceMeet): MatchContext {
         return {
             rules,
             isOnCooldown: (ruleId, a, b) => this.isOnCooldown(ruleId, a, b),
             random,
+            forceMeet,
         }
     }
 

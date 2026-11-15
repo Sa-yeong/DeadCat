@@ -1,6 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable } from '@nestjs/common';
-import { DEMO_SCENARIOS, type DemoScenario } from './demo-scenario';
+import {
+    DEMO_ROOM_EMOTIONS,
+    DEMO_SCENARIOS,
+    type DemoScenario,
+} from './demo-scenario';
 import { fakeOrderbook, fakeQuote, rateAt } from './demo-quote';
 import type { TickRule } from '../orders/order-rules';
 
@@ -52,6 +56,15 @@ export class DemoService {
         stockCode: string,
     ): boolean {
         return this.isDemoUser(userId) && isDemoCode(stockCode);
+    }
+
+    /** 데모 계정 거실에서 이 종목의 고정 감정(demo-scenario.ts DEMO_ROOM_EMOTIONS) — 없으면 null */
+    roomEmotionOf(
+        userId: bigint | string | null | undefined,
+        stockCode: string,
+    ): 'tired' | null {
+        if (!this.isDemoUser(userId)) return null;
+        return DEMO_ROOM_EMOTIONS[stockCode.toUpperCase()] ?? null;
     }
 
     /** fn 을 이 사용자의 요청으로 돌린다 — 데모 계정일 때만 표시가 붙고, 아니면 그냥 fn() */

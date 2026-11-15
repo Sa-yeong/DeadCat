@@ -1,6 +1,7 @@
 import type { Emotion, MarketEventType } from '../engine/type/type';
 import { type RuleSet } from '../engine/ruleLoader';
 import { LivingRoomController, type Dispatcher } from './controller';
+import type { ForceMeet } from './matcher';
 
 export type MotionStep = { name: string; kind: 'clip' | 'behavior'; loop: boolean }
 
@@ -48,6 +49,7 @@ export type EngineOptions = {
   onCommand: (cmd: EngineCommand) => void
   now?: () => number
   random?: () => number
+  forceMeet?: ForceMeet // 정해 둔 만남(데모) — 이 두 캐릭터는 이 규칙의 이 효과로
   log?: (line: string) => void // 사건 하나당 한 줄 (개발 모드에서만 연결)
   labelOf?: (characterId: string) => string | undefined // 로그에 곁들일 이름 (예: 종목명)
 }
@@ -121,6 +123,7 @@ export class LivingRoomEngine implements CharacterEngine{
       dispatcher: engineDispatcher,
       now: opts.now ?? (() => performance.now()),
       random: opts.random,
+      forceMeet: opts.forceMeet,
       log: this.log,
       labelOf: opts.labelOf,
       // 규칙이 감정을 바꿈 (예: 졸린 캐릭터를 깨움) — 백엔드는 모르는 변화라 엔진이 알린다

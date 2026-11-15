@@ -19,11 +19,19 @@ export type CharView = {
     id: string
     emotion: Emotion
 }
+/**
+ * 이 두 캐릭터는 감정과 상관없이 이 규칙의 이 효과로 — 데모 연출용(예: 엔비디아가 네이버를 만나면 늘 놀리기).
+ * effect = 규칙 effect 배열의 순번. null 이면 평소 규칙대로
+ */
+export type ForcedMeet = { ruleId: string; self: string; other: string; effect: number }
+export type ForceMeet = (a: string, b: string) => ForcedMeet | null
+
 // isOnCooldown -> State.ts에 있을 예정
 export type MatchContext = {
     rules: RuleSet
     isOnCooldown: (ruleId: string, self: string, other: string) => boolean
     random: () => number
+    forceMeet?: ForceMeet
 }
 
 type Candidate <R extends {id: string; priority: number}> = {
@@ -34,6 +42,17 @@ type Candidate <R extends {id: string; priority: number}> = {
 
 // 로그는 남기지 않는다 — 고르지 못한 이유는 컨트롤러가 사건마다 한 줄로 남김 (ControllerOptions.log)
 export function matchCharacter(a: CharView, b: CharView, ctx: MatchContext): Decision_C | null{
+    // 정해 둔 만남(데모) — 그 규칙의 쿨다운은 지키고, 쿨다운 중이면 다른 규칙으로 새지 않고 아무것도 안 한다
+    const forced = ctx.forceMeet?.(a.id, b.id)
+    if (forced) {
+        const found = ctx.rules.rulesById.get(forced.ruleId)
+        const rule = found && 'other' in found.when ? (found as CharacterRule) : undefined
+        const effect = rule?.effect[forced.effect]
+        if (rule && effect) {
+            if (ctx.isOnCooldown(rule.id, forced.self, forced.other)) return null
+            return { rule, self: forced.self, other: forced.other, effect, otherEmotionTo: null }
+        }
+    }
     const forward = firstAvailable(ctx.rules.characterIndex.get(`${a.emotion}|${b.emotion}`), a.id, b.id, ctx);
     const backward = firstAvailable(ctx.rules.characterIndex.get(`${b.emotion}|${a.emotion}`), b.id, a.id, ctx);
 

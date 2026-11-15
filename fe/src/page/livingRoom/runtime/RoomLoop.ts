@@ -13,6 +13,7 @@ import { ROOM, type Pt } from './projection';
 import { footprint } from './furnitureShape';
 import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import type { MotionTable } from './roomEngine';
+import type { RoomDemo } from './roomDemo';
 
 /**
  * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
@@ -146,6 +147,11 @@ export class RoomLoop {
   private readonly gesture: PressGesture;
 
   private readonly handles = new Map<string, CharacterHandle>();
+  private readonly demo: () => RoomDemo | null;
+  /** 엔진이 마지막으로 준 기본 자세(모션 이름) — 데모 제자리 모션을 켜고 끌 때 되돌릴 값 */
+  private readonly basePoses = new Map<string, { idle: string; walk: string }>();
+  /** 데모 제자리 모션을 건 캐릭터 → 건 모션 */
+  private readonly stillOn = new Map<string, string>();
   /** 옷 상태(수익률로 헤진 · 일반 · 좋은, 3-⑩) — 판정은 outfitState 한 곳, 여기는 캐릭터별로 들고 렌더러에 알린다 */
   private readonly outfits = new OutfitStates();
   /** 고른 옷(서버 equipped_clothes_id) — null = 기본 */
@@ -176,6 +182,8 @@ export class RoomLoop {
     /** 모션 이름 → 파일 · 움직임 (motions.json) */
     motions: MotionTable;
     events: RoomLoopEvents;
+    /** 데모 계정의 내 거실 연출(roomDemo.ts) — 없거나 null 이면 평소대로. 늦게 켜질 수 있어 매번 읽는다 */
+    demo?: () => RoomDemo | null;
   }) {
     this.renderer = deps.renderer;
     this.engine = deps.createEngine((cmd) => this.onCommand(cmd));
@@ -183,6 +191,7 @@ export class RoomLoop {
     this.furniture = deps.furniture;
     this.motions = deps.motions;
     this.events = deps.events;
+    this.demo = deps.demo ?? (() => null);
     this.gesture = new PressGesture({
       hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.renderer.pick(x, y)),
       canLift: () => this.mode === 'NORMAL',
@@ -401,6 +410,8 @@ export class RoomLoop {
       }
       // 엔진 모션 중엔 제자리 — 가구 위에 내려놓았으면 그 자리 그대로. 끝나면 평소처럼 걸어 나온다(findPath 가 가장 가까운 빈 칸으로 먼저 비킨다)
       if (h.acting) continue;
+      // 데모 — 제자리에서 정해 둔 모션만(돌아다니지 않는다). 다른 캐릭터가 다가와 마주치는 건 그대로
+      if (this.applyStill(h)) continue;
       if (h.away) {
         this.walkAway(h, dt);
         continue;
@@ -491,7 +502,8 @@ export class RoomLoop {
         return;
       case 'emotion':
         this.renderer.setExpression(h.id, cmd.emotion);
-        this.renderer.setBasePose(h.id, { idle: this.motions.clipOf(cmd.idle), walk: this.motions.clipOf(cmd.walk) });
+        this.basePoses.set(h.id, { idle: cmd.idle, walk: cmd.walk });
+        this.setPose(h.id); // 데모 제자리 모션이 걸려 있으면 그 모션이 idle 로 남는다
         return;
       case 'play': {
         if (h.lifted) return;
@@ -560,6 +572,34 @@ export class RoomLoop {
   }
 
   /** 엔진 모션을 멈추고 다시 걷게 한다 — 끝 신호는 없다 */
+  /** 기본 자세를 렌더러에 — 데모 제자리 모션이 걸려 있으면 그 모션을 idle 로 */
+  private setPose(id: string): void {
+    const base = this.basePoses.get(id);
+    const still = this.stillOn.get(id);
+    if (!base && !still) return;
+    this.renderer.setBasePose(id, {
+      idle: this.motions.clipOf(still ?? base!.idle),
+      walk: base ? this.motions.clipOf(base.walk) : null,
+    });
+  }
+
+  /** 데모 제자리 캐릭터인가 — 맞으면 모션을 걸고(한 번) 걷던 길을 버린다. 데모가 꺼지면 원래 자세로 */
+  private applyStill(h: CharacterHandle): boolean {
+    const want = this.demo()?.stillIdle.get(h.id) ?? null;
+    const have = this.stillOn.get(h.id) ?? null;
+    if (want !== have) {
+      if (want) this.stillOn.set(h.id, want);
+      else this.stillOn.delete(h.id);
+      this.setPose(h.id);
+    }
+    if (!want) return false;
+    if (h.path.length) {
+      h.path = [];
+      this.renderer.move(h.id, h.position); // 걷다 멈춘 자리에서 서게
+    }
+    return true;
+  }
+
   private stopActing(h: CharacterHandle): void {
     this.unseat(h);
     h.run = null;

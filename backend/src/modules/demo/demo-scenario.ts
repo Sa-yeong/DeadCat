@@ -59,3 +59,12 @@ export const DEMO_SCENARIOS: Record<string, DemoScenario> & {
         ],
     },
 };
+
+/**
+ * **데모 계정 거실의 고정 감정** — 종목 코드 → 감정. 거실(1분 주기 감정 · 처음 받는 감정)에만 쓰고 개별종목 화면은 그대로.
+ * 네이버 tired = 우울해 가만히 있는 상황 — 거실 화면이 제자리 tired 모션을 걸고, 엔비디아가 만나면 늘 놀린다
+ * (fe/src/page/livingRoom/runtime/roomDemo.ts). 끄려면 줄을 지운다
+ */
+export const DEMO_ROOM_EMOTIONS: Readonly<Record<string, 'tired'>> = {
+    '035420': 'tired',
+};

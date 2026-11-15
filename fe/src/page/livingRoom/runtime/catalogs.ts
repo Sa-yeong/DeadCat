@@ -14,6 +14,11 @@ export class CharacterCatalog {
   def(charId: string): CharacterDef | undefined {
     return this.defs.get(charId);
   }
+
+  /** 받아 둔 캐릭터 전부 — 데모 연출(roomDemo)이 종목 코드로 id 를 찾는 데 */
+  all(): CharacterDef[] {
+    return [...this.defs.values()];
+  }
 }
 
 /** 가구 고정값 캐시 — 이름 · 크기 · 모양. 씬과 배치 편집기가 같이 본다 */

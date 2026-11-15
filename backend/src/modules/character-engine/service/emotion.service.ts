@@ -306,6 +306,9 @@ export class EmotionService {
         userId: string,
         stockCode: string,
     ): Promise<Emotion> {
+        // 데모 계정 거실 — 정해 둔 감정(예: 네이버 tired)으로 고정. 거실 감정은 여기만 지난다
+        const forced = this.demo?.roomEmotionOf(userId, stockCode);
+        if (forced) return forced;
         const res = await this.calculateEmotion(userId, stockCode);
         return res.emotions[0]?.emotion ?? 'happy';
     }
