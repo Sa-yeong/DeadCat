@@ -4,6 +4,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { clearToken, leavesOnLogout, useAuthToken } from './authToken';
 import { SearchBar } from './SearchBar';
 import { SidebarLogin } from './sidebar/panels/parts';
+import { ProfileAvatar } from './profile/ProfileAvatar';
+import { useMyProfileImg } from './profile/myProfile';
 
 /**
  * 프로필 원 옆 버튼. 비로그인 — 팀 공용 로그인 창(로그인하면 지금 주소로 돌아오고 창은 스스로 닫힌다).
@@ -45,6 +47,9 @@ function AuthButton(){
  */
 export function GlobalNavBar(){
     const { pathname } = useLocation();
+    // 로그인했으면 마이페이지에서 고른 프로필 이미지, 아니면 지금까지의 보라 원
+    const token = useAuthToken();
+    const myImg = useMyProfileImg();
     const on = (prefix: string) => (pathname.startsWith(prefix) ? 'on' : undefined);
 
     return <header className='globalNav'>
@@ -57,7 +62,9 @@ export function GlobalNavBar(){
         </nav>
         <div className='gnb-right'>
             <div className='gnb-search'><SearchBar /></div>
-            <Link to='/mypage' className='gnb-avatar' aria-label='내 프로필' />
+            <Link to='/mypage' className='gnb-avatar' aria-label='내 프로필'>
+                {token && <ProfileAvatar url={myImg} size={32} />}
+            </Link>
             <AuthButton />
         </div>
     </header>;

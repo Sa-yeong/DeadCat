@@ -31,6 +31,7 @@ export class GuestbookReplyDto {
     reply_id!: number;
     writer_id!: number | null;
     writer_nickname!: string;
+    writer_profile_img_url!: string | null;
     /** 비밀글의 답글을 볼 수 없는 사람에겐 null */
     content!: string | null;
     created_at!: string;
