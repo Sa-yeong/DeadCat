@@ -8,7 +8,7 @@ import { useDemoMode } from '../../common/demo/demoMode';
  * **데모 관리(졸프 데모 영상)** — 데모 계정(서버 DEMO_USER_IDS)에게만 보인다. 주소 /demo
  *  · 데모 계정 초기화 — 가입 직후 상태로(거래 · 보유 · 거실 · 커뮤니티 · 팔로우 · 출석 · 잔고 1억). 서버 POST /demo/reset
  *  · 가짜 시세 처음부터 — 시나리오를 처음부터(POST /demo/restart)
- *  · 거실 바로 가기 — 연출 거실(demo1: 네이버 tired · 엔비디아 놀리기, 거실 오른쪽 아래 「놀리기 준비」)
+ *  · 거실 바로 가기 — 연출 거실(demo1: 네이버 tired · 엔비디아 놀리기, 줌 막대 바로 위 투명 버튼)
  */
 interface Account {
   id: string;
@@ -101,7 +101,7 @@ export function DemoPage() {
         </button>
       </Section>
 
-      <Section title="거실" hint="연출 거실에선 네이버가 제자리에서 우울해(tired) 있어요. 거실 오른쪽 아래 「놀리기 준비」를 누르고 엔비디아를 꾹 눌러 들어 네이버 바로 옆에 놓으면 놀려요(연달아 해도 돼요)">
+      <Section title="거실" hint="연출 거실에선 네이버가 제자리에서 우울해(tired) 있어요. 줌 막대 바로 위 투명 버튼(화면엔 안 보임)을 누르고, 엔비디아를 꾹 눌러 들어 네이버 바로 옆에 놓으면 놀려요(연달아 해도 돼요)">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Link to="/room" style={btn}>내 거실</Link>
           {roomUserIds
