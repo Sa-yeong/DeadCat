@@ -27,8 +27,9 @@ jest.mock('./tendency.service', () => ({ TendencyService: class {} }));
 
 import { EmotionService } from './emotion.service';
 import { MarketTimeService } from './market-time.service';
+import { DemoService } from '../../demo/demo.service';
 
-function setup(stockType: string) {
+function setup(stockType: string, demo?: DemoService) {
     return new EmotionService(
         {
             readPrices: jest.fn((codes: string[]) =>
@@ -45,11 +46,14 @@ function setup(stockType: string) {
                 ),
             ),
         } as never,
-        {} as never,
+        // 보유 없음 — 로그인 계정(데모 테스트)만 부른다
+        { findEmotionHolding: jest.fn().mockResolvedValue(null) } as never,
         {
-            findStockByCode: jest
-                .fn()
-                .mockResolvedValue({ id: 1n, stock_type: stockType }),
+            findStockByCode: jest.fn().mockResolvedValue({
+                id: 1n,
+                code: '035420',
+                stock_type: stockType,
+            }),
         } as never,
         {
             calculate: jest.fn().mockReturnValue({
@@ -65,6 +69,7 @@ function setup(stockType: string) {
         new MarketTimeService(),
         { findRecentChart: jest.fn().mockResolvedValue([]) } as never,
         {} as never,
+        demo,
     );
 }
 
@@ -104,5 +109,62 @@ describe('캐릭터 장외 판정(결정 7)', () => {
         ['마감 뒤', '2026-11-03T15:31:00+09:00', true],
     ])('국내는 그대로 — %s', async (_name, iso, sleeping) => {
         await expect(sleepsAt('DOMESTIC', iso)).resolves.toBe(sleeping);
+    });
+});
+
+describe('데모 종목 — 감정이 없을 때 매수 · 매도 반응', () => {
+    const OLD = process.env.DEMO_USER_IDS;
+    beforeEach(() => {
+        process.env.DEMO_USER_IDS = '13';
+        // 국내 장외 — 데모 종목은 깨어 있고, 보유 · 등락 감정도 없어 지금 감정이 비어 있다
+        jest.useFakeTimers().setSystemTime(
+            new Date('2026-11-03T20:00:00+09:00'),
+        );
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+        if (OLD === undefined) delete process.env.DEMO_USER_IDS;
+        else process.env.DEMO_USER_IDS = OLD;
+    });
+    const calc = (userId: string, type?: string) =>
+        setup('DOMESTIC', new DemoService()).calculateEmotion(
+            userId,
+            '035420',
+            type ? { type } : undefined,
+        );
+
+    it('매도 → 화남(sad / upset, 2초) · 매수 → 기쁨(happy / idle, 2초)', async () => {
+        const sell = await calc('13', 'SELL');
+        expect(sell.emotions).toEqual([
+            {
+                emotion: 'sad',
+                motion: 'upset',
+                weight: 1,
+                duration: 2000,
+                is_holding: false,
+            },
+        ]);
+        const buy = await calc('13', 'BUY');
+        expect(buy.emotions[0]).toMatchObject({
+            emotion: 'happy',
+            motion: 'idle',
+            duration: 2000,
+        });
+    });
+
+    it('상호작용이 없으면 그대로 빈 목록(깨어 있음)', async () => {
+        expect((await calc('13')).emotions).toEqual([]);
+    });
+
+    it('데모가 아닌 계정은 엔진 결과 그대로 — 데모 서비스가 있든 없든 같다', async () => {
+        for (const type of ['SELL', 'BUY', undefined]) {
+            const withDemo = await calc('2', type);
+            const plain = await setup('DOMESTIC').calculateEmotion(
+                '2',
+                '035420',
+                type ? { type } : undefined,
+            );
+            expect(withDemo).toEqual(plain);
+        }
     });
 });

@@ -29,6 +29,35 @@ import { isForeignStock, marketOf } from '../../orders/order-rules';
 // 거실 감정 다시 계산 주기 — 1분. 시세 갱신(price.scheduler, 매분 0초)과 겹치지 않게 30초에
 const EMOTION_PUSH_CRON = '30 * * * * *';
 
+/**
+ * 데모 종목에서 지금 감정이 없을 때의 매수 · 매도 반응 — emotion.engine.ts 의 handleBuy / handleSell 기본(default) 줄과 같은 값.
+ * 그 밖의 상호작용(클릭 · 연타)이나 상호작용이 없으면 null(지금 그대로)
+ */
+export function demoTradeReaction(
+    type: string | undefined,
+    isHolding: boolean,
+): EmotionOutput | null {
+    if (type === 'SELL') {
+        return {
+            emotion: 'sad',
+            motion: 'upset',
+            weight: 1.0,
+            duration: 2000,
+            is_holding: isHolding,
+        };
+    }
+    if (type === 'BUY') {
+        return {
+            emotion: 'happy',
+            motion: 'idle',
+            weight: 1.0,
+            duration: 2000,
+            is_holding: isHolding,
+        };
+    }
+    return null;
+}
+
 @Injectable()
 export class EmotionService {
     private readonly logger = new Logger(EmotionService.name);
@@ -159,6 +188,19 @@ export class EmotionService {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             interaction,
         });
+
+        // 데모 종목: 지금 감정이 하나도 없으면(전량 매도 뒤 · 막 산 수익률 0 · 장외 등락 없음) 엔진은 매수 · 매도 반응을
+        // 고르지 못하고 빈 목록을 준다(applyInteraction). 그때만 엔진의 기본 반응을 그대로 — 매도 화남 · 매수 기쁨
+        if (
+            emotions.length === 0 &&
+            (this.demo?.isDemoStock(userId, stock.code) ?? false)
+        ) {
+            const reaction = demoTradeReaction(
+                (interaction as { type?: string } | undefined)?.type,
+                isHolding,
+            );
+            if (reaction) emotions.push(reaction);
+        }
 
         return {
             isHolding,
