@@ -31,6 +31,13 @@ describe('characterOf — 종목 코드 → 캐릭터', () => {
     expect(c.motions.upset).toEqual(characterOf('005930').motions.upset);
   });
 
+  it('NAVER(035420) — 전용 모델, 모션 · 반응은 아직 전부 공용', () => {
+    const c = characterOf('035420');
+    expect(c.key).toBe('035420');
+    expect(c.model).toBe(`${BASE}characters/stocks/035420/character.vrm`);
+    expect(c.motions).toEqual(characterOf('005930').motions);
+  });
+
   it('코드는 대소문자를 가리지 않는다', () => {
     expect(characterOf('nvda')).toBe(characterOf('NVDA'));
   });

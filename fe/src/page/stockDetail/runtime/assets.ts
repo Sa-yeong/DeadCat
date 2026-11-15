@@ -37,6 +37,11 @@ export const STOCK_CHARACTERS: Record<string, CharacterSpec> = {
       annoying: { ...MOTIONS.annoying!, face: [{ expr: 'happy', value: 1 }] },
     },
   },
+  // NAVER — 전용 모델(2026-11-15). 전용 모션 · 반응은 도휘가 곧 추가 — 그때 motions/ 에 파일을 두고 아래에 NVDA처럼 적는다
+  '035420': {
+    dir: 'characters/stocks/035420/',
+    overrides: {},
+  },
 };
 
 const COMMON_KEY = 'common';
