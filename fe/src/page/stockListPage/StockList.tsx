@@ -4,6 +4,7 @@ import { useOutletContext, useNavigate } from 'react-router-dom';
 import { StockRow } from "./StockRow";
 import { api } from '../../api/axios';
 import dayjs, { Dayjs } from 'dayjs';
+import { useDemoMode } from '../../common/demo/demoMode';
 
 interface StockItem{
     rank: number;
@@ -26,6 +27,8 @@ export function StockList(){
     const [standardDate, setStandardDate] = useState<Dayjs>(dayjs());
 
     const {setActiveImg} = useOutletContext<{setActiveImg: (url: string|null) => void}>();
+    // 데모 계정 — 가짜 시세가 움직이는 게 보이게 3초마다(평소 15초)
+    const { demo } = useDemoMode();
     
         useEffect(() => {
             let isFirstFetch = true;
@@ -57,10 +60,10 @@ export function StockList(){
     
             fetchStocks();
             // 계속적으로 주식 가격 받기
-            const interval = setInterval(fetchStocks, 15000);
+            const interval = setInterval(fetchStocks, demo ? 3000 : 15000);
 
             return ()=> clearInterval(interval);
-        }, []);
+        }, [demo]);
 
         const changeFormat = () => {
             let standard;

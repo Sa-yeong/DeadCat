@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { RedisService } from '../providers/redis/redis.service';
+import { DemoService } from '../modules/demo/demo.service';
 import {
     KisProvider,
     StockPrice,
@@ -59,6 +60,8 @@ export class PriceService {
     constructor(
         private readonly redis: RedisService,
         private readonly kis: KisProvider,
+        // 데모 계정 요청이면 NVDA · 035420 을 가짜 시세로(readPrices). 데모 계정이 없으면 아무것도 안 함
+        @Optional() private readonly demo?: DemoService,
     ) {}
 
     // 시세 적재
@@ -262,7 +265,8 @@ export class PriceService {
                 ...this.latest.get(code),
             });
         });
-        return result;
+        // 데모 계정의 요청이면 데모 종목만 시나리오 값으로 — 아니면 그대로
+        return this.demo ? this.demo.overlayPrices(result) : result;
     }
 
     // ── 평가용 원화 현재가 ──────────────────────────────────────────

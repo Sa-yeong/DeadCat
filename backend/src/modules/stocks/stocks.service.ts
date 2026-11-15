@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+    Injectable,
+    Logger,
+    NotFoundException,
+    Optional,
+} from '@nestjs/common';
+import { DemoService } from '../demo/demo.service';
 import { PriceService, StockChartItem } from '../../price/price.service';
 import { FavoritesService } from '../favorites/favorites.service';
 import { StocksRepository } from './stocks.repository';
@@ -76,6 +82,8 @@ export class StocksService {
         private readonly repo: StocksRepository,
         private readonly kisProvider: KisProvider,
         private readonly marketTime: MarketTimeService,
+        // 데모 계정의 NVDA · 035420 — 장중(해외는 정규장)으로 보이고 호가도 가짜 시세 둘레로
+        @Optional() private readonly demo?: DemoService,
     ) {}
 
     // GET /stocks/ranking: 거래대금 상위 종목. market 지정 시 해당 시장만(rank 재부여).
@@ -186,6 +194,7 @@ export class StocksService {
             ? await this.price.usdKrwForValuation()
             : 1;
         const quote = price ? toKrwQuote(price, meta.stock_type, usdKrw) : null;
+        const demo = this.demo?.activeFor(meta.code) ?? false;
 
         return new StockDetailResponseDto({
             stock_code: meta.code,
@@ -200,8 +209,13 @@ export class StocksService {
             is_favorite: isFavorite,
             is_event: meta.is_event,
             tick_rule: tickRuleOf(foreign, meta.categories?.name),
-            market_open: this.marketTime.isTradingOpen(marketOf(foreign)),
-            market_session: foreign ? this.marketTime.foreignSession() : null,
+            market_open:
+                demo || this.marketTime.isTradingOpen(marketOf(foreign)),
+            market_session: foreign
+                ? demo
+                    ? 'REGULAR'
+                    : this.marketTime.foreignSession()
+                : null,
         });
     }
 
@@ -908,11 +922,18 @@ export class StocksService {
                   this.fetchBook(stockCode, load),
               );
 
+        // 데모 계정의 데모 종목 — 가짜 현재가 둘레의 호가(받아 둔 진짜 호가 대신).
+        // 받아 둔 호가는 여러 사람이 나눠 쓰는 캐시라 고치지 않고 따로 고른다
+        const fake = this.demo?.activeFor(meta.code)
+            ? this.demo.orderbookFor(meta.code)
+            : null;
+        const book = fake ?? orderbook;
+
         // DTO 객체 변환
-        const asks = orderbook.asks.map(
+        const asks = book.asks.map(
             (item) => new OrderbookItemDto(item.price, item.quantity),
         );
-        const bids = orderbook.bids.map(
+        const bids = book.bids.map(
             (item) => new OrderbookItemDto(item.price, item.quantity),
         );
 

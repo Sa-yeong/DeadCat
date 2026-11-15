@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+    Injectable,
+    Logger,
+    NotFoundException,
+    Optional,
+} from '@nestjs/common';
+import { DemoService } from '../../demo/demo.service';
 import { Cron } from '@nestjs/schedule';
 
 import { HoldingRepository } from '../../holding/holding.repository';
@@ -46,9 +52,26 @@ export class EmotionService {
         private readonly marketTimeService: MarketTimeService,
         private readonly stockHistoryRepository: StockHistoryRepository,
         private readonly prisma: PrismaService, // 배치된 캐릭터/가구 조회를 위한 Prisma
+        // 데모 계정의 NVDA · 035420 — 장외에도 깨어 있고, 수익률은 가짜 시세로
+        @Optional() private readonly demo?: DemoService,
     ) {}
 
     async calculateEmotion(
+        userId: string | null,
+        stockCode: string,
+        interaction?: any,
+    ): Promise<{
+        isHolding: boolean;
+        emotions: EmotionOutput[];
+    }> {
+        // 거실 주기 계산(요청 밖)도 방 주인이 데모 계정이면 데모 요청으로 — 시세가 화면과 같은 가짜 값이 된다
+        if (!this.demo) return this.calculate(userId, stockCode, interaction);
+        return this.demo.runAs(userId, () =>
+            this.calculate(userId, stockCode, interaction),
+        );
+    }
+
+    private async calculate(
         userId: string | null,
         stockCode: string,
         interaction?: any,
@@ -116,9 +139,12 @@ export class EmotionService {
         const tendency = this.tendencyService.calculate(chart, userProfitRate);
 
         // 7. 장외 판정 — 해외는 네 장 중 하나라도 열려 있으면 깨어 있다(주문 · 체결과 같은 판정)
-        const isOperatingTime = this.marketTimeService.isTradingOpen(
-            marketOf(isForeignStock(stock.stock_type)),
-        );
+        // 데모 계정의 데모 종목은 늘 깨어 있다(장외 잠 없이 클릭 · 매수 · 매도 반응을 보이려고)
+        const isOperatingTime =
+            (this.demo?.isDemoStock(userId, stock.code) ?? false) ||
+            this.marketTimeService.isTradingOpen(
+                marketOf(isForeignStock(stock.stock_type)),
+            );
 
         // 8. 감정 엔진
         const engine = new EmotionEngine();

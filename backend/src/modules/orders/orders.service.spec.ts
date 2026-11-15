@@ -48,6 +48,8 @@ function setup(opts: {
     fill?: { status: string; fillPrice: bigint | null };
     cash?: bigint | null;
     sellable?: number;
+    /** 데모 판별 가짜 — (userId, 종목 코드) → 데모 종목인가. 없으면 데모 서비스 없이(평소 그대로) */
+    demo?: (userId: bigint, code: string) => boolean;
 }) {
     // 저장소는 진짜처럼 접수 검사(guard)를 통과해야 저장한 것으로 친다
     const repo = {
@@ -109,6 +111,7 @@ function setup(opts: {
         tags as never,
         marketTime as never,
         funds as never,
+        (opts.demo ? { isDemoStock: opts.demo } : undefined) as never,
     );
     return { service, repo, matcher, marketTime, funds };
 }
@@ -165,6 +168,75 @@ describe('OrdersService.createOrder — 장 시간', () => {
         const res = await service.createOrder(1n, order({ price: 71000 }));
         expect(res.status).toBe('PENDING');
         expect(matcher.fill).not.toHaveBeenCalled();
+    });
+});
+
+describe('OrdersService.createOrder — 데모 계정(DEMO_USER_IDS)', () => {
+    const NAVER = { ...SAMSUNG, id: 5n, code: '035420', name: 'NAVER' };
+    const demo = (u: bigint, code: string) =>
+        u === 7n && ['NVDA', '035420'].includes(code);
+
+    it('데모 계정의 데모 종목: 장외 시장가도 현재가로 즉시 체결', async () => {
+        const { service, repo } = setup({
+            stock: NAVER,
+            open: false,
+            now: 182500,
+            demo,
+        });
+        const r = await service.createOrder(
+            7n,
+            order({
+                stock_code: '035420',
+                order_type: OrderType.MARKET,
+                price: null,
+            }),
+        );
+        expect(r.status).toBe('COMPLETED');
+        expect(r.fill_price).toBe(182500);
+        expect(repo.executeMarketOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it('데모 계정의 데모 종목: 지정가도 지정가가 아닌 현재가로 즉시 체결(대기 주문 없음)', async () => {
+        const { service, repo, matcher } = setup({
+            stock: NAVER,
+            open: false,
+            now: 182500,
+            demo,
+        });
+        const r = await service.createOrder(
+            7n,
+            order({ stock_code: '035420', price: 170000 }),
+        );
+        expect(r.status).toBe('COMPLETED');
+        expect(r.fill_price).toBe(182500);
+        expect(repo.createPendingOrder).not.toHaveBeenCalled();
+        expect(matcher.fill).not.toHaveBeenCalled();
+    });
+
+    it('데모 계정이어도 데모 종목이 아니면 평소 그대로(장외 시장가 400)', async () => {
+        const { service, repo } = setup({ open: false, now: 71000, demo });
+        await expect(
+            service.createOrder(
+                7n,
+                order({ order_type: OrderType.MARKET, price: null }),
+            ),
+        ).rejects.toThrow(BadRequestException);
+        expect(repo.executeMarketOrder).not.toHaveBeenCalled();
+    });
+
+    it('데모가 아닌 계정의 데모 종목도 평소 그대로(장외 지정가는 PENDING)', async () => {
+        const { service, repo } = setup({
+            stock: NAVER,
+            open: false,
+            now: 182500,
+            demo,
+        });
+        const r = await service.createOrder(
+            8n,
+            order({ stock_code: '035420', price: 182500 }),
+        );
+        expect(r.status).toBe('PENDING');
+        expect(repo.executeMarketOrder).not.toHaveBeenCalled();
     });
 });
 
