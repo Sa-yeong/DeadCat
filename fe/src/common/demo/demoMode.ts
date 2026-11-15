@@ -11,9 +11,11 @@ export interface DemoState {
   demo: boolean;
   /** 데모 동작을 받는 종목 코드 */
   codes: readonly string[];
+  /** 거실 연출(네이버 tired · 엔비디아 놀리기)을 켤 거실 주인 id — 서버 DEMO_ROOM_USER_IDS */
+  roomUserIds: readonly string[];
 }
 
-const OFF: DemoState = { demo: false, codes: [] };
+const OFF: DemoState = { demo: false, codes: [], roomUserIds: [] };
 
 let state: DemoState = OFF;
 /** 지금 state 가 어느 토큰의 답인지 — 같은 토큰이면 다시 묻지 않는다 */
@@ -37,8 +39,14 @@ function ask(token: string | null) {
   if (!token) return set(OFF);
   set(OFF);
   api
-    .get<{ data: DemoState }>('/demo/me', { headers: { Authorization: `Bearer ${token}` } })
-    .then((r) => askedFor === token && set(r.data.data?.demo ? { demo: true, codes: r.data.data.codes ?? [] } : OFF))
+    .get<{ data: { demo?: boolean; codes?: string[]; room_user_ids?: string[] } }>('/demo/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    .then((r) => {
+      if (askedFor !== token) return;
+      const d = r.data.data;
+      set(d?.demo ? { demo: true, codes: d.codes ?? [], roomUserIds: d.room_user_ids ?? [] } : OFF);
+    })
     .catch(() => askedFor === token && set(OFF));
 }
 

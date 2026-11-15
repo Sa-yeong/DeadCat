@@ -30,6 +30,8 @@ interface QuoteLike {
 @Injectable()
 export class DemoService {
     private readonly ids: ReadonlySet<string>;
+    /** 거실 연출(네이버 tired · 엔비디아 놀리기)을 켜는 거실 주인 — DEMO_ROOM_USER_IDS. 비어 있으면 어느 거실도 안 켬 */
+    private readonly roomIds: ReadonlySet<string>;
     private readonly als = new AsyncLocalStorage<{ userId: string }>();
     /** 시나리오 시작 시각(ms) — 서버를 켠 때 · POST /demo/restart */
     private startedAt = Date.now();
@@ -38,6 +40,12 @@ export class DemoService {
 
     constructor() {
         this.ids = parseDemoUserIds(process.env.DEMO_USER_IDS);
+        this.roomIds = parseDemoUserIds(process.env.DEMO_ROOM_USER_IDS);
+    }
+
+    /** 거실 연출을 켜는 거실 주인 id 들 — 프론트(GET /demo/me)가 지금 보는 거실과 맞춰 본다 */
+    get roomUserIds(): string[] {
+        return [...this.roomIds];
     }
 
     /** 데모 계정이 하나라도 있는가 — 없으면 모든 데모 동작이 꺼진다 */
@@ -58,12 +66,15 @@ export class DemoService {
         return this.isDemoUser(userId) && isDemoCode(stockCode);
     }
 
-    /** 데모 계정 거실에서 이 종목의 고정 감정(demo-scenario.ts DEMO_ROOM_EMOTIONS) — 없으면 null */
+    /**
+     * 연출 거실(DEMO_ROOM_USER_IDS)에서 이 종목의 고정 감정(demo-scenario.ts DEMO_ROOM_EMOTIONS) — 없으면 null.
+     * ownerId = 거실 주인. 그 거실을 누가 보든(주인 · 방문자) 같은 감정 — 거실 감정은 주인 기준(2-7)
+     */
     roomEmotionOf(
-        userId: bigint | string | null | undefined,
+        ownerId: bigint | string | null | undefined,
         stockCode: string,
     ): 'tired' | null {
-        if (!this.isDemoUser(userId)) return null;
+        if (ownerId == null || !this.roomIds.has(String(ownerId))) return null;
         return DEMO_ROOM_EMOTIONS[stockCode.toUpperCase()] ?? null;
     }
 

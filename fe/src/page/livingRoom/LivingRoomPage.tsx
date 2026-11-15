@@ -86,12 +86,14 @@ export function LivingRoomPage() {
 }
 
 function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; use3d: boolean; debug: boolean; lab: boolean }) {
-  // 데모 계정이 내 거실을 볼 때만 연출(runtime/roomDemo.ts) — 판정이 늦게 와도 런타임이 매번 읽는다
-  const { demo } = useDemoMode();
+  // 데모 계정이 연출 거실(서버 DEMO_ROOM_USER_IDS — demo1)을 볼 때만 연출(runtime/roomDemo.ts).
+  // 내 거실이든 놀러 간 거실이든 거실 주인으로 본다. 판정이 늦게 와도 런타임이 매번 읽는다
+  const { demo, roomUserIds } = useDemoMode();
   const demoOn = useRef(false);
   useEffect(() => {
-    demoOn.current = demo && !userId;
-  }, [demo, userId]);
+    const owner = userId ?? api.myUserId();
+    demoOn.current = demo && owner !== null && roomUserIds.includes(owner);
+  }, [demo, roomUserIds, userId]);
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);

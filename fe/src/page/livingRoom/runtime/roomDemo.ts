@@ -1,7 +1,8 @@
 import type { ForceMeet } from '../engine/matcher';
 
 /**
- * **데모 계정의 내 거실 연출(졸프 데모 영상)** — 데모 계정(useDemoMode)으로 내 거실을 볼 때만 켜진다.
+ * **데모 거실 연출(졸프 데모 영상)** — 데모 계정이 연출 거실(서버 DEMO_ROOM_USER_IDS, demo1)을 볼 때만 켜진다.
+ * 내 거실이든 놀러 간 거실이든 거실 주인으로 판단 — demo2 로 녹화하다 demo1 거실을 잠깐 보여 줄 수 있게.
  *  · 네이버(035420)는 돌아다니지 않고 제자리에서 tired 모션(우울해 가만히)을 계속 튼다.
  *    감정 tired 는 서버가 준다(데모 계정 거실의 네이버 — backend demo-scenario.ts DEMO_ROOM_EMOTIONS)
  *  · 엔비디아(NVDA)가 네이버를 만나면 감정과 상관없이 늘 놀리기 — basic_meet_tired 규칙의 놀리기 효과(tease_find → tease).

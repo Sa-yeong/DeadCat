@@ -32,12 +32,17 @@ describe('데모 계정 판별', () => {
         expect(d.isDemoStock(8n, 'NVDA')).toBe(false);
     });
 
-    it('데모 계정 거실의 고정 감정 — 네이버만 tired, 다른 계정 · 종목은 없음', () => {
-        process.env.DEMO_USER_IDS = '13';
+    it('거실 연출은 DEMO_ROOM_USER_IDS 의 거실에서만 — 네이버만 tired', () => {
+        process.env.DEMO_USER_IDS = '13,14';
+        process.env.DEMO_ROOM_USER_IDS = '13';
         const d = new DemoService();
+        expect(d.roomUserIds).toEqual(['13']);
         expect(d.roomEmotionOf('13', '035420')).toBe('tired');
         expect(d.roomEmotionOf(13n, '035420')).toBe('tired');
         expect(d.roomEmotionOf('13', 'NVDA')).toBeNull();
+        expect(d.roomEmotionOf('14', '035420')).toBeNull(); // demo2 거실은 연출 없음
         expect(d.roomEmotionOf('2', '035420')).toBeNull();
+        delete process.env.DEMO_ROOM_USER_IDS;
+        expect(new DemoService().roomEmotionOf('13', '035420')).toBeNull(); // 비우면 꺼짐
     });
 });
