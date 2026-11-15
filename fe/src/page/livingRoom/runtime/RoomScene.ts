@@ -19,6 +19,7 @@ import { SLOT_MACHINE, SOFA_2SEAT } from '../furnitureCatalog';
 import { CHIBI_FACE, stepFaceLevels, type EmotionName, type FaceLevels } from '../../stockDetail/runtime/motionTable';
 import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
+import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
 
 /**
@@ -72,8 +73,9 @@ type Pose = 'rest' | 'idle' | 'walk' | 'pickup' | 'engine'; // 'engine' = 엔진
 /**
  * 엔진 모션 파일 자리. 클립 이름 = 파일 이름(확장자 빼고). 없는 파일은 건너뛴다.
  * 미리보기 한 장(vite.preview-room.config.ts)은 아직 이 폴더를 넣지 않는다 — 모션 파일이 생기면 그쪽도 넣을 것
+ * 주소는 versioned()를 지난다 — 빌드 때 있던 파일만 ?v=내용해시(마무리 L-3)
  */
-const MOTION_URL = (clip: string) => `${import.meta.env.BASE_URL}characters/chibi/motions/${clip}.vrma`;
+const MOTION_URL = (clip: string) => versioned(`${import.meta.env.BASE_URL}characters/chibi/motions/${clip}.vrma`);
 /**
  * 슬롯머신 모션 파일(motions.json play_slot 의 clip) — 슬롯머신 모델을 세울 때 미리 받아 둔다(2026-11-14).
  * 놓자마자 모션이 시작돼야 레버 타이밍(HUD 가 놓은 순간부터 잰다)이 맞는다. motions.json 의 이름을 바꾸면 여기도

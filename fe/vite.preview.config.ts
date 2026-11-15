@@ -6,6 +6,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { assetVersions } from './plugins/assetVersions'
 
 /**
  * 개별종목 화면 미리보기 — HTML 한 장으로 뽑는다.
@@ -48,7 +49,8 @@ export default defineConfig({
   root: 'preview',
   base: './',
   publicDir: false,
-  plugins: [inlineCharacterAssets(), react(), tailwindcss(), viteSingleFile()],
+  // 3D 파일을 HTML 안에 넣어 주소(버전 없는)로 찾는다 — 주소에 버전은 끔(빈 표)
+  plugins: [inlineCharacterAssets(), react(), tailwindcss(), viteSingleFile(), assetVersions({ enabled: false })],
   build: {
     outDir: process.env.DC_OUT || '../dist-preview',
     emptyOutDir: true,

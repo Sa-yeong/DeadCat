@@ -6,7 +6,9 @@
  * {C단계 미확정} 종목별 모델 주소는 API(캐릭터 정보)에서 받게 된다.
  *
  * 파일은 fe/public/characters/ 아래 — 공용: dev/character.vrm · motions/, 종목 전용: stocks/{코드}/character.vrm · motions/
+ * 모델 · 모션 주소는 전부 versioned()를 지난다 — 빌드 때 파일 내용 해시가 ?v= 로 붙는다(마무리 L-3)
  */
+import { versioned } from '../../../shared/assetVersion';
 import { MOTIONS, resolveMotions, type MotionSet, type MotionTable } from './motionTable';
 
 const BASE = import.meta.env.BASE_URL;
@@ -38,12 +40,19 @@ export const STOCK_CHARACTERS: Record<string, CharacterSpec> = {
 };
 
 const COMMON_KEY = 'common';
-const COMMON_MOTIONS = resolveMotions(`${BASE}characters/motions/`, MOTIONS);
-const COMMON: CharacterInfo = { key: COMMON_KEY, model: `${BASE}characters/dev/character.vrm`, motions: COMMON_MOTIONS };
+/** 표의 파일 이름을 폴더 주소로 풀고 버전을 붙인다 */
+function motionsAt(base: string, table: MotionTable): MotionSet {
+  const out = resolveMotions(base, table);
+  for (const m of Object.values(out)) m.url = versioned(m.url);
+  return out;
+}
+
+const COMMON_MOTIONS = motionsAt(`${BASE}characters/motions/`, MOTIONS);
+const COMMON: CharacterInfo = { key: COMMON_KEY, model: versioned(`${BASE}characters/dev/character.vrm`), motions: COMMON_MOTIONS };
 
 /** 공용 모션 표 위에 덮어쓰기를 얹는다 — 같은 이름은 덮어쓴 쪽, 나머지는 공용 */
 export function mergeMotions(common: MotionSet, overrides: MotionTable, base: string): MotionSet {
-  return { ...common, ...resolveMotions(base, overrides) };
+  return { ...common, ...motionsAt(base, overrides) };
 }
 
 const cache = new Map<string, CharacterInfo>();
@@ -56,7 +65,7 @@ export function characterOf(stockCode: string): CharacterInfo {
   let info = cache.get(code);
   if (!info) {
     const dir = `${BASE}${spec.dir}`;
-    info = { key: code, model: `${dir}character.vrm`, motions: mergeMotions(COMMON_MOTIONS, spec.overrides ?? {}, `${dir}motions/`) };
+    info = { key: code, model: versioned(`${dir}character.vrm`), motions: mergeMotions(COMMON_MOTIONS, spec.overrides ?? {}, `${dir}motions/`) };
     cache.set(code, info);
   }
   return info;
