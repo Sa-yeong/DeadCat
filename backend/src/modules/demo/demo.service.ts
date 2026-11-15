@@ -43,6 +43,11 @@ export class DemoService {
         this.roomIds = parseDemoUserIds(process.env.DEMO_ROOM_USER_IDS);
     }
 
+    /** 데모 계정 id 들 — 데모 페이지의 초기화 목록 */
+    get userIds(): string[] {
+        return [...this.ids];
+    }
+
     /** 거실 연출을 켜는 거실 주인 id 들 — 프론트(GET /demo/me)가 지금 보는 거실과 맞춰 본다 */
     get roomUserIds(): string[] {
         return [...this.roomIds];

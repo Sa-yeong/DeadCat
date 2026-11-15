@@ -19,6 +19,10 @@ export interface RoomDemo {
   /** 캐릭터 id → 제자리에서 계속 틀 모션(motions.json 이름) */
   stillIdle: ReadonlyMap<string, string>;
   forceMeet: ForceMeet;
+  /** 트리거 버튼으로 보여 줄 만남(캐릭터 id) — 거실에 둘 다 있을 때만 */
+  meet: { self: string; other: string } | null;
+  /** 다음 한 번의 정해 둔 만남은 쿨다운을 보지 않는다(트리거 버튼) */
+  arm(): void;
 }
 
 /** 거실 캐릭터(id · 종목 코드)로 데모 연출을 만든다 */
@@ -34,11 +38,19 @@ export function roomDemoOf(chars: readonly { id: string; stockCode: string }[]):
     const other = idOf.get(m.other);
     return self && other ? [{ ...m, self, other }] : [];
   });
+  let armed = false;
   return {
     stillIdle,
+    meet: meets[0] ? { self: meets[0].self, other: meets[0].other } : null,
+    arm: () => {
+      armed = true;
+    },
     forceMeet: (a, b) => {
       const m = meets.find((x) => (x.self === a && x.other === b) || (x.self === b && x.other === a));
-      return m ? { ruleId: m.ruleId, self: m.self, other: m.other, effect: m.effect } : null;
+      if (!m) return null;
+      const ignoreCooldown = armed;
+      armed = false;
+      return { ruleId: m.ruleId, self: m.self, other: m.other, effect: m.effect, ...(ignoreCooldown ? { ignoreCooldown } : {}) };
     },
   };
 }

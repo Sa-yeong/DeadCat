@@ -23,7 +23,11 @@ export type CharView = {
  * 이 두 캐릭터는 감정과 상관없이 이 규칙의 이 효과로 — 데모 연출용(예: 엔비디아가 네이버를 만나면 늘 놀리기).
  * effect = 규칙 effect 배열의 순번. null 이면 평소 규칙대로
  */
-export type ForcedMeet = { ruleId: string; self: string; other: string; effect: number }
+export type ForcedMeet = {
+    ruleId: string; self: string; other: string; effect: number
+    /** 이번 한 번은 쿨다운을 보지 않는다 — 데모 트리거 버튼 */
+    ignoreCooldown?: boolean
+}
 export type ForceMeet = (a: string, b: string) => ForcedMeet | null
 
 // isOnCooldown -> State.ts에 있을 예정
@@ -49,7 +53,7 @@ export function matchCharacter(a: CharView, b: CharView, ctx: MatchContext): Dec
         const rule = found && 'other' in found.when ? (found as CharacterRule) : undefined
         const effect = rule?.effect[forced.effect]
         if (rule && effect) {
-            if (ctx.isOnCooldown(rule.id, forced.self, forced.other)) return null
+            if (!forced.ignoreCooldown && ctx.isOnCooldown(rule.id, forced.self, forced.other)) return null
             return { rule, self: forced.self, other: forced.other, effect, otherEmotionTo: null }
         }
     }

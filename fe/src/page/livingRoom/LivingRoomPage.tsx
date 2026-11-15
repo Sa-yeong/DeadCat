@@ -13,6 +13,7 @@ import { LoginPrompt } from './hud/LoginPrompt';
 import { RoomHud, type RoomHudApi } from './hud/RoomHud';
 import { useHoldingsPoll } from './hud/useHoldingsPoll';
 import { ZoomControl } from './hud/ZoomControl';
+import { DemoMeetButton } from './hud/DemoMeetButton';
 import { clampView, FIT_VIEW, MIN_STAGE, MIN_WIDTH, projectionOf, sideSlack, useRoomLayout, ZOOM_MAX, zoomAt, type PanControl, type RoomView } from './layout';
 import { CharacterCatalog, FurnitureCatalog } from './runtime/catalogs';
 import { NullEngine, type EngineFactory } from './runtime/CharacterEngine';
@@ -89,11 +90,12 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
   // 데모 계정이 연출 거실(서버 DEMO_ROOM_USER_IDS — demo1)을 볼 때만 연출(runtime/roomDemo.ts).
   // 내 거실이든 놀러 간 거실이든 거실 주인으로 본다. 판정이 늦게 와도 런타임이 매번 읽는다
   const { demo, roomUserIds } = useDemoMode();
+  const roomOwner = userId ?? api.myUserId();
+  const staged = demo && roomOwner !== null && roomUserIds.includes(roomOwner);
   const demoOn = useRef(false);
   useEffect(() => {
-    const owner = userId ?? api.myUserId();
-    demoOn.current = demo && owner !== null && roomUserIds.includes(owner);
-  }, [demo, roomUserIds, userId]);
+    demoOn.current = staged;
+  }, [staged]);
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -550,6 +552,10 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
       {!camera && snapshot && rt && !isPrivate && (
         // 오른쪽 창이 열리면 그 왼쪽으로 비켜난다
         <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.zoomTop} onZoom={zoomTo} onStep={zoomStep} />
+      )}
+      {/* 데모 트리거(연출 거실에서만) — 줌 막대 바로 위(줌 막대는 늘 아래쪽) */}
+      {!camera && snapshot && rt && staged && (
+        <DemoMeetButton right={sideOpen ? L.panel.width + 24 : 12} bottomAt={L.zoomTop - 8} onArm={() => rt.loop.demoArm()} />
       )}
       <LoginPrompt open={needLogin} onClose={() => setNeedLogin(false)} />
     </div>

@@ -6,6 +6,7 @@ import { SearchBar } from './SearchBar';
 import { SidebarLogin } from './sidebar/panels/parts';
 import { ProfileAvatar } from './profile/ProfileAvatar';
 import { useMyProfileImg } from './profile/myProfile';
+import { useDemoMode } from './demo/demoMode';
 
 /**
  * 프로필 원 옆 버튼. 비로그인 — 팀 공용 로그인 창(로그인하면 지금 주소로 돌아오고 창은 스스로 닫힌다).
@@ -50,6 +51,8 @@ export function GlobalNavBar(){
     // 로그인했으면 마이페이지에서 고른 프로필 이미지, 아니면 지금까지의 보라 원
     const token = useAuthToken();
     const myImg = useMyProfileImg();
+    // 데모 계정에게만 — 데모 관리 화면(초기화 · 가짜 시세 · 거실 바로 가기)
+    const { demo } = useDemoMode();
     const on = (prefix: string) => (pathname.startsWith(prefix) ? 'on' : undefined);
 
     return <header className='globalNav'>
@@ -59,6 +62,7 @@ export function GlobalNavBar(){
             <Link to='/stocks' className={on('/stocks')}>전체종목</Link>
             <Link to='/explore' className={on('/explore')}>거실 탐색</Link>
             <Link to='/mypage' className={on('/mypage')}>마이페이지</Link>
+            {demo && <Link to='/demo' className={on('/demo')}>데모</Link>}
         </nav>
         <div className='gnb-right'>
             <div className='gnb-search'><SearchBar /></div>
