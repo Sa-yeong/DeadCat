@@ -20,8 +20,8 @@ export function IndicesCarouselLayout({i_name, price, up_down, rate, graphData, 
         <span className='name'>{i_name}</span>
         <span className='up-down' >
             <span>{price}</span>
-            <span style={{color: (isPositive===0)?'black':(isPositive ?'red':'blue')}}>{up_down}</span>
-            <span style={{color: (isPositive===0)?'black':(isPositive ?'red':'blue')}}>{rate}%</span>
+            <span style={{color: (isPositive===0)?'white':(isPositive ?'#f04452':'#5c96f5')}}>{up_down}</span>
+            <span style={{color: (isPositive===0)?'white':(isPositive ?'#f04452':'#5c96f5')}}>{rate}%</span>
         </span>
         <span className='graph'><IndexGraph graphData={graphData} isPositive={isPositive} /></span>
     </div>;
