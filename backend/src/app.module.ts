@@ -38,6 +38,8 @@ import { GuestbooksModule } from './modules/guestbooks/guestbooks.module';
 import { HomeRoomsModule } from './modules/home/home-room.module';
 import { TagModule } from './modules/tags/tag.module';
 import { HomeModule } from './modules/home-stock/home-stock.module';
+// 졸프 데모 영상용 데모 계정(DEMO_USER_IDS) — 비어 있으면 꺼짐
+import { DemoModule } from './modules/demo/demo.module';
 
 // 루트 모듈: 인프라(@Global) + 공통 전역(응답 래퍼, 예외 필터, JWT) + 도메인 모듈.
 @Module({
@@ -83,6 +85,7 @@ import { HomeModule } from './modules/home-stock/home-stock.module';
         HomeRoomsModule,
         TagModule,
         HomeModule,
+        DemoModule,
     ],
     providers: [
         { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },

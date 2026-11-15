@@ -13,6 +13,13 @@
     background: #0b0d12;
     color: white;
 }
+/* 데모 계정 — 썸네일 칸 없이 리스트가 한 칸 전체 */
+.stockListView.no-thumb{
+    grid-template-columns: 1fr;
+    grid-template-areas:
+    'index'
+    'stock';
+}
 .stockListView .index-carousel{
     grid-area: index;
     border: 1px solid #12161e;
