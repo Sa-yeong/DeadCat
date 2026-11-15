@@ -55,8 +55,8 @@ export function CoverFilm({ frosted = false, windowOpen = true }: { frosted?: bo
 /**
  * 캐릭터 — 막에 가린 전체를 블러로 깔고, 창문 안쪽만 선명한 복사본을 덮는다.
  *
- * 3D 캐릭터가 준비되기 전과, 3D를 쓸 수 없을 때(WebGL 불가·파일 실패) 쓰는 그림 판.
- * 3D는 두 번 그리지 않는다 — StageView 참고.
+ * 3D를 쓸 수 없을 때(WebGL 불가·파일 실패)만 쓰는 그림 판. 3D가 준비되는 동안(로딩 중)에는
+ * 캐릭터를 비워 둔다(마무리 L-4, 11-15 결정 5). 3D는 두 번 그리지 않는다 — StageView 참고.
  */
 export function CharacterLayer({ windowOpen = true }: { windowOpen?: boolean }) {
   const L = useLayout();
@@ -117,22 +117,34 @@ export function WindowFrame() {
  * 무대 — 그리는 순서가 곧 공간이다.
  * 캐릭터가 있는 공간 / 창문이 난 벽 / 사용자 라는 구도를 DOM 순서로 만든다.
  *
- *   3D   : 3D 씬(격자 바닥·안개·캐릭터, 캔버스 한 장) → 막(뒤를 흐림) → 창틀
- *   그림 : 바닥 → 막 → 캐릭터(흐린 판 + 창문 안 선명한 판) → 창틀
+ *   3D     : 3D 씬(격자 바닥·안개·캐릭터, 캔버스 한 장) → 막(뒤를 흐림) → 창틀
+ *   로딩 중 : 바닥 → 막 → 창틀 — 캐릭터는 없다(미리보기 그림 · 로딩 표시 없음)
+ *   실패   : 바닥 → 막 → 캐릭터 그림(흐린 판 + 창문 안 선명한 판) → 창틀
  *
  * 3D는 씬을 한 번만 그리고, 창문 밖이 흐린 것은 막이 해 준다.
- * 그림은 두 장을 겹쳐도 비용이 없어 예전 방식 그대로 둔다(로딩 중·실패 시).
+ * 그림은 두 장을 겹쳐도 비용이 없어 예전 방식 그대로 둔다(실패 시).
  *
  * windowOpen — 차트 탭에서만 창문이 뚫려 있다. 다른 탭은 창문 자리도 막으로 메운다.
  */
-export function StageView({ scene, live, windowOpen }: { scene: ReactNode; live: boolean; windowOpen: boolean }) {
+export function StageView({
+  scene,
+  live,
+  failed,
+  windowOpen,
+}: {
+  scene: ReactNode;
+  live: boolean;
+  failed: boolean;
+  windowOpen: boolean;
+}) {
   return (
     <>
       {/* 3D가 준비되면 바닥도 3D 씬이 그린다 — 그림 격자는 그 전·실패 시에만 */}
       {!live && <FloorGrid />}
       {scene}
       <CoverFilm frosted={live} windowOpen={windowOpen} />
-      {!live && <CharacterLayer windowOpen={windowOpen} />}
+      {/* 캐릭터 그림은 실패했을 때만 — 로딩 중에는 비워 두고 3D가 준비되면 등장한다 */}
+      {failed && <CharacterLayer windowOpen={windowOpen} />}
       <WindowFrame />
     </>
   );

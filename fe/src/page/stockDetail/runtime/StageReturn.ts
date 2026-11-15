@@ -1,4 +1,5 @@
 import type { StockScene } from './StockScene';
+import { offLeftX } from './entrance';
 
 /* ── 조절값 — 화면 px 기준 ─────────────────────────────────────────────
  * 캐릭터가 화면에 크게(상반신) 잡혀 있어 발이 안 보인다. 그래서 이동 속도를 걸음 폭에
@@ -9,8 +10,8 @@ export const STAY_PX = 40;
 /** 걷기·달리기 화면 속도(px/초) — 걷기는 느긋하게(넓은 화면 끝에서 몇 초 걸려도 된다) */
 const WALK_PX_S = 220;
 const RUN_PX_S = 900;
-/** 캐릭터 몸 반폭(m) — 화면 밖으로 "완전히" 나갔는지 볼 때 */
-const BODY_HALF_W_M = 0.3;
+/** 캐릭터 몸 반폭(m) — 화면 밖으로 "완전히" 나갔는지 볼 때. 첫 등장의 출발 자리(왼쪽 밖)도 이 기준 */
+export const BODY_HALF_W_M = 0.3;
 /** 밀기가 멈추고 이만큼 지나야 출발(초) — 끄는 중간에 잠깐 멈춘 것에 출발하지 않게 */
 const START_WAIT_S = 0.25;
 /** 가는 방향으로 몸을 트는 각도(라디안, 45°) — 작을수록 도착해서 되돌릴 양이 적다.
@@ -58,10 +59,14 @@ export class StageReturn {
   private still = false;
   /** 무대 중 실제로 보이는 폭(px) — 이보다 오른쪽은 사이드바 밑이라 안 보인다 */
   private visibleWidth = Infinity;
+  /** 지난 update 때 끄는 중이었나(끄는 중 · 놓은 직후 START_WAIT_S) */
+  private pushing = false;
+  /** 이번 걸음만 다른 속도(px/초) — 첫 등장(walkIn). 멈추면 지운다 */
+  private tripPxS: number | null = null;
 
   onMove: ((mode: ReturnMode) => void) | null = null;
-  /** 도착(또는 다시 끌려서 멈춤) — 어떻게 오던 중이었는지 */
-  onArrive: ((mode: ReturnMode) => void) | null = null;
+  /** 멈춤 — 어떻게 오던 중이었는지 · 가운데에 닿았나(false = 다시 끌려서 걷던 중에 멈춤) */
+  onArrive: ((mode: ReturnMode, arrived: boolean) => void) | null = null;
 
   constructor(scene: StockScene) {
     this.scene = scene;
@@ -70,6 +75,44 @@ export class StageReturn {
   /** 지금 걷는 중/달리는 중/서 있음(null) — 미리보기 패널이 보여 준다 */
   get moving(): ReturnMode | null {
     return this.mode;
+  }
+
+  /** 서 있고 끄는 중도 아니다 — 지난 update 기준. 더 갈 데가 있었으면 그 update 에서 이미 출발했다 */
+  get settled(): boolean {
+    return !this.mode && !this.pushing;
+  }
+
+  /**
+   * 첫 등장(마무리 L-4) — 무대(캔버스) 왼쪽 밖, 몸이 완전히 안 보이는 자리에 세운다.
+   * 가는 쪽(오른쪽)으로 이미 몸을 튼 채 — 화면 밖이라 트는 모습은 안 보인다. 걷기는 walkIn
+   */
+  placeOffLeft() {
+    const home = this.scene.home;
+    const ppm = this.scene.pixelsPerMeter;
+    if (!home || !ppm) return;
+    this.mode = null;
+    this.tripPxS = null;
+    this.x = offLeftX(home.centerX, this.pan, ppm, BODY_HALF_W_M);
+    this.yaw = TURN_YAW;
+    this.scene.setRoot(this.x, this.yaw);
+  }
+
+  /** 바로 가운데에 세운다(정면) — 장외에 들어와 등장 없이 잘 때 */
+  placeHome() {
+    this.mode = null;
+    this.tripPxS = null;
+    this.x = this.pan;
+    this.yaw = 0;
+    this.scene.setRoot(this.x, this.yaw);
+  }
+
+  /**
+   * 첫 등장 걷기 시작 — 화면 밖이어도 뛰지 않고 걷는다(11-15 결정 3), 속도는 pxs.
+   * 몸 틀기 · 도착 전 정면으로 돌아서기 · 속도 줄이기는 평소 복귀 그대로
+   */
+  walkIn(pxs: number) {
+    this.tripPxS = pxs;
+    this.start('walk');
   }
 
   /** 차트 내용이 화면에서 dx px 움직였다(+ = 오른쪽). 카메라가 반대로 가서 캐릭터가 dx 만큼 밀린다 */
@@ -116,13 +159,14 @@ export class StageReturn {
 
     // 끄는 중에는 멈춰 선다(다시 밀려나는 중)
     const pushing = this.dragging || this.time - this.lastPanAt < START_WAIT_S;
-    if (pushing && this.mode) this.stop();
+    this.pushing = pushing;
+    if (pushing && this.mode) this.stop(false);
 
     if (!pushing && !this.still && !this.mode && Math.abs(off) > STAY_PX) this.start(this.offScreen() ? 'run' : 'walk');
 
     let facing = 0; // 가는 쪽으로 튼 정도 0~1
     if (this.mode) {
-      const pxs = this.mode === 'run' ? RUN_PX_S : WALK_PX_S;
+      const pxs = this.tripPxS ?? (this.mode === 'run' ? RUN_PX_S : WALK_PX_S);
       const left = Math.abs(off); // 남은 거리(px)
       // 마지막 몇 걸음 — 속도를 줄이며 정면으로 돌아선다
       const slow = Math.min(1, Math.max(SLOW_MIN, left / (pxs * SLOW_DOWN_S)));
@@ -134,7 +178,7 @@ export class StageReturn {
       if (turned) {
         if (Math.abs(step) >= Math.abs(this.pan - this.x)) {
           this.x = this.pan;
-          this.stop();
+          this.stop(true);
         } else {
           this.x += step;
         }
@@ -161,9 +205,10 @@ export class StageReturn {
     this.onMove?.(mode);
   }
 
-  private stop() {
+  private stop(arrived: boolean) {
     const was = this.mode;
     this.mode = null;
-    if (was) this.onArrive?.(was);
+    this.tripPxS = null;
+    if (was) this.onArrive?.(was, arrived);
   }
 }

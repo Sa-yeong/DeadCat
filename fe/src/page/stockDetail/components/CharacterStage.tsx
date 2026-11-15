@@ -50,7 +50,8 @@ export function CharacterStage({ stockCode, ...props }: StageProps & { stockCode
  * 막이 뒤를 흐리게 하므로 씬은 한 번만 그린다.
  *
  * 모델과 첫 모션이 다 붙기 전에는 보이지 않는다(T자 자세 방지).
- * 그동안과 실패했을 때는 페이지가 PNG 캐릭터를 대신 보인다.
+ * 첫 등장(마무리 L-4) — 첫 감정을 받아 첫 자리(왼쪽 밖 / 장외면 가운데)에서 숨긴 채 한 번 그린 뒤 보인다
+ * (StockStageLoop.load). 그동안 캐릭터는 비어 있고, 실패했을 때만 페이지가 PNG 캐릭터를 대신 보인다.
  */
 function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: CharacterInfo }) {
   const L = useLayout();

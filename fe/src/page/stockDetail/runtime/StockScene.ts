@@ -187,11 +187,17 @@ export class StockScene {
    * 불러온 직후의 두 팔 벌린 기본 자세(T자)가 보이지 않게.
    * 파일은 받은 파일 보관소(fileStore)에서 — 전에 받았으면 받지 않고 다시 해석만 한다(마무리 L-2).
    * 장면에 넣기 전에 그리기 준비(셰이더 · 텍스처, prepareDraw)를 끝낸다 — 끝나야 ready
+   * also — 첫 화면 전에 같이 준비할 모션(첫 등장의 walk · greeting, 마무리 L-4). 파일은 모델과 같이 받기 시작한다
    */
-  async load(modelUrl: string, motions: MotionSet, first: MotionName): Promise<void> {
+  async load(modelUrl: string, motions: MotionSet, first: MotionName, also: MotionName[] = []): Promise<void> {
     this.motions = motions;
     const t0 = perfNow();
     const fromStore = PERF_ON && isStored(modelUrl);
+    // 모션 파일은 모델과 나란히 받아 둔다(작고 몇 개 안 됨) — 해석은 모델이 선 뒤(clip)
+    for (const m of [first, ...also]) {
+      const url = motions[m]?.url;
+      if (url) void fetchFile(url);
+    }
     const buf = await fetchFile(modelUrl);
     if (!buf) throw new Error(`모델 파일을 못 받음: ${modelUrl}`);
     if (this.disposed) return; // 받는 사이에 화면을 떠났다
@@ -232,7 +238,7 @@ export class StockScene {
     });
 
     const t1 = perfNow();
-    await this.clip(first);
+    await Promise.all([first, ...also].map((m) => this.clip(m)));
     if (this.disposed) return;
     if (PERF_ON) perfRow('개별종목', `첫 모션(${first})`, shortName(this.motions[first]?.url ?? ''), t1, downloadNote(this.motions[first]?.url ?? ''));
     const t2 = perfNow();
@@ -243,6 +249,19 @@ export class StockScene {
     this.perfDraw = perfNow();
     this.setRoot(this.rootX, this.rootYaw); // 불러오기 전에 정해 둔 위치가 있으면
     this.applyFraming();
+  }
+
+  /**
+   * 지금 자세 · 표정 · 위치 그대로 한 번 바로 그린다(마무리 L-4, 결정 7).
+   * 캔버스가 숨어 있을 때(opacity 0) 불러, three 가 첫 render 때 만드는 것(표정 형태 키 · 뼈 텍스처 —
+   * 공개 API 로 미리 못 만듦)을 보이기 전에 끝내 둔다. 화면 밖 자리여도 그려진다(frustumCulled = false)
+   */
+  drawNow() {
+    if (!this.vrm || !this.mixer) return;
+    this.mixer.update(0);
+    this.applyFaces(0);
+    this.vrm.update(0);
+    this.draw();
   }
 
   /** 나머지 모션을 뒤에서 미리 받아 둔다 — 누르자마자 반응하게 */
@@ -510,8 +529,12 @@ export class StockScene {
     this.mixer.update(dt);
     this.applyFaces(dt);
     this.vrm.update(dt);
-    if (this.perfDraw) {
-      // 모델이 처음 그려지는 프레임 — 셰이더 준비 · 텍스처 올리기가 이 render 호출 안에서 일어난다
+    this.draw();
+  }
+
+  private draw() {
+    if (this.perfDraw && this.vrm) {
+      // 모델이 처음 그려지는 render — 남은 첫 그리기 준비(형태 키 · 뼈 텍스처)가 이 render 호출 안에서 일어난다
       const s = performance.now();
       this.renderer.render(this.scene, this.camera);
       perfRow('개별종목', '첫 그리기(render 1회)', this.perfFile, s, `장면에 올린 뒤 ${Math.round(s - this.perfDraw)}ms 만에 시작`);

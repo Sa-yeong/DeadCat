@@ -80,11 +80,12 @@ export function StockDetailPage() {
   const emotionFeed = useEmotionFeed(stockCode, stageLoop, stage === 'ready', emotionTesting);
   const getStageLoop = useCallback(() => stageLoop.current, []);
 
-  // 장외 잠 — 다른 종목으로 들어오거나, 탭을 가렸다(안 보고 있다) 돌아오면 다시 잔다.
-  // 화면을 아예 나갔다 오면 캐릭터가 새로 떠서 처음부터 자고 있다
+  // 다른 종목으로 들어오면 새로 들어온 것으로 보고 다시 등장한다(마무리 L-4) — 같은 캐릭터라 캔버스가 그대로일 때.
+  // 장외면 등장 없이 처음부터 자고 있다. 캐릭터가 바뀌면 캔버스째 새로 떠서 그쪽이 등장한다(여기선 아무 일 없음)
   useEffect(() => {
-    stageLoop.current?.sleepAgain();
+    stageLoop.current?.reenter();
   }, [stockCode]);
+  // 장외 잠 — 탭을 가렸다(안 보고 있다) 돌아오면 다시 잔다
   useEffect(() => {
     const onVisible = () => document.hidden && stageLoop.current?.sleepAgain();
     document.addEventListener('visibilitychange', onVisible);
@@ -266,6 +267,7 @@ export function StockDetailPage() {
       <main className="relative" style={{ width: L.width, height: L.stageHeight, transition: sliding ? slideTransition('width') : undefined }}>
         <StageView
           live={stage === 'ready'}
+          failed={stage === 'failed'}
           windowOpen={tab === 'CHART'}
           scene={
             <CharacterStage
