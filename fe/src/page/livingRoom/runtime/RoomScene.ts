@@ -18,6 +18,8 @@ import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
 import { SLOT_MACHINE, SOFA_2SEAT } from '../furnitureCatalog';
 import { CHIBI_FACE, stepFaceLevels, type EmotionName, type FaceLevels } from '../../stockDetail/runtime/motionTable';
 import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
+import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
+import { prepareDraw } from '../../../shared/three/prepareDraw';
 
 /**
  * **3D 렌더러** — three.js 로 아트보드 H안을 그대로 세운다. RoomRenderer 의 두 번째 구현.
@@ -360,8 +362,13 @@ export class RoomScene implements RoomRenderer {
   private readonly engineFiles = new Map<string, Promise<VRMAnimation | null>>();
   /** 동작 파일 — 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 들기는 비교 시험 중이라 둘(pickup40 · pickup60) */
   private motionFiles: Promise<Partial<Record<'idle' | 'walk' | 'pickup40' | 'pickup60', VRMAnimation>>> | null = null;
-  /** 모델 파일 — 주소별로 한 번 받아 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서). 없는 파일은 null */
+  /**
+   * 모델 파일 — 받은 파일 보관소(fileStore, 페이지보다 오래 삶)에서 꺼내 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서).
+   * 이 표는 이 거실 안에서 한 번 물은 주소를 기억한다 — 없는 파일(null)을 이 거실 안에서 다시 묻지 않게(다음에 들어오면 다시)
+   */
   private readonly modelFiles = new Map<string, Promise<ArrayBuffer | null>>();
+  /** ?perf — 보관소에서 바로 꺼낸(받기 생략) 주소. 평소엔 늘 비어 있다 */
+  private readonly perfHits = new Set<string>();
   /** ?perf 측정(L-1) — 막 세운 모델(다음 그리기가 그 모델의 첫 그리기). 평소엔 늘 비어 있다 */
   private readonly perfDraw: { file: string; vrm: VRM; start: number }[] = [];
   /** 개발 모드 — 파일 없는 엔진 단계를 이만큼(ms) 대기 자세로 채운다(holdMissingClips). null 이면 건너뜀 */
@@ -1048,10 +1055,8 @@ export class RoomScene implements RoomRenderer {
   private modelBytes(url: string): Promise<ArrayBuffer | null> {
     let file = this.modelFiles.get(url);
     if (!file) {
-      file = fetch(url).then(
-        (r) => (r.ok && !r.headers.get('content-type')?.includes('text/html') ? r.arrayBuffer() : null),
-        () => null,
-      );
+      if (PERF_ON && isStored(url)) this.perfHits.add(url);
+      file = fetchFile(url);
       this.modelFiles.set(url, file);
     }
     return file;
@@ -1062,16 +1067,12 @@ export class RoomScene implements RoomRenderer {
    */
   private async findModel(c: CharNode, look: Look): Promise<{ url: string; buf: ArrayBuffer } | null> {
     const t0 = perfNow();
-    let tried = 0;
-    for (const url of [...modelUrlsOf(c.def.stockId, look), ROOM_ASSETS.chibi]) {
-      const buf = await this.modelBytes(url);
-      tried++;
-      if (buf) {
-        if (PERF_ON) perfRow('거실', 'findModel(받기)', shortName(url), t0, `${c.def.stockCode} · 후보 ${tried}번째 · ${downloadNote(url)}`);
-        return { url, buf };
-      }
+    const found = await firstFile([...modelUrlsOf(c.def.stockId, look), ROOM_ASSETS.chibi], (url) => this.modelBytes(url));
+    if (found && PERF_ON) {
+      const note = this.perfHits.has(found.url) ? '보관소에서(받기 생략)' : downloadNote(found.url);
+      perfRow('거실', 'findModel(받기)', shortName(found.url), t0, `${c.def.stockCode} · 후보 ${found.tried}번째 · ${note}`);
     }
-    return null;
+    return found && { url: found.url, buf: found.buf };
   }
 
   /** 모델 파일을 VRM 으로 푼다 — 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버리고 null */
@@ -1100,11 +1101,13 @@ export class RoomScene implements RoomRenderer {
     if (!vrm) return;
     if (PERF_ON) perfRow('거실', 'parseVrm', shortName(found.url), t1, `${c.def.stockCode} · ${(found.buf.byteLength / 1048576).toFixed(1)}MB`);
     const t2 = perfNow();
-    this.mountVrm(c, vrm);
-    if (PERF_ON) {
-      perfRow('거실', 'mountVrm', shortName(found.url), t2, c.def.stockCode);
-      this.perfDraw.push({ file: shortName(found.url), vrm, start: performance.now() });
-    }
+    const rims = this.fitVrm(vrm);
+    if (PERF_ON) perfRow('거실', 'mountVrm(손질·크기·테두리)', shortName(found.url), t2, c.def.stockCode);
+    const t3 = perfNow();
+    if (!(await this.prepareVrm(c, vrm, rims))) return;
+    if (PERF_ON) perfRow('거실', '그리기 준비(셰이더·텍스처)', shortName(found.url), t3, `${c.def.stockCode} · 세우기 전 — 보이기 전에 끝남`);
+    this.showVrm(c, vrm, rims);
+    if (PERF_ON) this.perfDraw.push({ file: shortName(found.url), vrm, start: performance.now() });
     c.modelUrl = found.url;
     if (c.look !== look) c.swapNeeded = true;
     // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다
@@ -1130,6 +1133,9 @@ export class RoomScene implements RoomRenderer {
       const next = await this.parseVrm(c, found.buf);
       if (!next) return;
       if (PERF_ON) perfRow('거실', 'parseVrm(옷 바꾸기)', shortName(found.url), t1, c.def.stockCode);
+      // 새 모델을 손질하고 그리기 준비까지 — 그동안 옛 모델이 그대로 보인다
+      const rims = this.fitVrm(next);
+      if (!(await this.prepareVrm(c, next, rims))) return;
       // 옛 모델 내리기 — 동작은 뼈에 묶여 있어 새로 만든다
       let setReady: (ok: boolean) => void = () => {};
       c.whenReady = new Promise<boolean>((ok) => (setReady = ok));
@@ -1141,7 +1147,7 @@ export class RoomScene implements RoomRenderer {
         VRMUtils.deepDispose(c.vrm.scene);
       }
       Object.assign(c, { vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), engineActions: new Map(), rims: [], pose: 'rest' });
-      this.mountVrm(c, next);
+      this.showVrm(c, next, rims);
       if (PERF_ON) this.perfDraw.push({ file: shortName(found.url), vrm: next, start: performance.now() });
       c.modelUrl = found.url;
       if (c.look !== look) c.swapNeeded = true;
@@ -1157,8 +1163,11 @@ export class RoomScene implements RoomRenderer {
     }
   }
 
-  /** 푼 VRM 을 도형 자리에 올린다 — 크기 · 발 높이 · 테두리. 첫 모델로 축척을 정하고 다음 모델도 같은 축척 */
-  private mountVrm(c: CharNode, vrm: VRM): void {
+  /**
+   * 푼 VRM 을 손질한다 — 꼭짓점 정리 · 뼈 합치기 · VRM0 돌리기 · 기본 자세 · 테두리 복제본. 첫 모델로 축척을 정하고 다음 모델도 같은 축척.
+   * 아직 장면에 넣지 않는다(prepareVrm → showVrm). 테두리 복제본을 돌려준다(showVrm 이 캐릭터에 붙임)
+   */
+  private fitVrm(vrm: VRM): THREE.Mesh[] {
     VRMUtils.removeUnnecessaryVertices(vrm.scene);
     VRMUtils.combineSkeletons(vrm.scene);
     if (vrm.meta?.metaVersion === '0') VRMUtils.rotateVRM0(vrm);
@@ -1178,7 +1187,7 @@ export class RoomScene implements RoomRenderer {
       o.frustumCulled = false; // 뼈로 움직인 모양은 원래 경계 상자를 벗어난다
       if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
     });
-    c.rims = meshes.map((m) => {
+    return meshes.map((m) => {
       m.renderOrder = BODY_ORDER;
       const rim = m.clone(false);
       rim.material = this.rimWhite;
@@ -1187,8 +1196,27 @@ export class RoomScene implements RoomRenderer {
       m.parent!.add(rim);
       return rim;
     });
-    c.holder.scale.setScalar(this.fit.scale);
-    c.holder.position.y = -this.fit.footY * this.fit.scale;
+  }
+
+  /**
+   * 그리기 준비(마무리 L-2 · 결정 7) — 셰이더 준비 · 텍스처 올리기를 세우기 전에 끝낸다(첫 그리기에서 멈추며 잘려 보이지 않게).
+   * 그 사이 캐릭터가 치워졌거나 화면을 떠났으면 모델을 버리고 false — 테두리 복제본은 같이 쓰는 재질이라 먼저 뗀다
+   */
+  private async prepareVrm(c: CharNode, vrm: VRM, rims: THREE.Mesh[]): Promise<boolean> {
+    const alive = () => !this.disposed && this.chars.get(c.id) === c;
+    await prepareDraw(this.renderer, vrm.scene, this.camera, this.scene, alive);
+    if (alive()) return true;
+    for (const r of rims) r.removeFromParent();
+    VRMUtils.deepDispose(vrm.scene);
+    return false;
+  }
+
+  /** 손질 · 준비가 끝난 VRM 을 도형 자리에 세운다 — 크기 · 발 높이 */
+  private showVrm(c: CharNode, vrm: VRM, rims: THREE.Mesh[]): void {
+    const fit = this.fit!;
+    c.rims = rims;
+    c.holder.scale.setScalar(fit.scale);
+    c.holder.position.y = -fit.footY * fit.scale;
     c.holder.add(vrm.scene);
     c.vrm = vrm;
     c.body.visible = false;
@@ -1202,12 +1230,12 @@ export class RoomScene implements RoomRenderer {
     this.motionFiles ??= (async () => {
       const one = async (url: string) => {
         const t0 = perfNow();
-        const r = await fetch(url);
-        if (!r.ok) throw new Error(`${r.status} ${url}`);
-        const buf = await r.arrayBuffer();
+        const fromStore = PERF_ON && isStored(url);
+        const buf = await fetchFile(url); // 받은 파일 보관소 — 전에 받았으면 받지 않는다
+        if (!buf) throw new Error(`모션 파일을 못 받음: ${url}`);
         const t1 = perfNow();
         const g = await this.loader.parseAsync(buf, '');
-        if (PERF_ON) perfRow('거실', '모션 받기+해석', shortName(url), t0, `${downloadNote(url)} · 해석 ${Math.round(performance.now() - t1)}ms`);
+        if (PERF_ON) perfRow('거실', '모션 받기+해석', shortName(url), t0, `${fromStore ? '보관소에서(받기 생략)' : downloadNote(url)} · 해석 ${Math.round(performance.now() - t1)}ms`);
         return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0];
       };
       const [idle, walk, pickup40, pickup60] = await Promise.all([one(ROOM_ASSETS.idle), one(ROOM_ASSETS.walk), one(ROOM_ASSETS.pickup40), one(ROOM_ASSETS.pickup60)]);
@@ -1512,9 +1540,9 @@ export class RoomScene implements RoomRenderer {
     if (!file) {
       file = (async () => {
         try {
-          const r = await fetch(MOTION_URL(clip));
-          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) return null;
-          const g = await this.loader.parseAsync(await r.arrayBuffer(), '');
+          const buf = await fetchFile(MOTION_URL(clip)); // 받은 파일 보관소 — 없는 파일은 null(보관 안 함)
+          if (!buf) return null;
+          const g = await this.loader.parseAsync(buf, '');
           return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0] ?? null;
         } catch {
           return null;

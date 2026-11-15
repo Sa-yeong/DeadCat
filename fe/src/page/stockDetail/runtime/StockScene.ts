@@ -16,7 +16,9 @@ import {
   type MotionSet,
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
-import { PERF_ON, downloadMs, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
+import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
+import { fetchFile, isStored, parseFile } from '../../../shared/three/fileStore';
+import { prepareDraw } from '../../../shared/three/prepareDraw';
 
 /** 화면에서 캐릭터를 어디에 걸지 — 페이지 좌표(px). layout.ts 가 계산한다 */
 export interface Framing {
@@ -183,18 +185,24 @@ export class StockScene {
   /**
    * 모델과 첫 모션(유지 모션)을 불러온다. 첫 모션이 붙기 전에는 그리지 않는다 —
    * 불러온 직후의 두 팔 벌린 기본 자세(T자)가 보이지 않게.
+   * 파일은 받은 파일 보관소(fileStore)에서 — 전에 받았으면 받지 않고 다시 해석만 한다(마무리 L-2).
+   * 장면에 넣기 전에 그리기 준비(셰이더 · 텍스처, prepareDraw)를 끝낸다 — 끝나야 ready
    */
   async load(modelUrl: string, motions: MotionSet, first: MotionName): Promise<void> {
     this.motions = motions;
     const t0 = perfNow();
-    const gltf = await this.loader.loadAsync(modelUrl);
+    const fromStore = PERF_ON && isStored(modelUrl);
+    const buf = await fetchFile(modelUrl);
+    if (!buf) throw new Error(`모델 파일을 못 받음: ${modelUrl}`);
+    if (this.disposed) return; // 받는 사이에 화면을 떠났다
     if (PERF_ON) {
-      const file = shortName(modelUrl);
-      const dl = downloadMs(modelUrl);
-      perfRow('개별종목', '받기+해석(loadAsync)', file, t0, `${downloadNote(modelUrl)}${dl !== null ? ` · 해석≈${Math.round(performance.now() - t0 - dl)}ms` : ''}`);
+      this.perfFile = shortName(modelUrl);
       this.perfLoad = t0;
-      this.perfFile = file;
+      perfRow('개별종목', '받기', this.perfFile, t0, fromStore ? '보관소에서(받기 생략)' : downloadNote(modelUrl));
     }
+    const tParse = perfNow();
+    const gltf = await this.loader.parseAsync(buf, '');
+    if (PERF_ON) perfRow('개별종목', '해석(parseAsync)', this.perfFile, tParse, `${(buf.byteLength / 1048576).toFixed(1)}MB`);
     const vrm = gltf.userData.vrm as VRM | undefined;
     if (!vrm) throw new Error('VRM 확장이 없는 파일');
     if (this.disposed) {
@@ -227,6 +235,10 @@ export class StockScene {
     await this.clip(first);
     if (this.disposed) return;
     if (PERF_ON) perfRow('개별종목', `첫 모션(${first})`, shortName(this.motions[first]?.url ?? ''), t1, downloadNote(this.motions[first]?.url ?? ''));
+    const t2 = perfNow();
+    await prepareDraw(this.renderer, vrm.scene, this.camera, this.scene, () => !this.disposed);
+    if (this.disposed) return;
+    if (PERF_ON) perfRow('개별종목', '그리기 준비(셰이더·텍스처)', this.perfFile, t2, `장면에 넣기 전 — 보이기 전에 끝남 · 렌더러 텍스처 ${this.renderer.info.memory.textures}개 · 셰이더 ${this.renderer.info.programs?.length ?? '?'}개`);
     this.scene.add(vrm.scene);
     this.perfDraw = perfNow();
     this.setRoot(this.rootX, this.rootYaw); // 불러오기 전에 정해 둔 위치가 있으면
@@ -405,9 +417,9 @@ export class StockScene {
     if (busy) return busy;
     const def = this.motions[name];
     if (!def) return Promise.resolve(null);
-    const job = this.loader
-      .loadAsync(def.url)
+    const job = parseFile(def.url, (buf) => this.loader.parseAsync(buf, ''))
       .then((g) => {
+        if (!g) throw new Error('파일 없음(404 · HTML)');
         const anim = (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0];
         if (!anim || !this.vrm) return null;
         const clip = createVRMAnimationClip(anim, this.vrm);
