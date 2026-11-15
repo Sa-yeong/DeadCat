@@ -555,7 +555,7 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
       )}
       {/* 데모 트리거(연출 거실에서만) — 줌 막대 바로 위(줌 막대는 늘 아래쪽) */}
       {!camera && snapshot && rt && staged && (
-        <DemoMeetButton right={sideOpen ? L.panel.width + 24 : 12} bottomAt={L.zoomTop - 8} onArm={() => rt.loop.demoArm()} />
+        <DemoMeetButton right={sideOpen ? L.panel.width + 24 : 12} bottomAt={L.zoomTop - 8} onToggle={() => void rt.loop.demoToggle()} />
       )}
       <LoginPrompt open={needLogin} onClose={() => setNeedLogin(false)} />
     </div>

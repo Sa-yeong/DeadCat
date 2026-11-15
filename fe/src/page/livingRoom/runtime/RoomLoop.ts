@@ -573,25 +573,27 @@ export class RoomLoop {
 
   /** 엔진 모션을 멈추고 다시 걷게 한다 — 끝 신호는 없다 */
   /**
-   * 데모 트리거 버튼 — 정해 둔 만남(엔비디아 ↔ 네이버, roomDemo.ts)을 준비한다. 걸려 보내지는 않는다:
-   * 사용자가 엔비디아를 들어 네이버 옆에 놓으면(놓은 자리에서 새로 마주침) 놀리기.
-   * 둘이 하던 상호작용을 멈추고(엔진은 상호작용 중인 캐릭터의 만남을 받지 않는다), 다음 한 번은 쿨다운을 보지 않는다.
-   * 둘 중 하나가 거실에 없으면 false
+   * 데모 트리거 버튼 — 누를 때마다 켜고 끈다(roomDemo.ts). 걸려 보내지는 않는다:
+   * 켜져 있는 동안 사용자가 엔비디아를 들어 네이버 옆에 놓으면(놓은 자리에서 새로 마주침) 쿨다운 없이 매번 놀리기.
+   * 켤 때 둘이 하던 상호작용을 멈춘다(엔진은 상호작용 중인 캐릭터의 만남을 받지 않는다). 끄면 원래 규칙(쿨다운 15초)대로.
+   * 바뀐 뒤 상태 — 둘 중 하나가 거실에 없으면 null
    */
-  demoArm(): boolean {
+  demoToggle(): boolean | null {
     const d = this.demo();
     const m = d?.meet;
-    if (!d || !m || this.mode !== 'NORMAL') return false;
+    if (!d || !m || this.mode !== 'NORMAL') return null;
     const a = this.handles.get(m.self);
     const b = this.handles.get(m.other);
-    if (!a || !b) return false;
-    for (const h of [a, b]) {
-      if (h.held || h.lifted) continue; // 들고 있는 중이면 엔진은 이미 멈춰 있다
-      this.stopActing(h);
-      this.engine.interrupt(h.id);
+    if (!a || !b) return null;
+    const on = d.toggle();
+    if (on) {
+      for (const h of [a, b]) {
+        if (h.held || h.lifted) continue; // 들고 있는 중이면 엔진은 이미 멈춰 있다
+        this.stopActing(h);
+        this.engine.interrupt(h.id);
+      }
     }
-    d.arm();
-    return true;
+    return on;
   }
 
   /** 기본 자세를 렌더러에 — 데모 제자리 모션이 걸려 있으면 그 모션을 idle 로 */

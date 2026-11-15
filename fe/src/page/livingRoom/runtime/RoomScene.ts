@@ -6,6 +6,7 @@ import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionPr
 import type { CharacterDef } from '../types';
 import { lookColor, modelUrlsOf } from '../catalog';
 import { DEFAULT_LOOK, type Look } from './outfitState';
+import { lowestY, pickGroundSamples, type GroundSample } from './grounding';
 import type { FurnitureCatalog } from './catalogs';
 import { AREA_COLOR, footprint, shapeOf, type Footprint, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
@@ -84,11 +85,13 @@ const SLOT_MOTION_CLIP = 'play_slot';
 /** 소파 앉기 모션 파일(motions.json sit_sofa 의 clip) — 소파 모델을 세울 때 미리 받아 둔다 */
 const SOFA_MOTION_CLIP = 'play_sofa';
 /**
- * 모션 파일마다 몸 높이 보정(칸, 음수 = 내림) — 골반을 선 높이에 둔 채 만든 모션은 몸이 떠 있어서, 틀 때만 바닥에 닿게 내린다.
- * char_chibi_2 에 걸어 가장 낮은 곳(무릎 · 손)을 잰 값. 모션 파일을 바꾸면 다시 잴 것 (2026-11-14)
- *   tired  엎드려 지친 자세 — 가장 낮은 곳이 바닥에서 0.43칸 떠 있다
+ * 바닥에 붙여 틀 모션 파일 — 몸 중심을 기준으로 눕혀 만들어서 그대로 틀면 몸이 그림자 위에 뜬다(도휘, 2026-11-16).
+ * 트는 동안 매 프레임 실제 모양의 가장 낮은 곳(grounding.ts)을 재서 그만큼 몸을 내린다 — 모델(치비 종류) · 프레임마다 맞는 값.
+ * 엔진 모션으로 틀 때도, 평소 자세(idle)로 걸어 둘 때도(데모의 제자리 tired). 전엔 char_chibi_2 로 잰 고정값(-0.43칸)이라
+ * 다른 치비(네이버 등)나 평소 자세에선 떴다
+ *   tired  엎드려 지친 자세
  */
-const CLIP_GROUND: Record<string, number> = { tired: -0.43 };
+const GROUND_CLIPS: ReadonlySet<string> = new Set(['tired']);
 
 /** 엔진 요청 하나 — 몇 번째 단계를 틀고 있는지, 끝나면 부를 것 */
 interface EngineRun {
@@ -314,6 +317,9 @@ interface CharNode {
   /** 앉기 높이(칸) — 엔진 모션 중에만 건다(setSeatLift). seatNow 는 지금 높이 — 동작이 섞이는 동안 따라간다 */
   seatLift: number;
   seatNow: number;
+  /** 바닥 붙이기(GROUND_CLIPS) — 볼 꼭짓점(모델을 올린 뒤 처음 쓸 때 고름) · 지난 프레임에 잰 내릴 높이(칸, 음수 = 내림) */
+  groundSamples: GroundSample[] | null;
+  groundWant: number;
   /** 앉기 높이가 1초에 움직이는 양 — 들어갈 때 · 나올 때 둘 다 섞이는 시간(POSE_FADE_S) 안에 닿게 */
   seatRate: number;
   /** 배치 모드 — 그림자까지 통째로 숨긴다 */
@@ -1020,7 +1026,7 @@ export class RoomScene implements RoomRenderer {
     const c: CharNode = {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
-      selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0,
+      selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1221,6 +1227,7 @@ export class RoomScene implements RoomRenderer {
     c.holder.position.y = -fit.footY * fit.scale;
     c.holder.add(vrm.scene);
     c.vrm = vrm;
+    c.groundSamples = null; // 모델이 바뀌었다 — 바닥 붙이기에 볼 꼭짓점을 다시 고른다
     c.body.visible = false;
     c.head.visible = false;
     this.drawChar(c);
@@ -1572,13 +1579,15 @@ export class RoomScene implements RoomRenderer {
       c.mixer.update(dt);
     }
     // 대롱대롱 → 골반 맞추기 → 흔들림(spring bone) 순서 — 골반을 먼저 맞춰야 머리카락이 매 프레임 튀지 않는다
-    // 몸 높이 — 소파 앉기(seatLift) + 모션 파일별 보정(CLIP_GROUND). 엔진 모션이 실제로 돌 때만(파일을 받는 중엔 서 있는 채로),
+    // 몸 높이 — 소파 앉기(seatLift, 엔진 모션 중에만) + 바닥 붙이기(GROUND_CLIPS — 엔진 모션 또는 평소 자세로 트는 중).
     // 동작이 섞이는 시간(POSE_FADE_S) 동안 따라간다
+    const run = c.engine?.action ? c.engine : null;
+    const clip = run ? run.steps[run.actionStep]?.clip : c.pose === 'idle' ? (c.basePose?.idle ?? null) : null;
+    const grounding = !c.lifted && !!clip && GROUND_CLIPS.has(clip);
+    if (!grounding) c.groundWant = 0;
     if (c.lifted) c.seatNow = 0;
     else {
-      const run = c.engine?.action ? c.engine : null;
-      const clip = run ? run.steps[run.actionStep]?.clip : null;
-      const ground = clip ? (CLIP_GROUND[clip] ?? 0) : 0;
+      const ground = grounding ? c.groundWant : 0;
       if (ground !== 0) c.seatRate = Math.max(c.seatRate, Math.abs(ground) / POSE_FADE_S);
       const want = (c.seatLift !== 0 && run ? c.seatLift : 0) + ground;
       const step = c.seatRate * dt;
@@ -1589,6 +1598,13 @@ export class RoomScene implements RoomRenderer {
     if (c.lifted) this.pinGrab(c);
     this.applyFace(c, dt); // vrm.update 가 표정 값을 모델에 옮긴다 — 그 전에
     c.vrm!.update(dt);
+    // 바닥 붙이기 — 이번 프레임 모양(vrm.update 로 실제 뼈에 옮겨진 뒤)의 가장 낮은 곳을 몸 자리(figure) 좌표로 재서 다음 프레임에 내린다.
+    // 몸 자리 안에서 재므로 지금 내린 높이(figure.position)와 무관하다. 파일을 받는 중(평소 idle 이 돌고 있음)이면 거의 0 이 나온다
+    if (grounding) {
+      c.groundSamples ??= pickGroundSamples(c.vrm!.scene);
+      const low = lowestY(c.groundSamples, c.figure);
+      if (low !== null) c.groundWant = -low;
+    }
     // 대롱대롱으로 더한 뼈 각을 원래대로 — 이번 프레임 모양은 이미 실제 뼈에 옮겨졌다(vrm.update).
     // 믹서는 값이 안 바뀌면(끝나서 멈춘 pickup) 뼈를 다시 쓰지 않아서, 안 되돌리면 더한 각이 프레임마다 쌓여 꺾인 채 남는다
     for (const [n, q] of swung) n.quaternion.copy(q);

@@ -27,4 +27,15 @@ describe('roomDemoOf — 데모 거실 연출', () => {
     expect(d.forceMeet('5', '13')).toBeNull();
     expect(d.stillIdle.get('5')).toBe('tired');
   });
+
+  it('트리거를 켜면 쿨다운 무시, 다시 누르면 꺼짐', () => {
+    const d = roomDemoOf(chars);
+    expect(d.on).toBe(false);
+    expect(d.forceMeet('13', '5')?.ignoreCooldown).toBeUndefined();
+    expect(d.toggle()).toBe(true);
+    expect(d.forceMeet('13', '5')?.ignoreCooldown).toBe(true);
+    expect(d.forceMeet('5', '13')?.ignoreCooldown).toBe(true); // 켜져 있는 동안은 매번
+    expect(d.toggle()).toBe(false);
+    expect(d.forceMeet('13', '5')?.ignoreCooldown).toBeUndefined();
+  });
 });
