@@ -179,6 +179,20 @@ describe('아이템이 줄었다가 다시 생길 때', () => {
     expect(s.itemTile).toEqual({});
   });
 
+  it('가구도 줄어 있으면 낮춘다 — 초기화로 슬롯머신이 없어졌다가 출석으로 다시 받으면 배치 점이 뜬다', () => {
+    // 슬롯머신(29) 1대를 보고 배치 모드를 열었던 기록이 남아 있다
+    let s = seen({ furnitureBtn: { 29: 1 }, furnitureTile: { 29: 1 }, farewells: 0, guestbook: 0 });
+    // 초기화 — 거실에 들어와 살피니 가구가 없다
+    s = settle(s, survey({ furniture: {} }));
+    expect(s.furnitureBtn).toEqual({});
+    expect(s.furnitureTile).toEqual({});
+    // 출석으로 슬롯머신을 다시 받음
+    const now = survey({ furniture: { 29: 1 } });
+    s = settle(s, now);
+    expect(dotsOf(s, now).place).toBe(true);
+    expect(isNewCount(s.furnitureTile, 29, 1)).toBe(true);
+  });
+
   it('맞출 게 없으면 같은 객체', () => {
     const s = seen({ itemBtn: { 3: 1 }, farewells: 1, guestbook: 5 });
     expect(settle(s, survey({ items: { 3: 1 }, farewells: 9, guestbookLatest: 9 }))).toBe(s);

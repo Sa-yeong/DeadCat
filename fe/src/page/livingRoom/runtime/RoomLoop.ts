@@ -575,7 +575,8 @@ export class RoomLoop {
   /**
    * 데모 트리거 버튼 — 누를 때마다 켜고 끈다(roomDemo.ts). 걸려 보내지는 않는다:
    * 켜져 있는 동안 사용자가 엔비디아를 들어 네이버 옆에 놓으면(놓은 자리에서 새로 마주침) 쿨다운 없이 매번 놀리기.
-   * 켤 때 둘이 하던 상호작용을 멈춘다(엔진은 상호작용 중인 캐릭터의 만남을 받지 않는다). 끄면 원래 규칙(쿨다운 15초)대로.
+   * 켜고 끌 때 둘이 하던 상호작용을 멈춘다 — 켤 땐 엔진이 상호작용 중인 캐릭터의 만남을 받지 않아서, 끌 땐 놀리던 걸 바로 멈추려고.
+   * 끄면 정해 둔 만남도 풀려 원래 규칙(쿨다운 15초)대로.
    * 바뀐 뒤 상태 — 둘 중 하나가 거실에 없으면 null
    */
   demoToggle(): boolean | null {
@@ -586,12 +587,10 @@ export class RoomLoop {
     const b = this.handles.get(m.other);
     if (!a || !b) return null;
     const on = d.toggle();
-    if (on) {
-      for (const h of [a, b]) {
-        if (h.held || h.lifted) continue; // 들고 있는 중이면 엔진은 이미 멈춰 있다
-        this.stopActing(h);
-        this.engine.interrupt(h.id);
-      }
+    for (const h of [a, b]) {
+      if (h.held || h.lifted) continue; // 들고 있는 중이면 엔진은 이미 멈춰 있다
+      this.stopActing(h);
+      this.engine.interrupt(h.id);
     }
     return on;
   }

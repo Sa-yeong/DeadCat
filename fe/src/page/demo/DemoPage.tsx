@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/axios';
 import { readToken, useAuthToken } from '../../common/authToken';
 import { useDemoMode } from '../../common/demo/demoMode';
+import { seenKey } from '../livingRoom/hud/seen';
 
 /**
  * **데모 관리(졸프 데모 영상)** — 데모 계정(서버 DEMO_USER_IDS)에게만 보인다. 주소 /demo
@@ -58,6 +59,12 @@ export function DemoPage() {
     setBusy(true);
     try {
       await api.post('/demo/reset', { user_id: a.id }, auth());
+      // 이 브라우저에 남은 그 계정의 「봤음」 기록(거실 빨간점)도 지운다 — 다시 받은 가구 · 아이템이 새 것으로 뜨게
+      try {
+        localStorage.removeItem(seenKey(a.id));
+      } catch {
+        // 저장소가 막힌 환경 — 거실이 다음에 살필 때 줄어든 수로 맞춘다(seen.ts settle)
+      }
       setNote(`${a.login_id} 초기화 완료 — 잔고 1억, 보유 · 거실 · 기록 비움`);
     } catch (e) {
       setNote(errText(e));

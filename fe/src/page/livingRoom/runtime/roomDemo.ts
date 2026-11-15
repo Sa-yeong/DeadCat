@@ -5,8 +5,8 @@ import type { ForceMeet } from '../engine/matcher';
  * 내 거실이든 놀러 간 거실이든 거실 주인으로 판단 — demo2 로 녹화하다 demo1 거실을 잠깐 보여 줄 수 있게.
  *  · 네이버(035420)는 돌아다니지 않고 제자리에서 tired 모션(우울해 가만히)을 계속 튼다.
  *    감정 tired 는 서버가 준다(데모 계정 거실의 네이버 — backend demo-scenario.ts DEMO_ROOM_EMOTIONS)
- *  · 엔비디아(NVDA)가 네이버를 만나면 감정과 상관없이 늘 놀리기 — basic_meet_tired 규칙의 놀리기 효과(tease_find → tease).
- *    규칙 쿨다운(15초)은 그대로 지킨다
+ *  · 트리거(투명 버튼)를 켜 두면 엔비디아(NVDA)가 네이버를 만날 때마다 감정 · 쿨다운과 상관없이 놀리기 —
+ *    basic_meet_tired 규칙의 놀리기 효과(tease_find → tease). 끄면 정해 둔 만남도 풀려 다른 캐릭터와 같은 원래 규칙대로
  * 종목 코드로 적고, 캐릭터 id(stock_id)는 거실에 선 캐릭터에서 찾는다.
  */
 const STILL_IDLE: Readonly<Record<string, string>> = { '035420': 'tired' };
@@ -21,7 +21,7 @@ export interface RoomDemo {
   forceMeet: ForceMeet;
   /** 트리거 버튼으로 보여 줄 만남(캐릭터 id) — 거실에 둘 다 있을 때만 */
   meet: { self: string; other: string } | null;
-  /** 트리거 켜고 끄기 — 켜져 있는 동안은 정해 둔 만남이 쿨다운을 보지 않는다(닿을 때마다 놀리기). 바뀐 뒤 상태 */
+  /** 트리거 켜고 끄기 — 켜져 있는 동안만 정해 둔 만남(닿을 때마다 쿨다운 없이 놀리기). 바뀐 뒤 상태 */
   toggle(): boolean;
   readonly on: boolean;
 }
@@ -48,9 +48,9 @@ export function roomDemoOf(chars: readonly { id: string; stockCode: string }[]):
       return on;
     },
     forceMeet: (a, b) => {
+      if (!on) return null; // 꺼져 있으면 원래 규칙대로
       const m = meets.find((x) => (x.self === a && x.other === b) || (x.self === b && x.other === a));
-      if (!m) return null;
-      return { ruleId: m.ruleId, self: m.self, other: m.other, effect: m.effect, ...(on ? { ignoreCooldown: true } : {}) };
+      return m ? { ruleId: m.ruleId, self: m.self, other: m.other, effect: m.effect, ignoreCooldown: true } : null;
     },
   };
 }
