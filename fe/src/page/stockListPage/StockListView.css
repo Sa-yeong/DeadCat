@@ -13,12 +13,17 @@
     background: #0b0d12;
     color: white;
 }
-/* 데모 계정 — 썸네일 칸 없이 리스트가 한 칸 전체 */
+/* 데모 계정 — 썸네일 칸 없이 리스트가 한 칸 전체.
+   minmax(0, 1fr) — 그냥 1fr 은 내용보다 좁아지지 않아서, 칸 너비로 트랙 너비를 정하는 지수 캐러셀(slick)과
+   서로 키워 가며 끝없이 넓어진다 */
 .stockListView.no-thumb{
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
     'index'
     'stock';
+}
+.stockListView.no-thumb > *{
+    min-width: 0;
 }
 .stockListView .index-carousel{
     grid-area: index;
