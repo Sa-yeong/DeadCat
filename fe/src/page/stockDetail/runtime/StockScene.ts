@@ -16,6 +16,7 @@ import {
   type MotionSet,
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
+import { PERF_ON, downloadMs, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
 
 /** 화면에서 캐릭터를 어디에 걸지 — 페이지 좌표(px). layout.ts 가 계산한다 */
 export interface Framing {
@@ -127,6 +128,10 @@ export class StockScene {
   /** 이 캐릭터의 모션 표(공용 + 덮어쓰기, assets.characterOf) — load 때 받는다 */
   private motions: MotionSet = {};
   private disposed = false;
+  /** ?perf 측정(L-1) — 모델을 장면에 올린 시각(첫 그리기를 재려고) · load 시작 시각 · 대상 파일. 평소엔 0 */
+  private perfDraw = 0;
+  private perfLoad = 0;
+  private perfFile = '';
 
   /** 카메라 가로 이동(m) — 차트를 좌우로 밀면 창틀(카메라)이 같이 간다. 캐릭터는 제자리 */
   private panX = 0;
@@ -181,7 +186,15 @@ export class StockScene {
    */
   async load(modelUrl: string, motions: MotionSet, first: MotionName): Promise<void> {
     this.motions = motions;
+    const t0 = perfNow();
     const gltf = await this.loader.loadAsync(modelUrl);
+    if (PERF_ON) {
+      const file = shortName(modelUrl);
+      const dl = downloadMs(modelUrl);
+      perfRow('개별종목', '받기+해석(loadAsync)', file, t0, `${downloadNote(modelUrl)}${dl !== null ? ` · 해석≈${Math.round(performance.now() - t0 - dl)}ms` : ''}`);
+      this.perfLoad = t0;
+      this.perfFile = file;
+    }
     const vrm = gltf.userData.vrm as VRM | undefined;
     if (!vrm) throw new Error('VRM 확장이 없는 파일');
     if (this.disposed) {
@@ -210,9 +223,12 @@ export class StockScene {
       if (action === this.current && this.currentName) this.onMotionEnd?.(this.currentName);
     });
 
+    const t1 = perfNow();
     await this.clip(first);
     if (this.disposed) return;
+    if (PERF_ON) perfRow('개별종목', `첫 모션(${first})`, shortName(this.motions[first]?.url ?? ''), t1, downloadNote(this.motions[first]?.url ?? ''));
     this.scene.add(vrm.scene);
+    this.perfDraw = perfNow();
     this.setRoot(this.rootX, this.rootYaw); // 불러오기 전에 정해 둔 위치가 있으면
     this.applyFraming();
   }
@@ -482,6 +498,16 @@ export class StockScene {
     this.mixer.update(dt);
     this.applyFaces(dt);
     this.vrm.update(dt);
+    if (this.perfDraw) {
+      // 모델이 처음 그려지는 프레임 — 셰이더 준비 · 텍스처 올리기가 이 render 호출 안에서 일어난다
+      const s = performance.now();
+      this.renderer.render(this.scene, this.camera);
+      perfRow('개별종목', '첫 그리기(render 1회)', this.perfFile, s, `장면에 올린 뒤 ${Math.round(s - this.perfDraw)}ms 만에 시작`);
+      perfRow('개별종목', '전체(load 시작→첫 그림)', this.perfFile, this.perfLoad);
+      perfRow('개별종목', '메모리', this.perfFile, null, memoryNote(this.vrm.scene, this.renderer));
+      this.perfDraw = 0;
+      return;
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
