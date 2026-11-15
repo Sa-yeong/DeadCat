@@ -43,14 +43,13 @@ export const STOCK_CHARACTERS: Record<string, CharacterSpec> = {
       annoying: { ...MOTIONS.annoying!, face: [{ expr: 'happy', value: 1 }] },
     },
   },
-  // NAVER — 전용 모델(2026-11-15). 5번 클릭 반응 = naver_annoying.vrma(도휘 제작, 30fps 0~109프레임) + 모자 떨어뜨리기(hatDrop.ts).
+  // NAVER — 전용 모델(2026-11-15). 연타 반응(공용과 같은 3탭) = naver_annoying.vrma(도휘 제작, 30fps 0~109프레임) + 모자 떨어뜨리기(hatDrop.ts).
   // 표정은 VRMA 안의 키(blink · ou · angry) 그대로 — 코드 표정 없음. 끝나면 유지 모션으로. 나머지 모션은 공용
   '035420': {
     dir: 'characters/stocks/035420/',
     overrides: {
       annoying: { file: 'naver_annoying.vrma', loop: false, face: [], vrmaFace: true },
     },
-    spamTaps: 5,
     hatDrop: true,
   },
 };

@@ -17,6 +17,7 @@ import {
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
 import { createHatDrop, type HatDrop } from './hatDrop';
+import { rayHitsBody } from './bodyHit';
 import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
 import { fetchFile, isStored, parseFile } from '../../../shared/three/fileStore';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
@@ -126,7 +127,7 @@ export class StockScene {
   private readonly touched = new Set<string>();
 
   /** 몸 치수 — 불러올 때 한 번 잰다 (골반·머리 꼭대기 높이) */
-  private body = { hips: 0.9, headTop: 1.5 };
+  private body = { hips: 0.9, headTop: 1.5, headLen: 0.2 };
   private framing: Framing | null = null;
   /** 캐릭터 뒤 3D 공간(격자 바닥·지평선 안개) */
   private readonly env = new StageEnvironment();
@@ -427,7 +428,15 @@ export class StockScene {
     const ndc = new THREE.Vector2((x / this.framing.width) * 2 - 1, -(y / this.framing.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
-    return ray.intersectObject(this.vrm.scene, true).length > 0;
+    // 메시 레이캐스트는 클릭마다 60~290ms 멈춘다(스키닝 계산) — 뼈 캡슐로 본다(bodyHit.ts)
+    const humanoid = this.vrm.humanoid;
+    const scale = this.vrm.scene.scale.y || 1;
+    return rayHitsBody(
+      ray.ray,
+      (name) => humanoid.getNormalizedBoneNode(name)?.getWorldPosition(new THREE.Vector3()) ?? null,
+      this.body.headTop * scale,
+      this.body.headLen * scale,
+    );
   }
 
   dispose() {
@@ -479,7 +488,9 @@ export class StockScene {
     const hipsY = hips ? hips.getWorldPosition(new THREE.Vector3()).y : box.min.y + (box.max.y - box.min.y) * 0.53;
     // 머리 꼭대기 — 머리카락까지 포함한 전체 상자의 윗면. 머리 뼈보다 아래면 머리 뼈 기준으로
     const headY = head ? head.getWorldPosition(new THREE.Vector3()).y : box.max.y;
-    this.body = { hips: hipsY, headTop: Math.max(box.max.y, headY) };
+    const headTop = Math.max(box.max.y, headY);
+    // headLen — 머리 뼈에서 머리 꼭대기까지. 누르기 판정(bodyHit)의 머리 캡슐 크기
+    this.body = { hips: hipsY, headTop, headLen: headTop - headY };
   }
 
   /**
