@@ -16,6 +16,7 @@ import {
   type MotionSet,
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
+import { createHatDrop, type HatDrop } from './hatDrop';
 import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
 import { fetchFile, isStored, parseFile } from '../../../shared/three/fileStore';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
@@ -116,6 +117,8 @@ export class StockScene {
   private currentName: MotionName | null = null;
 
   private faces: FaceLayer[] = [];
+  /** 연타 반응(annoying) 동안의 모자 떨어뜨리기 — 그 캐릭터만(assets hatDrop), 없으면 null */
+  private hat: HatDrop | null = null;
   /** 유지 표정 — idle 위에 얹는 감정 얼굴. 한 번 표정이 올라가는 만큼 내려간다 */
   private base: { expr: string; weight: number } | null = null;
   /** 유지 표정이 바뀔 때 뚝 끊기지 않게 — 표정별 지금 세기 */
@@ -189,7 +192,13 @@ export class StockScene {
    * 장면에 넣기 전에 그리기 준비(셰이더 · 텍스처, prepareDraw)를 끝낸다 — 끝나야 ready
    * also — 첫 화면 전에 같이 준비할 모션(첫 등장의 walk · greeting, 마무리 L-4). 파일은 모델과 같이 받기 시작한다
    */
-  async load(modelUrl: string, motions: MotionSet, first: MotionName, also: MotionName[] = []): Promise<void> {
+  async load(
+    modelUrl: string,
+    motions: MotionSet,
+    first: MotionName,
+    also: MotionName[] = [],
+    opts: { hatDrop?: boolean } = {},
+  ): Promise<void> {
     this.motions = motions;
     const t0 = perfNow();
     const fromStore = PERF_ON && isStored(modelUrl);
@@ -229,12 +238,16 @@ export class StockScene {
     });
 
     this.vrm = vrm;
+    // 모자 떨어뜨리기 — VRM 을 불러온 직후 한 번(모자 노드 · 원래 자리를 기억한다)
+    this.hat = opts.hatDrop ? createHatDrop(vrm) : null;
     this.baseYaw = vrm.scene.rotation.y; // VRM0 은 이미 180° 돌아 있다
     this.measureBody(vrm);
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.mixer.addEventListener('finished', (e) => {
       const action = (e as unknown as { action: THREE.AnimationAction }).action;
-      if (action === this.current && this.currentName) this.onMotionEnd?.(this.currentName);
+      if (action !== this.current || !this.currentName) return;
+      if (this.currentName === 'annoying') this.hat?.reset(); // 연타 반응 끝 — 모자를 제자리에
+      this.onMotionEnd?.(this.currentName);
     });
 
     const t1 = perfNow();
@@ -259,7 +272,8 @@ export class StockScene {
   drawNow() {
     if (!this.vrm || !this.mixer) return;
     this.mixer.update(0);
-    this.applyFaces(0);
+    this.updateHat();
+    if (!this.vrmaFaceOn) this.applyFaces(0);
     this.vrm.update(0);
     this.draw();
   }
@@ -283,6 +297,8 @@ export class StockScene {
     const clip = await this.clip(name);
     if (!clip || !this.mixer) return false;
 
+    // 연타 반응이 다른 모션(또는 처음부터 다시)에 끊긴다 — 모자를 제자리에
+    if (this.currentName === 'annoying') this.hat?.reset();
     const action = this.mixer.clipAction(clip);
     const prev = this.current;
     action.reset();
@@ -526,10 +542,34 @@ export class StockScene {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (!this.vrm || !this.mixer) return;
     this.beforeFrame?.(dt);
+    // 표정이 VRMA 안에 있는 모션 — 들어설 때 코드가 켜 둔 표정만 한 번 내리고(모션 표정이 그 위에 온다), 재생 중엔 쓰지 않는다
+    const vrmaFace = this.vrmaFaceOn;
+    if (vrmaFace) this.releaseCodeFaces();
     this.mixer.update(dt);
-    this.applyFaces(dt);
+    this.updateHat(); // mixer.update 다음 · vrm.update 전(hatDrop.ts 사용법)
+    if (!vrmaFace) this.applyFaces(dt);
     this.vrm.update(dt);
     this.draw();
+  }
+
+  /** 지금 재생 중인 모션이 표정을 VRMA 안에 든 것인가 — 끝나서 멈춘 뒤(clamp)는 아니다 */
+  private get vrmaFaceOn(): boolean {
+    const def = this.currentName ? this.motions[this.currentName] : undefined;
+    return !!def?.vrmaFace && !!this.current?.isRunning();
+  }
+
+  /** 코드가 켜 둔 표정을 0으로 — 한 번만(그 뒤 touched 가 비어 아무것도 안 함) */
+  private releaseCodeFaces() {
+    const em = this.vrm?.expressionManager;
+    if (!em || this.touched.size === 0) return;
+    for (const name of this.touched) em.setValue(name, 0);
+    this.touched.clear();
+  }
+
+  /** 연타 반응(annoying) 재생 중이면 모자 — 30fps 프레임 번호로 */
+  private updateHat() {
+    if (!this.hat || this.currentName !== 'annoying' || !this.current?.isRunning()) return;
+    this.hat.update(Math.floor(this.current.time * 30));
   }
 
   private draw() {

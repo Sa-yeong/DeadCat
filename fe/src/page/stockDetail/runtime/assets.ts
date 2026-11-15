@@ -18,6 +18,10 @@ export interface CharacterInfo {
   key: string;
   model: string;
   motions: MotionSet;
+  /** 연타 반응(annoying)이 나오는 탭 수 — 없으면 공용 SPAM_TAPS */
+  spamTaps?: number;
+  /** 연타 반응(annoying) 동안 모자가 떨어졌다 돌아오는 장면(hatDrop.ts) — 모델에 WingedHat 노드가 있는 캐릭터만 */
+  hatDrop?: boolean;
 }
 
 /** 종목 전용 캐릭터 한 명 */
@@ -26,6 +30,8 @@ interface CharacterSpec {
   dir: string;
   /** 공용 모션 중 이 캐릭터만 바꿀 것 — 파일은 dir/motions/ 에서 찾는다 */
   overrides?: MotionTable;
+  spamTaps?: number;
+  hatDrop?: boolean;
 }
 
 /** 종목 코드(대문자) → 전용 캐릭터 */
@@ -37,10 +43,15 @@ export const STOCK_CHARACTERS: Record<string, CharacterSpec> = {
       annoying: { ...MOTIONS.annoying!, face: [{ expr: 'happy', value: 1 }] },
     },
   },
-  // NAVER — 전용 모델(2026-11-15). 전용 모션 · 반응은 도휘가 곧 추가 — 그때 motions/ 에 파일을 두고 아래에 NVDA처럼 적는다
+  // NAVER — 전용 모델(2026-11-15). 5번 클릭 반응 = naver_annoying.vrma(도휘 제작, 30fps 0~109프레임) + 모자 떨어뜨리기(hatDrop.ts).
+  // 표정은 VRMA 안의 키(blink · ou · angry) 그대로 — 코드 표정 없음. 끝나면 유지 모션으로. 나머지 모션은 공용
   '035420': {
     dir: 'characters/stocks/035420/',
-    overrides: {},
+    overrides: {
+      annoying: { file: 'naver_annoying.vrma', loop: false, face: [], vrmaFace: true },
+    },
+    spamTaps: 5,
+    hatDrop: true,
   },
 };
 
@@ -70,7 +81,13 @@ export function characterOf(stockCode: string): CharacterInfo {
   let info = cache.get(code);
   if (!info) {
     const dir = `${BASE}${spec.dir}`;
-    info = { key: code, model: versioned(`${dir}character.vrm`), motions: mergeMotions(COMMON_MOTIONS, spec.overrides ?? {}, `${dir}motions/`) };
+    info = {
+      key: code,
+      model: versioned(`${dir}character.vrm`),
+      motions: mergeMotions(COMMON_MOTIONS, spec.overrides ?? {}, `${dir}motions/`),
+      spamTaps: spec.spamTaps,
+      hatDrop: spec.hatDrop,
+    };
     cache.set(code, info);
   }
   return info;

@@ -56,6 +56,8 @@ export class StockStageLoop {
   private readonly scene: StockScene;
   private hold: Emotion = NEUTRAL;
   private taps: number[] = [];
+  /** 연타 반응이 나오는 탭 수 — 캐릭터마다(assets spamTaps), 없으면 SPAM_TAPS */
+  private spamTaps = SPAM_TAPS;
   private occlusion: Rect[] = [];
   private ready = false;
   /** 차트를 밀었다가 돌아오는 동작. 걷거나 달리는 동안은 감정 모션을 바꾸지 않는다 */
@@ -116,11 +118,12 @@ export class StockStageLoop {
    * 캐릭터 하나(모델 + 그 캐릭터의 모션 표)를 띄운다 — assets.characterOf.
    * 끝나면(= 캔버스를 보여도 될 때) 이미 첫 자리 · 첫 모션으로 한 번 그려 둔 뒤다. 걸어 들어오기는 그때 시작
    */
-  async load(character: { model: string; motions: MotionSet }): Promise<void> {
+  async load(character: { model: string; motions: MotionSet; spamTaps?: number; hatDrop?: boolean }): Promise<void> {
     this.motions = character.motions;
+    this.spamTaps = character.spamTaps ?? SPAM_TAPS;
     const seq = ++this.entrySeq;
     const also = FIRST_MOTIONS.filter((m) => this.motions[m]);
-    await this.scene.load(character.model, character.motions, 'idle', also);
+    await this.scene.load(character.model, character.motions, 'idle', also, { hatDrop: character.hatDrop });
     await this.waitEmotion();
     if (this.disposed || seq !== this.entrySeq) return;
     const walk = await this.begin(seq);
@@ -221,7 +224,7 @@ export class StockStageLoop {
 
     let react: MotionName | null = null;
     const current = this.current.emotion;
-    if (n >= SPAM_TAPS) react = spamReaction(current);
+    if (n >= this.spamTaps) react = spamReaction(current);
     else if (n === 1) react = clickReaction(current);
     if (react && !this.moving && !this.settling) {
       this.queue.length = 0; // 클릭 반응이 먼저 — 걸어오던 단발은 없다(단발 중엔 위에서 막힘)

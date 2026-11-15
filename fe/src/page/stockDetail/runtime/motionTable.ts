@@ -46,6 +46,11 @@ export interface MotionDef {
   fadeOut?: number;
   /** 재생 배속. 1 = 원래 속도, 0.5 = 절반 속도(두 배 길게). 없으면 1 */
   speed?: number;
+  /**
+   * 표정 키가 .vrma 안에 있다 — 재생 중엔 코드가 표정을 쓰지 않는다(face 는 비워 둔다).
+   * 들어설 때 코드가 켜 둔 표정만 한 번 내리고, 끝나면(멈추면) 원래 표정 처리로 돌아간다
+   */
+  vrmaFace?: boolean;
 }
 
 /** 모션 표 — 파일 이름은 폴더(base) 기준 */
