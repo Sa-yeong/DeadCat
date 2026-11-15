@@ -5,6 +5,8 @@ import { api } from '../../api/axios';
 import { MyStockList } from './MyStockList';
 import { ChangeNickModal } from '../../modal/ChangeNickModal';
 import { FollowModal } from '../../modal/Follow';
+import { ChangeProfileModal } from '../../modal/ChangeProfile';
+import { FaS } from 'react-icons/fa6';
 
 interface Me{
     nickname:string;
@@ -68,23 +70,24 @@ function Represent({token, mydata, setMydata}:any){
     const navigate = useNavigate();
     const [isOpenNick, setIsOpenNick] = useState<boolean>(false);
     const [isOpenFollow, setIsOpenFollow] = useState<boolean>(false);
+    const [isOpenProfile, setIsOpenProfile] = useState<boolean>(false);
     const [imgUrl, setImgUrl] = useState<string>(mydata?.profile_img_url);
     const [followeeNum, setFolloweeNum] = useState<number>(mydata?.followee_num);
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    // const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleImageClick = () => {
-        fileInputRef.current?.click();
-    }
+    // const handleImageClick = () => {
+    //     fileInputRef.current?.click();
+    // }
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if(file){
-            setImgUrl(URL.createObjectURL(file));
+    // const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    //     const file = e.target.files?.[0];
+    //     if(file){
+    //         setImgUrl(URL.createObjectURL(file));
             
-            sendProfileImg(file);
-        }
-    }
+    //         sendProfileImg(file);
+    //     }
+    // }
 
     const fetchSharedOption = async (newState: boolean) => {
         try{
@@ -126,9 +129,11 @@ function Represent({token, mydata, setMydata}:any){
     return<>
         <div>
             <div className='left-side'>
-                <img alt='프로필 사진' src={imgUrl} onClick={handleImageClick} />
-                <input type='file' accept='image/*' style={{display: 'none'}}
-                ref={fileInputRef} onChange={handleFileChange} />
+                <img alt='프로필 사진' src={imgUrl ? imgUrl : `/profile/default_1.png`} onClick={() => setIsOpenProfile(true) } />
+                <ChangeProfileModal isOpen={isOpenProfile} onClose={()=>setIsOpenProfile(false)}
+                token={token} setImgUrl={setImgUrl} />
+                {/* <input type='file' accept='image/*' style={{display: 'none'}}
+                ref={fileInputRef} onChange={handleFileChange} /> */}
 
                 <div className='detail'>
                     <div className='nickname'>

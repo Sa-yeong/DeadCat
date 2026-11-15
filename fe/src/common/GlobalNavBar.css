@@ -95,6 +95,7 @@
     height: 16px;
     color: #9a9a93;
     pointer-events: none;
+    align-self: center;
 }
 .globalNav .gnb-search input {
     box-sizing: border-box;
