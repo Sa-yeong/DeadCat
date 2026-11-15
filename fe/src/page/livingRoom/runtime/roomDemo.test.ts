@@ -8,9 +8,9 @@ describe('roomDemoOf — 데모 거실 연출', () => {
     { id: '1', stockCode: '005930' },
   ];
 
-  it('네이버는 제자리 tired, 나머지는 평소대로', () => {
+  it('제자리 모션은 지금 없다 — 모두 평소대로 돌아다닌다(네이버 tired 고정 뺌, 2026-11-16)', () => {
     const d = roomDemoOf(chars);
-    expect([...d.stillIdle]).toEqual([['5', 'tired']]);
+    expect(d.stillIdle.size).toBe(0);
   });
 
   it('켜 두면 엔비디아 ↔ 네이버만 놀리기로 정해 둔다(순서 무관), 엔비디아가 self', () => {
@@ -27,7 +27,6 @@ describe('roomDemoOf — 데모 거실 연출', () => {
     const d = roomDemoOf([{ id: '5', stockCode: '035420' }]);
     d.toggle();
     expect(d.forceMeet('5', '13')).toBeNull();
-    expect(d.stillIdle.get('5')).toBe('tired');
   });
 
   it('꺼져 있으면 정해 둔 만남 없음(원래 규칙) · 켜면 쿨다운 무시 놀리기 · 다시 누르면 꺼짐', () => {

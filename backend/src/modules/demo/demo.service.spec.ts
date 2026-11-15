@@ -32,17 +32,14 @@ describe('데모 계정 판별', () => {
         expect(d.isDemoStock(8n, 'NVDA')).toBe(false);
     });
 
-    it('거실 연출은 DEMO_ROOM_USER_IDS 의 거실에서만 — 네이버만 tired', () => {
+    it('거실 연출 계정 목록 · 고정 감정은 지금 없음(네이버 tired 뺌) — 어느 거실에서도 null', () => {
         process.env.DEMO_USER_IDS = '13,14';
         process.env.DEMO_ROOM_USER_IDS = '13';
         const d = new DemoService();
         expect(d.roomUserIds).toEqual(['13']);
-        expect(d.roomEmotionOf('13', '035420')).toBe('tired');
-        expect(d.roomEmotionOf(13n, '035420')).toBe('tired');
-        expect(d.roomEmotionOf('13', 'NVDA')).toBeNull();
-        expect(d.roomEmotionOf('14', '035420')).toBeNull(); // demo2 거실은 연출 없음
-        expect(d.roomEmotionOf('2', '035420')).toBeNull();
+        expect(d.roomEmotionOf('13', '035420')).toBeNull();
+        expect(d.roomEmotionOf('14', '035420')).toBeNull();
         delete process.env.DEMO_ROOM_USER_IDS;
-        expect(new DemoService().roomEmotionOf('13', '035420')).toBeNull(); // 비우면 꺼짐
+        expect(new DemoService().roomUserIds).toEqual([]);
     });
 });

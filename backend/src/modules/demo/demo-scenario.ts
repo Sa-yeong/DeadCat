@@ -65,6 +65,5 @@ export const DEMO_SCENARIOS: Record<string, DemoScenario> & {
  * 네이버 tired = 우울해 가만히 있는 상황 — 거실 화면이 제자리 tired 모션을 걸고, 엔비디아가 만나면 늘 놀린다
  * (fe/src/page/livingRoom/runtime/roomDemo.ts). 끄려면 줄을 지운다
  */
-export const DEMO_ROOM_EMOTIONS: Readonly<Record<string, 'tired'>> = {
-    '035420': 'tired',
-};
+// 2026-11-16 비움 — 네이버가 늘 엎어져 있어서(도휘). 놀리기 트리거는 감정과 상관없이 동작한다. 다시 쓰려면 '035420': 'tired'
+export const DEMO_ROOM_EMOTIONS: Readonly<Record<string, 'tired'>> = {};
