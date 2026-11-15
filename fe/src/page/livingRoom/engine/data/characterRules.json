@@ -38,7 +38,7 @@
         "priority":50,
         "effect":[
             {"weight": 6, "self": "cheer_up", "other": "tired"},
-            {"weight": 4, "self": "tease", "other": "tired"}
+            {"weight": 4, "self": ["tease_find", "tease"], "other": "tired"}
         ],
         "group": {"focus": "other"},
         "cooldownMs": 15000,

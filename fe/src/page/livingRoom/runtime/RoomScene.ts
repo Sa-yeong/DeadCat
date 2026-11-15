@@ -15,7 +15,7 @@ import { CHAR } from './characterSize';
 import { Swing } from './swing';
 import { ROOM_ASSETS } from './roomAssets';
 import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
-import { SLOT_MACHINE } from '../furnitureCatalog';
+import { SLOT_MACHINE, SOFA_2SEAT } from '../furnitureCatalog';
 import { CHIBI_FACE, stepFaceLevels, type EmotionName, type FaceLevels } from '../../stockDetail/runtime/motionTable';
 
 /**
@@ -76,6 +76,14 @@ const MOTION_URL = (clip: string) => `${import.meta.env.BASE_URL}characters/chib
  * 놓자마자 모션이 시작돼야 레버 타이밍(HUD 가 놓은 순간부터 잰다)이 맞는다. motions.json 의 이름을 바꾸면 여기도
  */
 const SLOT_MOTION_CLIP = 'play_slot';
+/** 소파 앉기 모션 파일(motions.json sit_sofa 의 clip) — 소파 모델을 세울 때 미리 받아 둔다 */
+const SOFA_MOTION_CLIP = 'play_sofa';
+/**
+ * 모션 파일마다 몸 높이 보정(칸, 음수 = 내림) — 골반을 선 높이에 둔 채 만든 모션은 몸이 떠 있어서, 틀 때만 바닥에 닿게 내린다.
+ * char_chibi_2 에 걸어 가장 낮은 곳(무릎 · 손)을 잰 값. 모션 파일을 바꾸면 다시 잴 것 (2026-11-14)
+ *   tired  엎드려 지친 자세 — 가장 낮은 곳이 바닥에서 0.43칸 떠 있다
+ */
+const CLIP_GROUND: Record<string, number> = { tired: -0.43 };
 
 /** 엔진 요청 하나 — 몇 번째 단계를 틀고 있는지, 끝나면 부를 것 */
 interface EngineRun {
@@ -298,6 +306,11 @@ interface CharNode {
   yaw: number;
   selected: boolean;
   lifted: boolean;
+  /** 앉기 높이(칸) — 엔진 모션 중에만 건다(setSeatLift). seatNow 는 지금 높이 — 동작이 섞이는 동안 따라간다 */
+  seatLift: number;
+  seatNow: number;
+  /** 앉기 높이가 1초에 움직이는 양 — 들어갈 때 · 나올 때 둘 다 섞이는 시간(POSE_FADE_S) 안에 닿게 */
+  seatRate: number;
   /** 배치 모드 — 그림자까지 통째로 숨긴다 */
   hidden: boolean;
   outlined: boolean;
@@ -710,6 +723,7 @@ export class RoomScene implements RoomRenderer {
     f.group.add(holder);
     f.model = { scale, rig, height };
     if (def.engineName === SLOT_MACHINE) void this.motionFile(SLOT_MOTION_CLIP); // 놓자마자 모션이 시작되게 미리 받아 둔다
+    if (def.engineName === SOFA_2SEAT) void this.motionFile(SOFA_MOTION_CLIP);
     if (this.highlighted === placementId) this.highlightFurniture(placementId);
     if (this.dropTarget?.kind === 'furniture' && this.dropTarget.placementId === placementId) this.applyDropTarget();
     this.invalidate();
@@ -986,7 +1000,7 @@ export class RoomScene implements RoomRenderer {
     const c: CharNode = {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
-      selected: false, lifted: false, hidden: false, outlined: false,
+      selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1497,6 +1511,19 @@ export class RoomScene implements RoomRenderer {
       c.mixer.update(dt);
     }
     // 대롱대롱 → 골반 맞추기 → 흔들림(spring bone) 순서 — 골반을 먼저 맞춰야 머리카락이 매 프레임 튀지 않는다
+    // 몸 높이 — 소파 앉기(seatLift) + 모션 파일별 보정(CLIP_GROUND). 엔진 모션이 실제로 돌 때만(파일을 받는 중엔 서 있는 채로),
+    // 동작이 섞이는 시간(POSE_FADE_S) 동안 따라간다
+    if (c.lifted) c.seatNow = 0;
+    else {
+      const run = c.engine?.action ? c.engine : null;
+      const clip = run ? run.steps[run.actionStep]?.clip : null;
+      const ground = clip ? (CLIP_GROUND[clip] ?? 0) : 0;
+      if (ground !== 0) c.seatRate = Math.max(c.seatRate, Math.abs(ground) / POSE_FADE_S);
+      const want = (c.seatLift !== 0 && run ? c.seatLift : 0) + ground;
+      const step = c.seatRate * dt;
+      c.seatNow = Math.abs(want - c.seatNow) <= step ? want : c.seatNow + Math.sign(want - c.seatNow) * step;
+      c.figure.position.y = c.seatNow;
+    }
     const swung = c.lifted ? this.applySwing(c, dt) : [];
     if (c.lifted) this.pinGrab(c);
     this.applyFace(c, dt); // vrm.update 가 표정 값을 모델에 옮긴다 — 그 전에
@@ -1539,6 +1566,14 @@ export class RoomScene implements RoomRenderer {
       c.yaw = c.heading;
       c.holder.rotation.y = c.yaw;
     }
+    this.invalidate();
+  }
+
+  setSeatLift(charId: string, lift: number): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    c.seatRate = Math.max(Math.abs(lift), Math.abs(c.seatNow), Math.abs(c.seatLift)) / POSE_FADE_S;
+    c.seatLift = lift;
     this.invalidate();
   }
 
@@ -1632,7 +1667,7 @@ export class RoomScene implements RoomRenderer {
     c.group.position.copy(v3(c.pos.x, c.pos.y));
     // 들린 VRM 은 매 프레임 골반을 맞춘다(pinGrab) — 여기서 되돌리면 머리카락이 출렁인다
     if (!(c.lifted && c.vrm)) {
-      c.figure.position.set(0, c.lifted ? CHAR.lift : 0, 0);
+      c.figure.position.set(0, c.lifted ? CHAR.lift : c.seatNow, 0);
       c.figure.quaternion.identity(); // 대롱대롱 기울기도 내려놓으면 0
       c.swing.reset();
     }

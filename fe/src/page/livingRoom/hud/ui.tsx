@@ -66,21 +66,21 @@ const missingPictures = new Set<string>();
  * 그림 파일(아이템 · 가구) — 파일이 없거나 못 불러오면 fallback(지금까지 쓰던 아이콘)을 그린다.
  * 끌 수 있는 칸 안에 들어가므로 그림 자체는 끌리지 않게(칸의 끌기 데이터를 가로채지 않게)
  */
-export function Picture({ src, size, fallback }: { src: string; size: number; fallback: ReactNode }) {
+export function Picture({ src, size, fallback, fill }: { src: string; size: number; fallback: ReactNode; /** 칸을 꽉 채운다(부모 크기를 따름) — size 는 대체 아이콘에만 쓰임 */ fill?: boolean }) {
   const [, setMissing] = useState(false);
   if (missingPictures.has(src)) return <>{fallback}</>;
   return (
     <img
       src={src}
       alt=""
-      width={size}
-      height={size}
+      width={fill ? undefined : size}
+      height={fill ? undefined : size}
       draggable={false}
       onError={() => {
         missingPictures.add(src);
         setMissing(true);
       }}
-      style={{ display: 'block', objectFit: 'contain', pointerEvents: 'none' }}
+      style={{ display: 'block', objectFit: 'contain', pointerEvents: 'none', ...(fill ? { width: '100%', height: '100%' } : null) }}
     />
   );
 }

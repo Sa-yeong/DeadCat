@@ -614,6 +614,46 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
     });
   });
 
+  describe('놀리기 — 둘이 마주 보는 모션 (2026-11-14 PAIR_GAP)', () => {
+    it('놀리는 쪽이 상대에게서 2.5칸 떨어진 자리로 옮겨 선다 — 상대 쪽에서 보던 방향 그대로', () => {
+      const t = room([], ['happy', 'tired']);
+      t.drop('1', { x: 10, y: 10 });
+      t.drop('2', { x: 11, y: 10 });
+      t.loop.labPlay('1', ['tease_find', 'tease'], { id: '2', names: ['tired'] });
+      const a = t.at.get('1')!;
+      const b = t.at.get('2')!;
+      expect(b).toEqual({ x: 11, y: 10 });
+      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeCloseTo(2.5, 5);
+      expect(a.x).toBeCloseTo(8.5, 5); // 1 은 2 의 왼쪽에 있었다
+      expect(t.playsOf('1')).toEqual([]); // 엔진을 거치지 않는다(모션 실험)
+    });
+  });
+
+  describe('소파 앉기 (2026-11-14 sit_sofa · play_sofa.vrma)', () => {
+    it('기쁨 · 슬픔으로 소파에 놓으면 sit_sofa — 좌석 가운데(등받이에 엉덩이가 닿는 자리)에 소파 정면을 보고 앉는다, 돌려 놓아도', () => {
+      for (const rotation of [0, 90, 180, 270]) {
+        for (const emotion of ['happy', 'sad'] as Emotion[]) {
+          const t = room([pl(14, SOFA, 15, 15, rotation)], [emotion]);
+          t.drop('1', { x: 15, y: 15 });
+          expect(t.playsOf('1')).toEqual([['sit_sofa']]);
+          const f = footprint(FURNITURE_CATALOG.find((d) => d.furnitureId === SOFA)!, { x: 15, y: 15 }, rotation);
+          const r = (rotation * Math.PI) / 180;
+          const along = -0.47 + 0.327 + 0.03;
+          const got = t.at.get('1')!;
+          expect(got.x).toBeCloseTo((f.x0 + f.x1) / 2 - Math.sin(r) * along, 5);
+          expect(got.y).toBeCloseTo((f.y0 + f.y1) / 2 + Math.cos(r) * along, 5);
+        }
+      }
+    });
+
+    it('앉기가 아닌 소파 모션(피곤 lie_down 등)은 놓은 자리 그대로', () => {
+      const t = room([pl(14, SOFA)], ['tired']);
+      t.drop('1', { x: 15.2, y: 15.3 });
+      expect(t.playsOf('1')[0][0]).not.toBe('sit_sofa');
+      expect(t.at.get('1')).toEqual({ x: 15.2, y: 15.3 });
+    });
+  });
+
   describe('슬롯머신 뽑기 알리기 (마무리 M-4)', () => {
     it('캐릭터를 끌어 슬롯머신에 놓으면 뽑기 시도는 바로, 엔진(play_slot)은 앞 자리에 서서 뜸을 들인 뒤 — 단계(29 · 30 · 31) 모두', () => {
       for (const id of [29, 30, 31]) {

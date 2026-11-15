@@ -34,6 +34,8 @@ const MOTION_LABEL: Record<string, string> = {
   use_computer: '컴퓨터 하기',
   play_piano: '피아노 치기',
   play_slot: '슬롯머신 하기',
+  sit_sofa: '소파에 앉기',
+  tease_find: '놀릴 거리 발견',
   avoid: '비켜 가기',
   pass_by: '지나치기',
   ignore: '무시하기',

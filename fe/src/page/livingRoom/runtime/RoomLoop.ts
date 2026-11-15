@@ -1,4 +1,4 @@
-import { SLOT_MACHINE } from '../furnitureCatalog';
+import { SLOT_MACHINE, SOFA_2SEAT } from '../furnitureCatalog';
 import { charIdOf, type InteractionMode, type PlacementDto, type RoomCharacterDto, type RoomSnapshot, type SlotTimer } from '../types';
 import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
 import type { CharacterEngine, Emotion, EngineCommand, EngineFactory } from './CharacterEngine';
@@ -22,6 +22,33 @@ import type { MotionTable } from './roomEngine';
  * 캐릭터는 슬롯머신 정면을 마주 본다 — 레버가 오른손 쪽
  */
 const SLOT_STAND = { front: 1.327, side: -0.103 };
+/**
+ * 소파 좌석 — 소파 모델에서 잰 값(모델 좌표 = 칸, 모델 가운데 기준). 2026-11-14
+ *   y     좌석 윗면 높이
+ *   back  등받이 앞면(좌석이 시작되는 곳) — 뒤쪽이 −
+ * 모델이 없는 소파(14 · 20, 지금은 상자)는 노말 소파 값으로 둔다 — 모델이 생기면 재서 넣을 것
+ */
+const SOFA_SEATS: Record<number, { y: number; back: number }> = {
+  2: { y: 0.47, back: -0.47 },
+  8: { y: 0.39, back: -0.375 },
+};
+const SOFA_SEAT_DEFAULT = SOFA_SEATS[2];
+/**
+ * play_sofa.vrma 앉은 자세(캐릭터 발 원점 기준, 칸) — char_chibi_2 에 걸어 잰 값. 모션을 바꾸면 다시 잴 것
+ *   buttY     엉덩이 아랫면 높이
+ *   buttBack  엉덩이 뒷면 — 뒤쪽이 −
+ */
+const SIT_POSE = { buttY: 0.667, buttBack: -0.327 };
+/** 엉덩이 뒷면과 등받이 사이 틈(칸) — 등이 등받이에 파묻히지 않게 */
+const SOFA_BACK_GAP = 0.03;
+/**
+ * 둘이 마주 보고 하는 모션 — 첫 단계 이름 → 두 캐릭터 발 사이 거리(칸). 이 모션을 받은 쪽이 상대(마주친 캐릭터) 앞으로 옮겨 서고 서로 마주 본다.
+ * 놀리기(2026-11-14 도휘): 너무 붙지 않게 사이에 캐릭터 1.5명이 들어갈 만큼 — 캐릭터 몸 폭이 약 1칸이라 발 사이 2.5칸
+ */
+const PAIR_GAP: Record<string, number> = { tease_find: 2.5 };
+/** 앉는 소파 모션 이름(motions.json) */
+const SIT_SOFA = 'sit_sofa';
+
 /** 슬롯머신 앞에 세운 뒤 모션까지 뜸(초) — 모션이 휙 나가지 않게 (2026-11-14 도휘 — 0.5 → 0.75초) */
 const SLOT_PAUSE_S = 0.75;
 
@@ -135,6 +162,8 @@ export class RoomLoop {
   private raf = 0;
   private last = 0;
   private fieldTimer = 0;
+  /** 소파에 앉아 있는(앉기 높이를 건) 캐릭터 */
+  private readonly seated = new Set<string>();
   /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
   private readonly slotWaits = new Map<string, SlotWait>();
 
@@ -467,9 +496,11 @@ export class RoomLoop {
       case 'play': {
         if (h.lifted) return;
         this.dropSlotWait(h); // 뜸을 들이던 중 다른 명령이 오면 슬롯머신은 그만둔다
+        this.unseat(h); // 앉아 있다 다른 명령이 오면 일어선다(새 명령이 앉기면 sitOnSofa 가 다시 앉힌다)
         const run: ActRun = { steps: cmd.steps, i: -1 };
         h.run = run; // 앞 명령은 여기서 끝 — 끝 신호 없이(렌더러도 새 play 가 앞 요청을 밀어낸다)
         this.nextStep(h, run);
+        this.facePartner(h, cmd.steps);
       }
     }
   }
@@ -486,6 +517,7 @@ export class RoomLoop {
     run.i++;
     h.away = false;
     if (run.i >= run.steps.length) {
+      this.unseat(h);
       h.run = null;
       h.acting = false;
       const last = run.steps.at(-1);
@@ -529,6 +561,7 @@ export class RoomLoop {
 
   /** 엔진 모션을 멈추고 다시 걷게 한다 — 끝 신호는 없다 */
   private stopActing(h: CharacterHandle): void {
+    this.unseat(h);
     h.run = null;
     h.away = false;
     h.acting = false;
@@ -641,6 +674,7 @@ export class RoomLoop {
     const h = this.handles.get(charId);
     if (!h) return;
     this.dropSlotWait(h);
+    this.unseat(h);
     h.lifted = true;
     h.path = [];
     h.held = false;
@@ -732,6 +766,10 @@ export class RoomLoop {
         return;
       }
       this.engine.visitFurniture(charId, target.placementId);
+      // 소파에 앉기 모션이 시작됐으면 좌석 가운데에 바로 세워 앉힌다(2026-11-14 도휘)
+      if (this.engineFurniture.get(target.placementId) === SOFA_2SEAT && h.acting && h.run?.steps.some((s) => s.name === SIT_SOFA)) {
+        this.sitOnSofa(h, target.placementId);
+      }
       // 슬롯머신에 직접 끌어다 놓았을 때만 뽑기 시도(M-4) — 엔진이 반응하든 말든(쿨다운 · 감정 대기) 알린다. 캐릭터 동작은 엔진 play_slot 그대로
       if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE) this.events.onSlotDrop?.(charId, target.placementId);
       return;
@@ -758,6 +796,111 @@ export class RoomLoop {
     this.renderer.face?.(h.id, { x: -front.x, y: -front.y }, true);
     this.slotWaits.set(h.id, { placementId, wait: SLOT_PAUSE_S });
     return true;
+  }
+
+  /**
+   * 소파 좌석 가운데에 세워 소파 정면을 보게 하고, 엉덩이가 좌석 윗면에 닿도록 몸 높이를 맞춘다.
+   * 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y). 앞뒤 자리는 엉덩이 뒷면이 등받이 앞면에 닿게
+   */
+  private sitOnSofa(h: CharacterHandle, placementId: number): void {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    const def = p && this.furniture.def(p.furnitureId);
+    if (!p || !def) return;
+    const seat = SOFA_SEATS[p.furnitureId] ?? SOFA_SEAT_DEFAULT;
+    const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+    const r = (p.rotation * Math.PI) / 180;
+    const front = { x: -Math.sin(r), y: Math.cos(r) };
+    const along = seat.back - SIT_POSE.buttBack + SOFA_BACK_GAP;
+    const spot = { x: (f.x0 + f.x1) / 2 + front.x * along, y: (f.y0 + f.y1) / 2 + front.y * along };
+    h.position = spot;
+    h.path = [];
+    this.renderer.move(h.id, spot);
+    this.renderer.face?.(h.id, front, true);
+    this.renderer.setSeatLift?.(h.id, seat.y - SIT_POSE.buttY);
+    this.seated.add(h.id);
+  }
+
+  /**
+   * 둘이 하는 모션(PAIR_GAP)이면 마주친 상대 앞 정해진 거리로 옮겨 서고 서로 마주 본다 — 상대 쪽에서 보던 방향은 그대로 두고 거리만 맞춘다.
+   * 그 자리가 가구 · 벽이면 상대 둘레를 30°씩 돌며 빈 자리를 찾고, 없으면 제자리에서 마주 보기만 한다
+   */
+  private facePartner(h: CharacterHandle, steps: readonly { name: string }[]): void {
+    const gap = steps[0] ? PAIR_GAP[steps[0].name] : undefined;
+    const o = gap !== undefined && h.metWith ? this.handles.get(h.metWith) : undefined;
+    if (gap === undefined || !o || o.lifted) return;
+    const dx = h.position.x - o.position.x;
+    const dy = h.position.y - o.position.y;
+    const base = dx * dx + dy * dy > 1e-6 ? Math.atan2(dy, dx) : 0;
+    for (let k = 0; k < 12; k++) {
+      const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6);
+      const spot = { x: o.position.x + Math.cos(a) * gap, y: o.position.y + Math.sin(a) * gap };
+      if (!this.grid.freeAt(spot)) continue;
+      h.position = spot;
+      h.path = [];
+      this.renderer.move(h.id, spot);
+      break;
+    }
+    const to = { x: o.position.x - h.position.x, y: o.position.y - h.position.y };
+    this.renderer.face?.(h.id, to, true);
+    this.renderer.face?.(o.id, { x: -to.x, y: -to.y }, true);
+    o.path = [];
+  }
+
+  /* ── 모션 실험(?lab) — 주가와 상관없이 원할 때 모션을 본다. 실제 서비스엔 쓰지 않는다 ── */
+
+  /**
+   * 엔진을 거치지 않고 바로 튼다 — names 를 차례로(마지막만 반복 여부를 따른다). partner 가 있으면 둘이 마주친 것으로 보고
+   * 상대에게 partnerNames 를 먼저 틀어 둔다(둘이 하는 모션은 자리 · 방향을 맞춘다)
+   */
+  labPlay(id: string, names: string[], partner?: { id: string; names: string[] }): void {
+    const h = this.handles.get(id);
+    if (!h || names.length === 0) return;
+    const steps = (list: string[]) =>
+      list.map((name, i) => ({ name, kind: 'clip' as const, loop: i === list.length - 1 && this.motions.loopOf(name) }));
+    this.engine.interrupt(id);
+    const o = partner && partner.id !== id ? this.handles.get(partner.id) : undefined;
+    if (o && partner) {
+      this.engine.interrupt(o.id);
+      h.metWith = o.id;
+      o.metWith = h.id;
+      if (partner.names.length) this.onCommand({ type: 'play', characterId: o.id, steps: steps(partner.names) });
+    }
+    this.onCommand({ type: 'play', characterId: id, steps: steps(names) });
+  }
+
+  /** 하던 모션을 멈춘다 */
+  labStop(id: string): void {
+    const h = this.handles.get(id);
+    if (!h) return;
+    this.engine.interrupt(id);
+    this.stopActing(h);
+  }
+
+  /** 둘을 붙여 세우고 마주친 것으로 엔진에 알린다 — 무엇을 할지는 엔진이 감정 · 규칙(확률 포함)대로 고른다. 쿨다운 중이면 아무 일도 없다 */
+  labMeet(a: string, b: string): void {
+    const A = this.handles.get(a);
+    const B = this.handles.get(b);
+    if (!A || !B || a === b) return;
+    for (const h of [A, B]) {
+      this.engine.interrupt(h.id);
+      this.stopActing(h);
+      h.path = [];
+    }
+    for (let k = 0; k < 8; k++) {
+      const ang = (k * Math.PI) / 4;
+      const spot = { x: A.position.x + Math.cos(ang) * 1.2, y: A.position.y + Math.sin(ang) * 1.2 };
+      if (!this.grid.freeAt(spot)) continue;
+      B.position = spot;
+      this.renderer.move(B.id, spot);
+      break;
+    }
+    this.onFieldEnter(a, b);
+  }
+
+  /** 앉기를 푼다 — 모션이 끝났거나 멈췄거나 다시 들었다 */
+  private unseat(h: CharacterHandle): void {
+    if (!this.seated.delete(h.id)) return;
+    this.renderer.setSeatLift?.(h.id, 0);
   }
 
   /** 슬롯머신 앞에서 뜸을 들이는 중 — 다 되면 엔진에 알린다 */

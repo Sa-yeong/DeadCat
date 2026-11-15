@@ -6,6 +6,8 @@ import { FURNITURE_CATALOG } from './furnitureCatalog';
 import { CameraMode } from './hud/CameraMode';
 import { autoFrame } from './hud/cameraFrame';
 import { DebugLabels } from './hud/DebugLabels';
+import { MotionLab } from './hud/MotionLab';
+import { LabFeed } from './runtime/LabFeed';
 import { ITEM_MIME } from './hud/dnd';
 import { LoginPrompt } from './hud/LoginPrompt';
 import { RoomHud, type RoomHudApi } from './hud/RoomHud';
@@ -33,6 +35,8 @@ interface Runtime {
   reactionKinds: ReactionKind[];
   /** 감정 피드 — 내 거실은 거실 조합이 바뀌면 다시 잇는다(1-5 B). 비공개 거실은 열지 않아 null */
   feed: RoomFeed | null;
+  /** 모션 실험(?lab) — 감정 덮어쓰기. 아니면 null */
+  lab: LabFeed | null;
 }
 
 /** 버튼 줌 애니메이션을 멈춘다 — 휠·끌기·슬라이더가 끼어들면 그쪽이 이긴다 */
@@ -71,13 +75,15 @@ export function LivingRoomPage() {
   const { search, key } = useLocation();
   const params = new URLSearchParams(search);
   const use3d = params.get('r') !== '2d';
-  const debug = params.get('debug') === 'motion';
+  // 모션 실험(?lab, 2026-11-14) — 감정 덮어쓰기 · 모션 바로 틀기 패널. 개발 모드 글자도 같이 켠다
+  const lab = params.has('lab');
+  const debug = params.get('debug') === 'motion' || lab;
   // 다른 거실로 옮겨 가면 통째로 새로 만든다 — 이전 거실의 런타임·패널 상태를 끌고 가지 않게.
   // 같은 주소로 다시 들어와도(로그인 창에서 로그인하면 지금 주소로 돌아온다) 새로 — 비로그인으로 받은 거실을 토큰으로 다시 받는다
-  return <RoomView key={`${userId ?? 'me'}|${use3d}|${debug}|${key}`} userId={userId} use3d={use3d} debug={debug} />;
+  return <RoomView key={`${userId ?? 'me'}|${use3d}|${debug}|${lab}|${key}`} userId={userId} use3d={use3d} debug={debug} lab={lab} />;
 }
 
-function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d: boolean; debug: boolean }) {
+function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; use3d: boolean; debug: boolean; lab: boolean }) {
   const navigate = useNavigate();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -159,10 +165,12 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
             if (status === 401) setNeedLogin(true); // 내 거실 — 로그인이 풀렸다
             else console.warn(`[거실 스트림] ${status} — 다시 잇지 않습니다`); // 남의 거실 — 그 사이 비공개로 바뀌었거나 없어졌다
           });
-      const createEngine: EngineFactory = feed
+      const labFeed = lab ? new LabFeed(feed) : null;
+      const engineFeed = labFeed ?? feed;
+      const createEngine: EngineFactory = engineFeed
         ? (onCommand) =>
             createRoomEngine({
-              feed,
+              feed: engineFeed,
               onCommand,
               log: debug ? (line) => console.log(`[엔진] ${line}`) : undefined,
               labelOf: (id) => characters.def(id)?.stockName,
@@ -191,7 +199,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
       thumbRef.current = snap.mode === 'OWNER' ? (snap.roomThumbnail ?? null) : null;
       setSnapshot(snap);
       setHoldings(owned);
-      setRt({ loop, renderer, characters, furniture, reactionKinds, feed });
+      setRt({ loop, renderer, characters, furniture, reactionKinds, feed, lab: labFeed });
     })().catch((e: unknown) => {
       if (!alive) return;
       if (e instanceof api.AuthRequiredError) {
@@ -518,6 +526,7 @@ function RoomView({ userId, use3d, debug }: { userId: string | undefined; use3d:
         />
       )}
       {!camera && debug && rt && !isPrivate && <DebugLabels loop={rt.loop} />}
+      {!camera && rt?.lab && <MotionLab loop={rt.loop} feed={rt.lab} nameOf={(id) => rt.characters.def(id)?.stockName ?? id} />}
       {!camera && snapshot && rt && !isPrivate && (
         // 오른쪽 창이 열리면 그 왼쪽으로 비켜난다
         <ZoomControl z={fitted.z} right={sideOpen ? L.panel.width + 24 : 12} top={L.zoomTop} onZoom={zoomTo} onStep={zoomStep} />

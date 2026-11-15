@@ -34,7 +34,8 @@ it('쿨다운 중이면 null', () => {
 it('weight 6:4 선택 (basic_meet_tired)', () => {
     const tired = { id: 't', emotion: 'tired' as const }
     expect(matchCharacter(happy, tired, ctxChar({ random: () => 0.5 }))?.effect.self).toEqual(['cheer_up'])
-    expect(matchCharacter(happy, tired, ctxChar({ random: () => 0.7 }))?.effect.self).toEqual(['tease'])
+    // 놀리기는 발견(한 번) → 웃기(반복) 두 단계 (2026-11-14 도휘 teasing.vrma)
+    expect(matchCharacter(happy, tired, ctxChar({ random: () => 0.7 }))?.effect.self).toEqual(['tease_find', 'tease'])
 })
 
 const ctxFur = (over = {}): MatchContext => ({ rules: ruleSet, isOnCooldown: () => false, random: () => 0, ...over })

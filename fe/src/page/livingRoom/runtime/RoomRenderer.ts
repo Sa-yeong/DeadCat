@@ -126,6 +126,11 @@ export interface RoomRenderer {
   pullLever?(placementId: number, delayS?: number): boolean;
   /** 캐릭터가 dir 쪽(방 좌표)을 보도록 돈다 — 걸을 때처럼 부드럽게, snap 이면 바로(3D 만). 슬롯머신 앞에 세울 때 (2026-11-14) */
   face?(charId: string, dir: Pt, snap?: boolean): void;
+  /**
+   * 엔진 모션을 트는 동안 몸 전체를 lift 칸 올린다(음수면 내림) — 소파에 앉을 때 엉덩이를 좌석 높이에 맞춘다(3D 만, 2026-11-14).
+   * 모션이 실제로 돌 때만 걸리고, 들어가고 나올 때 동작이 섞이는 시간 동안 서서히 옮겨 간다. 0 이면 풀기
+   */
+  setSeatLift?(charId: string, lift: number): void;
   /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
   whenSettled?(): Promise<void>;
   dispose(): void;

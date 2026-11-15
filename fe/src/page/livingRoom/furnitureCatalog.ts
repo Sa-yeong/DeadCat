@@ -21,6 +21,8 @@ const carpet = (color: string, border: string): Colors => [color, border, ''];
 
 const DESK = 'desk_small';
 const SOFA = 'sofa_2seat';
+/** 소파의 엔진 이름 — 앉기 모션(sit_sofa)을 틀면 좌석 가운데에 세운다(RoomLoop.sitOnSofa) */
+export const SOFA_2SEAT = SOFA;
 /** 슬롯머신의 엔진 이름 — 캐릭터를 끌어 놓으면 뽑기(RoomLoop.onDragEnd), 위에 타이머(hud/SlotMachine) */
 export const SLOT_MACHINE = 'slot_machine';
 

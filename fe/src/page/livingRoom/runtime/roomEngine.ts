@@ -46,6 +46,17 @@ export class MotionTable {
     const d = this.defs.get(name);
     return d?.kind === 'behavior' ? d.behavior : null;
   }
+
+  /** 반복 모션인가 — 모션 실험(?lab)이 엔진 없이 단계를 만들 때 */
+  loopOf(name: string): boolean {
+    const d = this.defs.get(name);
+    return d?.kind === 'clip' && d.loop === true;
+  }
+
+  /** 파일이 있는 모션 이름 전부 — 모션 실험 목록 */
+  get clipNames(): string[] {
+    return [...this.defs.entries()].flatMap(([name, d]) => (d.kind === 'clip' && d.clip ? [name] : []));
+  }
 }
 
 export const ROOM_MOTIONS = new MotionTable(ROOM_RULES.motions);
