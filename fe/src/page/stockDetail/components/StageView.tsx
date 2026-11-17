@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { slideTransition, useLayout, useSliding } from '../layout';
-import { FloorGrid } from './FloorGrid';
 import characterFront from '../character-front.png';
 import { R } from '../radius';
 
@@ -139,8 +138,7 @@ export function StageView({
 }) {
   return (
     <>
-      {/* 3D가 준비되면 바닥도 3D 씬이 그린다 — 그림 격자는 그 전·실패 시에만 */}
-      {!live && <FloorGrid />}
+      {/* 바닥 격자는 그리지 않는다(2026-11-17 도휘) — 3D 쪽도 SHOW_STAGE_ENV 로 꺼 둠. 그림 격자는 FloorGrid.tsx 에 남겨 둠 */}
       {scene}
       <CoverFilm frosted={live} windowOpen={windowOpen} />
       {/* 캐릭터 그림은 실패했을 때만 — 로딩 중에는 비워 두고 3D가 준비되면 등장한다 */}
