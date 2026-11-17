@@ -13,7 +13,6 @@ export class StockDetailResponseDto {
     change_price_krw: number | null; // 전일 대비 금액 원화. 모르면 null
     market: string;
     is_favorite: boolean;
-    is_event: boolean;
     tick_rule: TickRule;
     market_open: boolean; // 지금 거래할 수 있는가 — 해외는 네 장 중 하나라도 열려 있으면 true
     market_session: ForeignSession | null; // 해외 — 지금 열린 장, 국내는 null
@@ -29,7 +28,6 @@ export class StockDetailResponseDto {
         change_price_krw: number | null;
         market: string;
         is_favorite: boolean;
-        is_event: boolean;
         tick_rule: TickRule;
         market_open: boolean;
         market_session: ForeignSession | null;
@@ -44,7 +42,6 @@ export class StockDetailResponseDto {
         this.change_price_krw = data.change_price_krw;
         this.market = data.market;
         this.is_favorite = data.is_favorite;
-        this.is_event = data.is_event;
         this.tick_rule = data.tick_rule;
         this.market_open = data.market_open;
         this.market_session = data.market_session;

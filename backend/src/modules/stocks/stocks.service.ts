@@ -207,7 +207,6 @@ export class StocksService {
             change_price_krw: quote?.change_price_krw ?? null,
             market: meta.stock_type,
             is_favorite: isFavorite,
-            is_event: meta.is_event,
             tick_rule: tickRuleOf(foreign, meta.categories?.name),
             market_open:
                 demo || this.marketTime.isTradingOpen(marketOf(foreign)),
