@@ -90,6 +90,9 @@ interface FaceLayer {
   until?: number;
 }
 
+/** 캐릭터 뒤 3D 공간(격자 바닥 · 지평선 안개)을 그릴지 — 2026-11-17 끔 */
+const SHOW_STAGE_ENV = false;
+
 /** 망원에 가까운 화각 — 원근 왜곡이 적어 정면 일러스트와 비슷하게 보인다 */
 const FOV = 20;
 
@@ -178,6 +181,8 @@ export class StockScene {
     this.scene.add(dir);
 
     this.scene.add(this.env.group);
+    // 2026-11-17 도휘: 격자 바닥 · 지평선 안개를 끄고 본다(차트 가시성). 다시 켜려면 true
+    this.env.group.visible = SHOW_STAGE_ENV;
 
     this.loader = new GLTFLoader();
     this.loader.register((p) => new VRMLoaderPlugin(p));
