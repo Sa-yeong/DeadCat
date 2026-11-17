@@ -5,9 +5,10 @@ import { FarewellsService } from './farewells.service';
 import { RoomThumbnailService } from './room-thumbnail.service';
 import { PrismaModule } from 'src/providers/database/prisma.module';
 import { HoldingModule } from '../holding/holding.module';
+import { AssetModule } from '../asset/asset.module';
 
 @Module({
-    imports: [PrismaModule, HoldingModule],
+    imports: [PrismaModule, HoldingModule, AssetModule],
     controllers: [RoomsController],
     providers: [RoomsService, FarewellsService, RoomThumbnailService],
     exports: [RoomsService],

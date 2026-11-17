@@ -29,12 +29,14 @@ import {
     findViewableRoomOwner,
     parseUserIdParam,
 } from 'src/common/rooms/room-access';
+import { AssetService } from '../asset/asset.service';
 
 @Injectable()
 export class RoomsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly holdingService: HoldingService,
+        private readonly assertService: AssetService,
     ) {}
 
     // GET /rooms/me — 내 거실 (지시서 3-①)
@@ -339,18 +341,9 @@ export class RoomsService {
         );
 
         // 거실 수익률 = 세운 캐릭터의 평가손익 합 ÷ 매입금 합 (소수 둘째 자리 버림 — /holdings와 같은 방식)
-        let profitSum = 0n;
-        let purchaseSum = 0n;
-        for (const h of placedHoldings) {
-            const row = holdingByStock.get(String(h.stock_id));
-            if (!row) continue;
-            profitSum += BigInt(row.valuation_profit);
-            purchaseSum += BigInt(row.purchase_price) * BigInt(row.quantity);
-        }
-        const roomReturnRate =
-            purchaseSum > 0n
-                ? Number((profitSum * 10000n) / purchaseSum) / 100
-                : 0;
+        // assertService의 getMyAssetInfo() 함수 사용
+        const userAssetInfo = this.assertService.getMyAssetInfo(ownerIdParam);
+        const roomReturnRate = (await userAssetInfo).valuation_return_rate;
 
         return {
             viewer_mode: viewerId === undefined ? 'GUEST' : 'VISITOR',

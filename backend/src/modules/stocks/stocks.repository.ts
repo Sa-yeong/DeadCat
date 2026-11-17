@@ -56,7 +56,6 @@ export class StocksRepository {
                 name: true,
                 stock_type: true,
                 exchange_code: true,
-                is_event: true,
                 characters: {
                     select: { img_url: true },
                 },
