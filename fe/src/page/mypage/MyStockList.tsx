@@ -62,15 +62,11 @@ export function MyStockList({token}:any) {
 }
 
 function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, market, onClick}:any){
-    const formatComma = (market:string,value: number|string) => {
+    const formatComma = (value: number|string) => {
         const num = Number(value);
 
         if(isNaN(num)) return value;
-        if(market === 'DOMESTIC'){ // 국내 주식의 경우
-            return num.toLocaleString();
-        }else{ // 해외 주식일 경우 그냥 내보내기
-            return num;
-        }
+        return num.toLocaleString();
     }
 
     return<div className='stock-row' onClick={onClick}>
@@ -79,17 +75,17 @@ function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, mark
             {s_name}
         </span>
         <span className='current-price'>
-            {formatComma(market, price)}
+            {formatComma(price)}
         </span>
         <span className='unit-price'>
-            {formatComma(market, mean_price)}
+            {formatComma(mean_price)}
         </span>
         <span className='quantity'>{quantity}</span>
         <span className='rise-rate' style={{color: (rate===0||(typeof rate =='string'))?'#566072':((rate>0) ?'#f04452':'#5c96f5')}}>
             {(typeof rate =='string')?rate:rate + '%'}
         </span>
         <span className='return-amount' style={{color: (rate===0||(typeof rate =='string'))?'#566072':((rate>0) ?'#f04452':'#5c96f5')}}>
-            {formatComma(market, profit)}
+            {formatComma(profit)}
         </span>
     </div>
 }
