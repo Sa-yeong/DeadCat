@@ -16,12 +16,14 @@ import { HomeRoomsRepository } from './home-room.repository';
 import { InvestmentTag } from '../tags/enums/investment-tag.enum';
 import { OPPOSITE_TAG_MAP } from '../tags/constants/opposite-tag.constant';
 import { TAG_CATEGORY } from '../tags/constants/tag-category.constant';
+import { AssetService } from '../asset/asset.service';
 
 @Injectable()
 export class HomeRoomsService {
     constructor(
         private readonly repository: HomeRoomsRepository,
         private readonly priceService: PriceService,
+        private readonly assetService: AssetService,
     ) {}
 
     /**
@@ -77,7 +79,126 @@ export class HomeRoomsService {
 
     // 거실의 보유 종목을 기준으로 당일 등락률 계산
     // 보유 종목의 당일 등락률을 매입금액 기준으로 가중평균
-    private async calculateDailyProfitRate(holdings: any[]): Promise<number> {
+    // 일일 수익률 계산
+    // 거실의 보유 종목을 기준으로 당일 수익률 계산
+    private async calculateDailyProfitRate(
+        holdings: {
+            quantity: bigint | number;
+            mean_price_krw: bigint | number;
+            stocks: {
+                code: string;
+                name: string;
+            };
+        }[],
+    ): Promise<number> {
+        // 보유 종목이 없으면 0 반환
+        if (!holdings || holdings.length === 0) {
+            console.log('[일일수익률] 보유 종목 없음');
+            return 0;
+        }
+
+        const codes = holdings.map((holding) => holding.stocks.code);
+
+        // Redis 및 최신 WebSocket 가격 조회
+        const priceMap = await this.priceService.readPrices(codes);
+
+        let totalDailyProfit = 0;
+        let totalPurchaseAmount = 0;
+
+        console.log('[일일수익률] 보유 종목 수:', holdings.length);
+        console.log('[일일수익률] 요청 종목 코드:', codes);
+        console.log('[일일수익률] 가격 조회 결과:', priceMap);
+
+        for (const holding of holdings) {
+            const quantity = Number(holding.quantity);
+            const meanPrice = Number(holding.mean_price_krw);
+            const cached = priceMap.get(holding.stocks.code);
+
+            // 종목별 원본 데이터 확인
+            console.log('[일일수익률] 종목 데이터:', {
+                code: holding.stocks.code,
+                name: holding.stocks.name,
+                quantity,
+                meanPrice,
+                cached,
+            });
+
+            if (
+                !cached ||
+                !Number.isFinite(quantity) ||
+                quantity <= 0 ||
+                !Number.isFinite(meanPrice) ||
+                meanPrice <= 0
+            ) {
+                console.log(
+                    '[일일수익률] 보유 데이터 검증 실패:',
+                    holding.stocks.code,
+                );
+                continue;
+            }
+
+            const currentPrice = Number(cached.current_price);
+            const changeRate = Number(cached.change_rate);
+
+            if (
+                !Number.isFinite(currentPrice) ||
+                currentPrice <= 0 ||
+                !Number.isFinite(changeRate)
+            ) {
+                console.log('[일일수익률] 가격 데이터 검증 실패:', {
+                    code: holding.stocks.code,
+                    currentPrice,
+                    changeRate,
+                });
+                continue;
+            }
+
+            const rate = changeRate / 100;
+
+            if (rate <= -1) {
+                console.log('[일일수익률] 등락률 역산 불가:', changeRate);
+                continue;
+            }
+
+            // 전일 대비 변동액 역산
+            const changeAmount = currentPrice * (rate / (1 + rate));
+
+            // 당일 손익 및 매입 금액 계산
+            const dailyProfit = changeAmount * quantity;
+            const purchaseAmount = meanPrice * quantity;
+
+            totalDailyProfit += dailyProfit;
+            totalPurchaseAmount += purchaseAmount;
+
+            console.log('[일일수익률] 종목 계산 결과:', {
+                code: holding.stocks.code,
+                currentPrice,
+                changeRate,
+                changeAmount,
+                dailyProfit,
+                purchaseAmount,
+            });
+        }
+
+        console.log('[일일수익률] 최종 합계:', {
+            totalDailyProfit,
+            totalPurchaseAmount,
+        });
+
+        if (totalPurchaseAmount <= 0) {
+            return 0;
+        }
+
+        const result = Number(
+            ((totalDailyProfit / totalPurchaseAmount) * 100).toFixed(2),
+        );
+
+        console.log('[일일수익률] 최종 수익률:', result);
+
+        return result;
+    }
+
+    /*private async calculateDailyProfitRate(holdings: any[]): Promise<number> {
         if (!holdings || holdings.length === 0) return 0;
 
         const stockCodes = holdings.map((h) => h.stocks.code);
@@ -108,7 +229,7 @@ export class HomeRoomsService {
         if (totalPurchase === 0) return 0;
 
         return Number((weightedDailyRate / totalPurchase).toFixed(2));
-    }
+    }*/
 
     // 10.1 필터용 시스템 태그 목록 조회
     async getTags(): Promise<GetTagsResponseDto> {
@@ -127,7 +248,6 @@ export class HomeRoomsService {
     }
 
     // 10.2 메인 피드 조회 (급등 / 급락 거실)
-    // 10.2 메인 피드 조회 (급등 / 급락 거실)
     async getExploreRooms(
         currentUserId?: string,
     ): Promise<GetExploreRoomsResponseDto> {
@@ -138,8 +258,21 @@ export class HomeRoomsService {
                 user_id: Number(u.id),
                 nickname: u.nickname,
                 room_img_url: u.room_thumbnail_url ?? '',
-                profit_rate: await this.calculateUserProfitRate(u.holdings),
+                //  profit_rate: await this.calculateUserProfitRate(u.holdings),
+                // 수정: 일일 수익률 계산
+                profit_rate: await this.calculateDailyProfitRate(u.holdings),
                 tags: u.have_tags.map((ht) => ht.tags.content),
+            })),
+        );
+
+        // 필터링 전 전체 거실 확인
+        console.log('[10-2] 전체 거실 수:', roomCards.length);
+        console.log(
+            '[10-2] 전체 거실 수익률:',
+            roomCards.map((room) => ({
+                user_id: room.user_id,
+                nickname: room.nickname,
+                profit_rate: room.profit_rate,
             })),
         );
 
@@ -150,6 +283,9 @@ export class HomeRoomsService {
         const plummetingRooms = roomCards
             .filter((r) => r.profit_rate <= -5.0)
             .sort((a, b) => a.profit_rate - b.profit_rate);
+
+        console.log('[10-2] 급등 거실:', soaringRooms.length);
+        console.log('[10-2] 급락 거실:', plummetingRooms.length);
 
         // 전역 TransformInterceptor가 { success: true, data: ... }로 감싸줍니다.
         return {
@@ -172,7 +308,10 @@ export class HomeRoomsService {
                 user_id: Number(u.id),
                 nickname: u.nickname,
                 room_img_url: u.room_thumbnail_url ?? '',
-                profit_rate: await this.calculateDailyProfitRate(u.holdings),
+                profit_rate: (
+                    await this.assetService.getMyAssetInfo(u.id.toString())
+                ).valuation_return_rate,
+                // profit_rate: await this.calculateDailyProfitRate(u.holdings),
                 tags: u.have_tags.map((ht) => ht.tags.content),
                 holdings: u.holdings,
             })),
