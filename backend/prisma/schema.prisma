@@ -263,7 +263,8 @@ model stocks {
   stock_type             String                   @db.VarChar(10)
   name                   String                   @db.VarChar(100)
   corp_code              String?                  @db.VarChar(20)
-  english_name           String?                  @db.VarChar(100)
+  en_name                String?                  @db.VarChar(100)
+  kr_name                String?                  @db.VarChar(20)
   affinity               affinity[]
   alarms                 alarms[]
   char_reactions         char_reactions[]
