@@ -4,6 +4,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import { assetVersions } from './plugins/assetVersions'
 
 /**
  * 거실 화면 미리보기 — HTML 한 장으로 뽑는다 (개별종목 vite.preview.config.ts 와 같은 방식).
@@ -29,7 +30,8 @@ export default defineConfig({
   root: 'preview-room',
   base: './',
   publicDir: false,
-  plugins: [inlineRoomAssets(), react(), tailwindcss(), viteSingleFile()],
+  // 3D 파일을 HTML 안에 넣어 주소(버전 없는)로 찾는다 — 주소에 버전은 끔(빈 표)
+  plugins: [inlineRoomAssets(), react(), tailwindcss(), viteSingleFile(), assetVersions({ enabled: false })],
   build: {
     outDir: process.env.DC_OUT || '../dist-preview-room',
     emptyOutDir: true,

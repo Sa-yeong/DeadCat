@@ -199,6 +199,8 @@ export interface GuestbookReply {
   /** 탈퇴한 사람이면 null — 거실로 갈 수 없다 */
   userId: number | null;
   nickname: string;
+  /** 마이페이지에서 고른 프로필 이미지 — 없으면 null(옛 서버도 null) */
+  profileImgUrl: string | null;
   /** 비밀글의 답글을 볼 수 없는 사람에겐 서버가 null 로 준다 */
   content: string | null;
   /** UTC ISO — 화면은 KST 로 */

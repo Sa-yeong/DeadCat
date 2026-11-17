@@ -1,8 +1,7 @@
 generator client {
-  provider        = "prisma-client"
-  output          = "../generated/prisma"
-  previewFeatures = ["partialIndexes"]
-  moduleFormat    = "cjs"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
@@ -335,7 +334,7 @@ model users {
   alarms                                           alarms[]
   char_reactions_char_reactions_reactor_idTousers  char_reactions[]      @relation("char_reactions_reactor_idTousers")
   char_reactions_char_reactions_receiver_idTousers char_reactions[]      @relation("char_reactions_receiver_idTousers")
-  character_presets                                character_presets?
+  character_presets                                character_presets[]
   comments                                         comments[]
   follow_follow_followee_idTousers                 follow[]              @relation("follow_followee_idTousers")
   follow_follow_follower_idTousers                 follow[]              @relation("follow_follower_idTousers")
@@ -436,13 +435,17 @@ model stock_overview {
 
 model character_presets {
   id           BigInt                   @id @default(autoincrement())
-  user_id      BigInt                   @unique(map: "character_presets_one_active", where: raw("is_active"))
+  user_id      BigInt
   preset_name  String                   @db.VarChar(50)
   created_at   DateTime                 @default(now()) @db.Timestamp(6)
   is_active    Boolean                  @default(false)
+  // 자동 = 서버가 체결 때 만들고 사용자가 아직 수정 저장하지 않은 프리셋(M-1). 수정 저장하면 false
   is_auto      Boolean                  @default(false)
-  preset_items character_preset_items[]
   users        users                    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  preset_items character_preset_items[]
+
+  // DB에만 있는 부분 유일 인덱스 character_presets_one_active: 사용자당 is_active = true 는 하나만.
+  // Prisma는 미리보기 기능(partialIndexes) 없이는 WHERE 인덱스를 적을 수 없어 주석으로 둔다 — db push 금지라 지워지지 않음.
 }
 
 model character_preset_items {

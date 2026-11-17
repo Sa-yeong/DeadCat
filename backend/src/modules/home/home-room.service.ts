@@ -127,6 +127,7 @@ export class HomeRoomsService {
     }
 
     // 10.2 메인 피드 조회 (급등 / 급락 거실)
+    // 10.2 메인 피드 조회 (급등 / 급락 거실)
     async getExploreRooms(
         currentUserId?: string,
     ): Promise<GetExploreRoomsResponseDto> {

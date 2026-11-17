@@ -16,6 +16,11 @@ import {
   type MotionSet,
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
+import { createHatDrop, type HatDrop } from './hatDrop';
+import { rayHitsBody } from './bodyHit';
+import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
+import { fetchFile, isStored, parseFile } from '../../../shared/three/fileStore';
+import { prepareDraw } from '../../../shared/three/prepareDraw';
 
 /** 화면에서 캐릭터를 어디에 걸지 — 페이지 좌표(px). layout.ts 가 계산한다 */
 export interface Framing {
@@ -85,6 +90,9 @@ interface FaceLayer {
   until?: number;
 }
 
+/** 캐릭터 뒤 3D 공간(격자 바닥 · 지평선 안개)을 그릴지 — 2026-11-17 끔 */
+const SHOW_STAGE_ENV = false;
+
 /** 망원에 가까운 화각 — 원근 왜곡이 적어 정면 일러스트와 비슷하게 보인다 */
 const FOV = 20;
 
@@ -113,6 +121,8 @@ export class StockScene {
   private currentName: MotionName | null = null;
 
   private faces: FaceLayer[] = [];
+  /** 연타 반응(annoying) 동안의 모자 떨어뜨리기 — 그 캐릭터만(assets hatDrop), 없으면 null */
+  private hat: HatDrop | null = null;
   /** 유지 표정 — idle 위에 얹는 감정 얼굴. 한 번 표정이 올라가는 만큼 내려간다 */
   private base: { expr: string; weight: number } | null = null;
   /** 유지 표정이 바뀔 때 뚝 끊기지 않게 — 표정별 지금 세기 */
@@ -120,13 +130,17 @@ export class StockScene {
   private readonly touched = new Set<string>();
 
   /** 몸 치수 — 불러올 때 한 번 잰다 (골반·머리 꼭대기 높이) */
-  private body = { hips: 0.9, headTop: 1.5 };
+  private body = { hips: 0.9, headTop: 1.5, headLen: 0.2 };
   private framing: Framing | null = null;
   /** 캐릭터 뒤 3D 공간(격자 바닥·지평선 안개) */
   private readonly env = new StageEnvironment();
   /** 이 캐릭터의 모션 표(공용 + 덮어쓰기, assets.characterOf) — load 때 받는다 */
   private motions: MotionSet = {};
   private disposed = false;
+  /** ?perf 측정(L-1) — 모델을 장면에 올린 시각(첫 그리기를 재려고) · load 시작 시각 · 대상 파일. 평소엔 0 */
+  private perfDraw = 0;
+  private perfLoad = 0;
+  private perfFile = '';
 
   /** 카메라 가로 이동(m) — 차트를 좌우로 밀면 창틀(카메라)이 같이 간다. 캐릭터는 제자리 */
   private panX = 0;
@@ -167,6 +181,8 @@ export class StockScene {
     this.scene.add(dir);
 
     this.scene.add(this.env.group);
+    // 2026-11-17 도휘: 격자 바닥 · 지평선 안개를 끄고 본다(차트 가시성). 다시 켜려면 true
+    this.env.group.visible = SHOW_STAGE_ENV;
 
     this.loader = new GLTFLoader();
     this.loader.register((p) => new VRMLoaderPlugin(p));
@@ -178,10 +194,36 @@ export class StockScene {
   /**
    * 모델과 첫 모션(유지 모션)을 불러온다. 첫 모션이 붙기 전에는 그리지 않는다 —
    * 불러온 직후의 두 팔 벌린 기본 자세(T자)가 보이지 않게.
+   * 파일은 받은 파일 보관소(fileStore)에서 — 전에 받았으면 받지 않고 다시 해석만 한다(마무리 L-2).
+   * 장면에 넣기 전에 그리기 준비(셰이더 · 텍스처, prepareDraw)를 끝낸다 — 끝나야 ready
+   * also — 첫 화면 전에 같이 준비할 모션(첫 등장의 walk · greeting, 마무리 L-4). 파일은 모델과 같이 받기 시작한다
    */
-  async load(modelUrl: string, motions: MotionSet, first: MotionName): Promise<void> {
+  async load(
+    modelUrl: string,
+    motions: MotionSet,
+    first: MotionName,
+    also: MotionName[] = [],
+    opts: { hatDrop?: boolean } = {},
+  ): Promise<void> {
     this.motions = motions;
-    const gltf = await this.loader.loadAsync(modelUrl);
+    const t0 = perfNow();
+    const fromStore = PERF_ON && isStored(modelUrl);
+    // 모션 파일은 모델과 나란히 받아 둔다(작고 몇 개 안 됨) — 해석은 모델이 선 뒤(clip)
+    for (const m of [first, ...also]) {
+      const url = motions[m]?.url;
+      if (url) void fetchFile(url);
+    }
+    const buf = await fetchFile(modelUrl);
+    if (!buf) throw new Error(`모델 파일을 못 받음: ${modelUrl}`);
+    if (this.disposed) return; // 받는 사이에 화면을 떠났다
+    if (PERF_ON) {
+      this.perfFile = shortName(modelUrl);
+      this.perfLoad = t0;
+      perfRow('개별종목', '받기', this.perfFile, t0, fromStore ? '보관소에서(받기 생략)' : downloadNote(modelUrl));
+    }
+    const tParse = perfNow();
+    const gltf = await this.loader.parseAsync(buf, '');
+    if (PERF_ON) perfRow('개별종목', '해석(parseAsync)', this.perfFile, tParse, `${(buf.byteLength / 1048576).toFixed(1)}MB`);
     const vrm = gltf.userData.vrm as VRM | undefined;
     if (!vrm) throw new Error('VRM 확장이 없는 파일');
     if (this.disposed) {
@@ -202,19 +244,44 @@ export class StockScene {
     });
 
     this.vrm = vrm;
+    // 모자 떨어뜨리기 — VRM 을 불러온 직후 한 번(모자 노드 · 원래 자리를 기억한다)
+    this.hat = opts.hatDrop ? createHatDrop(vrm) : null;
     this.baseYaw = vrm.scene.rotation.y; // VRM0 은 이미 180° 돌아 있다
     this.measureBody(vrm);
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.mixer.addEventListener('finished', (e) => {
       const action = (e as unknown as { action: THREE.AnimationAction }).action;
-      if (action === this.current && this.currentName) this.onMotionEnd?.(this.currentName);
+      if (action !== this.current || !this.currentName) return;
+      if (this.currentName === 'annoying') this.hat?.reset(); // 연타 반응 끝 — 모자를 제자리에
+      this.onMotionEnd?.(this.currentName);
     });
 
-    await this.clip(first);
+    const t1 = perfNow();
+    await Promise.all([first, ...also].map((m) => this.clip(m)));
     if (this.disposed) return;
+    if (PERF_ON) perfRow('개별종목', `첫 모션(${first})`, shortName(this.motions[first]?.url ?? ''), t1, downloadNote(this.motions[first]?.url ?? ''));
+    const t2 = perfNow();
+    await prepareDraw(this.renderer, vrm.scene, this.camera, this.scene, () => !this.disposed);
+    if (this.disposed) return;
+    if (PERF_ON) perfRow('개별종목', '그리기 준비(셰이더·텍스처)', this.perfFile, t2, `장면에 넣기 전 — 보이기 전에 끝남 · 렌더러 텍스처 ${this.renderer.info.memory.textures}개 · 셰이더 ${this.renderer.info.programs?.length ?? '?'}개`);
     this.scene.add(vrm.scene);
+    this.perfDraw = perfNow();
     this.setRoot(this.rootX, this.rootYaw); // 불러오기 전에 정해 둔 위치가 있으면
     this.applyFraming();
+  }
+
+  /**
+   * 지금 자세 · 표정 · 위치 그대로 한 번 바로 그린다(마무리 L-4, 결정 7).
+   * 캔버스가 숨어 있을 때(opacity 0) 불러, three 가 첫 render 때 만드는 것(표정 형태 키 · 뼈 텍스처 —
+   * 공개 API 로 미리 못 만듦)을 보이기 전에 끝내 둔다. 화면 밖 자리여도 그려진다(frustumCulled = false)
+   */
+  drawNow() {
+    if (!this.vrm || !this.mixer) return;
+    this.mixer.update(0);
+    this.updateHat();
+    if (!this.vrmaFaceOn) this.applyFaces(0);
+    this.vrm.update(0);
+    this.draw();
   }
 
   /** 나머지 모션을 뒤에서 미리 받아 둔다 — 누르자마자 반응하게 */
@@ -236,6 +303,8 @@ export class StockScene {
     const clip = await this.clip(name);
     if (!clip || !this.mixer) return false;
 
+    // 연타 반응이 다른 모션(또는 처음부터 다시)에 끊긴다 — 모자를 제자리에
+    if (this.currentName === 'annoying') this.hat?.reset();
     const action = this.mixer.clipAction(clip);
     const prev = this.current;
     action.reset();
@@ -364,7 +433,15 @@ export class StockScene {
     const ndc = new THREE.Vector2((x / this.framing.width) * 2 - 1, -(y / this.framing.height) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
-    return ray.intersectObject(this.vrm.scene, true).length > 0;
+    // 메시 레이캐스트는 클릭마다 60~290ms 멈춘다(스키닝 계산) — 뼈 캡슐로 본다(bodyHit.ts)
+    const humanoid = this.vrm.humanoid;
+    const scale = this.vrm.scene.scale.y || 1;
+    return rayHitsBody(
+      ray.ray,
+      (name) => humanoid.getNormalizedBoneNode(name)?.getWorldPosition(new THREE.Vector3()) ?? null,
+      this.body.headTop * scale,
+      this.body.headLen * scale,
+    );
   }
 
   dispose() {
@@ -389,9 +466,9 @@ export class StockScene {
     if (busy) return busy;
     const def = this.motions[name];
     if (!def) return Promise.resolve(null);
-    const job = this.loader
-      .loadAsync(def.url)
+    const job = parseFile(def.url, (buf) => this.loader.parseAsync(buf, ''))
       .then((g) => {
+        if (!g) throw new Error('파일 없음(404 · HTML)');
         const anim = (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0];
         if (!anim || !this.vrm) return null;
         const clip = createVRMAnimationClip(anim, this.vrm);
@@ -416,7 +493,9 @@ export class StockScene {
     const hipsY = hips ? hips.getWorldPosition(new THREE.Vector3()).y : box.min.y + (box.max.y - box.min.y) * 0.53;
     // 머리 꼭대기 — 머리카락까지 포함한 전체 상자의 윗면. 머리 뼈보다 아래면 머리 뼈 기준으로
     const headY = head ? head.getWorldPosition(new THREE.Vector3()).y : box.max.y;
-    this.body = { hips: hipsY, headTop: Math.max(box.max.y, headY) };
+    const headTop = Math.max(box.max.y, headY);
+    // headLen — 머리 뼈에서 머리 꼭대기까지. 누르기 판정(bodyHit)의 머리 캡슐 크기
+    this.body = { hips: hipsY, headTop, headLen: headTop - headY };
   }
 
   /**
@@ -479,9 +558,47 @@ export class StockScene {
     const dt = Math.min(this.clock.getDelta(), 0.1);
     if (!this.vrm || !this.mixer) return;
     this.beforeFrame?.(dt);
+    // 표정이 VRMA 안에 있는 모션 — 들어설 때 코드가 켜 둔 표정만 한 번 내리고(모션 표정이 그 위에 온다), 재생 중엔 쓰지 않는다
+    const vrmaFace = this.vrmaFaceOn;
+    if (vrmaFace) this.releaseCodeFaces();
     this.mixer.update(dt);
-    this.applyFaces(dt);
+    this.updateHat(); // mixer.update 다음 · vrm.update 전(hatDrop.ts 사용법)
+    if (!vrmaFace) this.applyFaces(dt);
     this.vrm.update(dt);
+    this.draw();
+  }
+
+  /** 지금 재생 중인 모션이 표정을 VRMA 안에 든 것인가 — 끝나서 멈춘 뒤(clamp)는 아니다 */
+  private get vrmaFaceOn(): boolean {
+    const def = this.currentName ? this.motions[this.currentName] : undefined;
+    return !!def?.vrmaFace && !!this.current?.isRunning();
+  }
+
+  /** 코드가 켜 둔 표정을 0으로 — 한 번만(그 뒤 touched 가 비어 아무것도 안 함) */
+  private releaseCodeFaces() {
+    const em = this.vrm?.expressionManager;
+    if (!em || this.touched.size === 0) return;
+    for (const name of this.touched) em.setValue(name, 0);
+    this.touched.clear();
+  }
+
+  /** 연타 반응(annoying) 재생 중이면 모자 — 30fps 프레임 번호로 */
+  private updateHat() {
+    if (!this.hat || this.currentName !== 'annoying' || !this.current?.isRunning()) return;
+    this.hat.update(Math.floor(this.current.time * 30));
+  }
+
+  private draw() {
+    if (this.perfDraw && this.vrm) {
+      // 모델이 처음 그려지는 render — 남은 첫 그리기 준비(형태 키 · 뼈 텍스처)가 이 render 호출 안에서 일어난다
+      const s = performance.now();
+      this.renderer.render(this.scene, this.camera);
+      perfRow('개별종목', '첫 그리기(render 1회)', this.perfFile, s, `장면에 올린 뒤 ${Math.round(s - this.perfDraw)}ms 만에 시작`);
+      perfRow('개별종목', '전체(load 시작→첫 그림)', this.perfFile, this.perfLoad);
+      perfRow('개별종목', '메모리', this.perfFile, null, memoryNote(this.vrm.scene, this.renderer));
+      this.perfDraw = 0;
+      return;
+    }
     this.renderer.render(this.scene, this.camera);
   }
 

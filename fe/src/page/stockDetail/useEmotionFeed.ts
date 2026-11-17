@@ -41,7 +41,8 @@ export function useEmotionFeed(
       if (document.hidden) return;
       postEmotion(stockCode)
         .then((r) => alive && !pausedRef.current && apply(r.emotions))
-        .catch(() => {}); // 못 받으면 지금 감정 그대로 — 다음 주기에 다시
+        // 못 받으면 지금 감정 그대로 — 다음 주기에 다시. 첫 등장이 기다리고 있으면 더 기다리지 않게 알린다
+        .catch(() => alive && loop.current?.emotionMissed());
     };
     pull();
     const id = window.setInterval(pull, EMOTION_POLL_MS);
@@ -52,7 +53,7 @@ export function useEmotionFeed(
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [stockCode, paused, apply]);
+  }, [stockCode, paused, apply, loop]);
 
   // 캐릭터가 늦게 떴다 — 들고 있던 결과를 넣는다
   useEffect(() => {

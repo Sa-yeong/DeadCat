@@ -23,7 +23,11 @@ export class GuestbooksRepository {
                 },
                 comments: {
                     orderBy: { id: 'asc' },
-                    include: { users: { select: { nickname: true } } },
+                    include: {
+                        users: {
+                            select: { nickname: true, profile_img_url: true },
+                        },
+                    },
                 },
             },
         });

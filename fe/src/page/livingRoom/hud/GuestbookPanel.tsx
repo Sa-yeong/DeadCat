@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { ProfileAvatar } from '../../../common/profile/ProfileAvatar';
+import { useMyProfileImg } from '../../../common/profile/myProfile';
 import { ago } from '../../stockDetail/format';
 import { R } from '../../stockDetail/radius';
 import * as api from '../api';
@@ -58,6 +60,8 @@ export function GuestbookPanel({
   /** 방명록·거실 반응을 남기는 쪽 — 방문자와 비로그인 (주인은 답글만) */
   const visiting = mode !== 'OWNER';
   const [posts, setPosts] = useState<GuestbookPost[] | null>(null);
+  // 방금 단 내 답글에 붙일 내 프로필 이미지
+  const myImg = useMyProfileImg();
   /** 다음 쪽 커서 — 마지막 쪽이면 null */
   const [next, setNext] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -158,7 +162,7 @@ export function GuestbookPanel({
     void attempt('text', async () => {
       const r = await api.replyGuestbook(ownerId, post.postId, text);
       // 답글은 서버가 번호 · 시각만 준다 — 이 글 밑에 바로 붙여 보인다(작성자 이름은 다음에 열 때 서버 값으로)
-      const mine: GuestbookReply = { replyId: r.replyId, userId: Number(api.myUserId()) || null, nickname: '나', content: text, writeTime: r.writeTime };
+      const mine: GuestbookReply = { replyId: r.replyId, userId: Number(api.myUserId()) || null, nickname: '나', profileImgUrl: myImg, content: text, writeTime: r.writeTime };
       setPosts((list) => (list ?? []).map((x) => (x.postId === post.postId ? { ...x, replies: [...x.replies, mine] } : x)));
       setReply('');
       setReplyTo(null);
@@ -228,11 +232,7 @@ export function GuestbookPanel({
         {posts?.map((p) => (
           <article key={p.postId} style={{ padding: '12px 2px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {p.profileImgUrl ? (
-                <img src={p.profileImgUrl} alt="" width={22} height={22} style={{ borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-              ) : (
-                <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#3A3A44', flexShrink: 0 }} aria-hidden="true" />
-              )}
+              <ProfileAvatar url={p.profileImgUrl} size={22} />
               <Writer userId={p.userId} nickname={p.nickname} size={13} onVisit={onVisit} />
               {p.isSecret && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: C.dim }}><Icon name="lock" size={12} />비밀글</span>}
               <span title={kst(p.writeTime)} style={{ marginLeft: 'auto', fontSize: 11, color: C.faint }}>{ago(p.writeTime)}</span>
@@ -331,6 +331,7 @@ function Reply({ r, onVisit }: { r: GuestbookReply; onVisit: (userId: number) =>
     <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: R.card, background: 'rgba(255,255,255,0.05)', fontSize: 12, lineHeight: 1.5, color: C.text2, overflowWrap: 'anywhere' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 6, verticalAlign: 'top' }}>
         <span style={{ color: C.faint }} aria-hidden="true">↳</span>
+        <ProfileAvatar url={r.profileImgUrl} size={16} />
         <Writer userId={r.userId} nickname={r.nickname} size={12} onVisit={onVisit} />
         <span title={kst(r.writeTime)} style={{ fontSize: 11, color: C.faint }}>{ago(r.writeTime)}</span>
       </span>

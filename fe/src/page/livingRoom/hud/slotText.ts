@@ -59,6 +59,30 @@ export function drawHint(r: Pick<SlotDrawResult, 'furniture' | 'item'>): string 
 
 /** 레버 · 릴 한 판이 끝날 때까지(RoomScene SLOT — 마지막 릴 1.9초 + 튕김 0.25초) 기다렸다가 결과를 띄운다 */
 export const SLOT_SPIN_MS = 2300;
+/**
+ * 슬롯 모션(play_slot.vrma, 30fps) 기준 시각 (2026-11-14 도휘) — 모션이 시작된 때(RoomLoop onSlotStart)부터 잰다.
+ *   LEVER_AT   50프레임 — 레버가 내려가기 시작
+ *   MOTION_END 90프레임 — 모션이 끝나는 때. 결과 창은 이것과 릴이 다 선 때(레버 + SLOT_SPIN_MS) 중 늦은 쪽에
+ */
+export const SLOT_LEVER_AT_MS = (50 / 30) * 1000;
+export const SLOT_MOTION_END_MS = (90 / 30) * 1000;
+/** 캐릭터 쪽에서 끝내 소식이 없으면(치워짐 등) 모션 없이 진행 */
+export const SLOT_START_TIMEOUT_MS = 15000;
+
+/**
+ * ?slot=test 의 가짜 결과 — 서버 없이 결과 창 모양을 보려는 것(가구 팩 + 아이템이 둘 다 보이는 경우).
+ * 보관함 · 아이템에는 아무것도 들어가지 않는다. 시험이 끝나면 RoomHud 의 시험 분기와 같이 지울 것
+ */
+export function testDrawResult(placementId: number): SlotDrawResult {
+  return {
+    placementId,
+    kind: 'FURNITURE',
+    grade: 'RARE',
+    furniture: [7, 8, 9, 10, 11, 12].map((furnitureId) => ({ furnitureId, name: `시험 가구 ${furnitureId}` })),
+    item: { itemId: 1, name: '시험 아이템', grade: 'RARE', quantity: 1 },
+    slot: { readyAt: null },
+  };
+}
 /** 못 뽑을 때 안내가 떠 있는 시간 */
 export const SLOT_NOTE_MS = 2600;
 

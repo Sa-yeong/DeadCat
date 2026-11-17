@@ -238,7 +238,7 @@ describe('방명록 (GET · POST /rooms/:userId/guestbook)', () => {
     expect(page).toEqual({
       posts: [{
         postId: 41, userId: 9, nickname: '구경꾼', profileImgUrl: null, content: null, isSecret: true, writeTime: '2026-10-31T01:00:00.000Z',
-        replies: [{ replyId: 3, userId: null, nickname: '탈퇴한 사용자', content: null, writeTime: '2026-10-31T02:00:00.000Z' }],
+        replies: [{ replyId: 3, userId: null, nickname: '탈퇴한 사용자', profileImgUrl: null, content: null, writeTime: '2026-10-31T02:00:00.000Z' }],
       }],
       nextCursor: 41,
     });

@@ -6,6 +6,7 @@ import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionPr
 import type { CharacterDef } from '../types';
 import { lookColor, modelUrlsOf } from '../catalog';
 import { DEFAULT_LOOK, type Look } from './outfitState';
+import { lowestY, pickGroundSamples, type GroundSample } from './grounding';
 import type { FurnitureCatalog } from './catalogs';
 import { AREA_COLOR, footprint, shapeOf, type Footprint, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
@@ -15,7 +16,12 @@ import { CHAR } from './characterSize';
 import { Swing } from './swing';
 import { ROOM_ASSETS } from './roomAssets';
 import { SHELL, WALL_H, WALL_LINES, WALL_PANELS, WALL_T } from './roomShell';
+import { SLOT_MACHINE, SOFA_2SEAT } from '../furnitureCatalog';
 import { CHIBI_FACE, stepFaceLevels, type EmotionName, type FaceLevels } from '../../stockDetail/runtime/motionTable';
+import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
+import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
+import { versioned } from '../../../shared/assetVersion';
+import { prepareDraw } from '../../../shared/three/prepareDraw';
 
 /**
  * **3D 렌더러** — three.js 로 아트보드 H안을 그대로 세운다. RoomRenderer 의 두 번째 구현.
@@ -68,8 +74,24 @@ type Pose = 'rest' | 'idle' | 'walk' | 'pickup' | 'engine'; // 'engine' = 엔진
 /**
  * 엔진 모션 파일 자리. 클립 이름 = 파일 이름(확장자 빼고). 없는 파일은 건너뛴다.
  * 미리보기 한 장(vite.preview-room.config.ts)은 아직 이 폴더를 넣지 않는다 — 모션 파일이 생기면 그쪽도 넣을 것
+ * 주소는 versioned()를 지난다 — 빌드 때 있던 파일만 ?v=내용해시(마무리 L-3)
  */
-const MOTION_URL = (clip: string) => `${import.meta.env.BASE_URL}characters/chibi/motions/${clip}.vrma`;
+const MOTION_URL = (clip: string) => versioned(`${import.meta.env.BASE_URL}characters/chibi/motions/${clip}.vrma`);
+/**
+ * 슬롯머신 모션 파일(motions.json play_slot 의 clip) — 슬롯머신 모델을 세울 때 미리 받아 둔다(2026-11-14).
+ * 놓자마자 모션이 시작돼야 레버 타이밍(HUD 가 놓은 순간부터 잰다)이 맞는다. motions.json 의 이름을 바꾸면 여기도
+ */
+const SLOT_MOTION_CLIP = 'play_slot';
+/** 소파 앉기 모션 파일(motions.json sit_sofa 의 clip) — 소파 모델을 세울 때 미리 받아 둔다 */
+const SOFA_MOTION_CLIP = 'play_sofa';
+/**
+ * 바닥에 붙여 틀 모션 파일 — 몸 중심을 기준으로 눕혀 만들어서 그대로 틀면 몸이 그림자 위에 뜬다(도휘, 2026-11-16).
+ * 트는 동안 매 프레임 실제 모양의 가장 낮은 곳(grounding.ts)을 재서 그만큼 몸을 내린다 — 모델(치비 종류) · 프레임마다 맞는 값.
+ * 엔진 모션으로 틀 때도, 평소 자세(idle)로 걸어 둘 때도(데모의 제자리 tired). 전엔 char_chibi_2 로 잰 고정값(-0.43칸)이라
+ * 다른 치비(네이버 등)나 평소 자세에선 떴다
+ *   tired  엎드려 지친 자세
+ */
+const GROUND_CLIPS: ReadonlySet<string> = new Set(['tired']);
 
 /** 엔진 요청 하나 — 몇 번째 단계를 틀고 있는지, 끝나면 부를 것 */
 interface EngineRun {
@@ -158,10 +180,11 @@ function paint(style: string): { color: THREE.Color; opacity: number } {
  * 릴은 둘레 6칸이라 k×60° 면 k번 그림이 정면 — reel_symbols.py)
  */
 const SLOT = {
-  pull: 0.22,
-  back: 0.4,
+  // 2026-11-14 도휘 — 캐릭터 모션(play_slot.vrma) 50~60프레임(30fps) 안에 레버가 확 내려갔다 돌아온다: 내림 4프레임 + 돌아옴 6프레임
+  pull: 4 / 30,
+  back: 6 / 30,
   leverMax: (100 * Math.PI) / 180,
-  reelStart: 0.18,
+  reelStart: 4 / 30,
   /** 릴마다 서는 시각과 그때까지 도는 바퀴 수 */
   reelStop: [1.1, 1.5, 1.9],
   turns: [3, 4, 5],
@@ -169,13 +192,48 @@ const SLOT = {
   bounce: 0.14,
   bounceT: 0.25,
 } as const;
+/**
+ * 레버를 당길 때 슬롯머신 몸통의 덜컹(카툰풍) — 2026-11-14 도휘가 미리보기에서 고른 값(기울기 4° · 찌그러짐 13% · 튀어오름 3%).
+ * 레버가 내려가는 동안 레버 쪽(모델 +X)으로 기울며 눌리고, 놓는 순간 살짝 튀어 오른 뒤 출렁이다 멎는다. 바닥 가운데가 축.
+ * 슬롯머신 단계(29 · 30 · 31)는 모델만 다르고 크기 · 레버 위치가 같아서 모두 같은 값
+ */
+const SLOT_SHAKE = {
+  leanDeg: 4,
+  squash: 0.13,
+  /** 튀어오름 — 슬롯머신 키에 대한 비율 */
+  hop: 0.03,
+  leanDecay: 7,
+  leanHz: 4.5,
+  squashDecay: 9,
+  squashHz: 5.5,
+  hopT: 0.16,
+} as const;
 const easeIn = (u: number) => u * u;
 const easeOutCubic = (u: number) => 1 - (1 - u) ** 3;
 const easeOutBack = (u: number, k = 1.6) => 1 + (k + 1) * (u - 1) ** 3 + k * (u - 1) ** 2;
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
 
+/** 레버 시작(t=0)부터 덜컹 — lean 라디안(음수 = 레버 쪽으로), squash 눌림 비율(음수면 늘어남), lift 키에 대한 비율 */
+function slotShake(t: number): { lean: number; squash: number; lift: number } {
+  if (t <= 0) return { lean: 0, squash: 0, lift: 0 };
+  const A = (SLOT_SHAKE.leanDeg * Math.PI) / 180;
+  if (t < SLOT.pull) {
+    const p = easeIn(t / SLOT.pull);
+    return { lean: -A * p, squash: SLOT_SHAKE.squash * p, lift: 0 };
+  }
+  const u = t - SLOT.pull;
+  return {
+    lean: -A * Math.exp(-SLOT_SHAKE.leanDecay * u) * Math.cos(2 * Math.PI * SLOT_SHAKE.leanHz * u),
+    squash: SLOT_SHAKE.squash * Math.exp(-SLOT_SHAKE.squashDecay * u) * Math.cos(2 * Math.PI * SLOT_SHAKE.squashHz * u),
+    lift: u < SLOT_SHAKE.hopT ? SLOT_SHAKE.hop * Math.sin((Math.PI * u) / SLOT_SHAKE.hopT) : 0,
+  };
+}
+
 interface SlotRun {
   t: number;
+  /** 덜컹을 거는 자리(모델과 설치 자리 사이 그룹) · 슬롯머신 키(칸) */
+  rig: THREE.Object3D | null;
+  height: number;
   lever: THREE.Object3D | null;
   reels: { node: THREE.Object3D; from: number; to: number; t1: number }[];
 }
@@ -192,7 +250,7 @@ interface FurnNode {
   /** 다시 지을 때마다 올라간다 — 늦게 도착한 모델이 옛 모양에 붙지 않게 */
   build: number;
   /** 3D 모델을 세웠으면 그 배율(모델 1m → 칸)과 외곽선 재질 — 외곽선은 캐릭터처럼 모양을 부풀려 그린다 */
-  model: { scale: number } | null;
+  model: { scale: number; rig: THREE.Group; height: number } | null;
   rim: { width: { value: number }; mat: THREE.MeshBasicMaterial } | null;
   /** 슬롯머신 한 판이 도는 중(pullLever) */
   anim: SlotRun | null;
@@ -256,6 +314,14 @@ interface CharNode {
   yaw: number;
   selected: boolean;
   lifted: boolean;
+  /** 앉기 높이(칸) — 엔진 모션 중에만 건다(setSeatLift). seatNow 는 지금 높이 — 동작이 섞이는 동안 따라간다 */
+  seatLift: number;
+  seatNow: number;
+  /** 바닥 붙이기(GROUND_CLIPS) — 볼 꼭짓점(모델을 올린 뒤 처음 쓸 때 고름) · 지난 프레임에 잰 내릴 높이(칸, 음수 = 내림) */
+  groundSamples: GroundSample[] | null;
+  groundWant: number;
+  /** 앉기 높이가 1초에 움직이는 양 — 들어갈 때 · 나올 때 둘 다 섞이는 시간(POSE_FADE_S) 안에 닿게 */
+  seatRate: number;
   /** 배치 모드 — 그림자까지 통째로 숨긴다 */
   hidden: boolean;
   outlined: boolean;
@@ -304,8 +370,15 @@ export class RoomScene implements RoomRenderer {
   private readonly engineFiles = new Map<string, Promise<VRMAnimation | null>>();
   /** 동작 파일 — 처음 한 번 받아 모든 캐릭터가 같이 쓴다. 들기는 비교 시험 중이라 둘(pickup40 · pickup60) */
   private motionFiles: Promise<Partial<Record<'idle' | 'walk' | 'pickup40' | 'pickup60', VRMAnimation>>> | null = null;
-  /** 모델 파일 — 주소별로 한 번 받아 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서). 없는 파일은 null */
+  /**
+   * 모델 파일 — 받은 파일 보관소(fileStore, 페이지보다 오래 삶)에서 꺼내 캐릭터마다 따로 푼다(뼈·머리카락 흔들림이 캐릭터마다 따로라서).
+   * 이 표는 이 거실 안에서 한 번 물은 주소를 기억한다 — 없는 파일(null)을 이 거실 안에서 다시 묻지 않게(다음에 들어오면 다시)
+   */
   private readonly modelFiles = new Map<string, Promise<ArrayBuffer | null>>();
+  /** ?perf — 보관소에서 바로 꺼낸(받기 생략) 주소. 평소엔 늘 비어 있다 */
+  private readonly perfHits = new Set<string>();
+  /** ?perf 측정(L-1) — 막 세운 모델(다음 그리기가 그 모델의 첫 그리기). 평소엔 늘 비어 있다 */
+  private readonly perfDraw: { file: string; vrm: VRM; start: number }[] = [];
   /** 개발 모드 — 파일 없는 엔진 단계를 이만큼(ms) 대기 자세로 채운다(holdMissingClips). null 이면 건너뜀 */
   private holdMs: number | null = null;
   /** 모델 크기 맞춤 — 첫 캐릭터에서 한 번 잰다 */
@@ -385,7 +458,15 @@ export class RoomScene implements RoomRenderer {
       this.animateSlot(f, dt);
       live = true;
     }
-    this.render();
+    if (this.perfDraw.length) {
+      // 막 세운 모델이 처음 그려지는 프레임 — 셰이더 준비 · 텍스처 올리기가 이 render 안에서 일어난다
+      const s = performance.now();
+      this.render();
+      for (const d of this.perfDraw.splice(0)) {
+        perfRow('거실', '첫 그리기(render 1회)', d.file, s, `세운 뒤 ${Math.round(s - d.start)}ms 만에 시작 · 같은 프레임에 함께 그린 모델 포함`);
+        perfRow('거실', '메모리', d.file, null, memoryNote(d.vrm.scene, this.renderer));
+      }
+    } else this.render();
     // VRM 은 머리카락 흔들림·도는 동작이 프레임마다 바뀐다 — 계속 그린다
     this.lastFrame = live ? t : 0;
     if (live) this.invalidate();
@@ -647,7 +728,9 @@ export class RoomScene implements RoomRenderer {
     obj.scale.setScalar(scale);
     obj.position.set(-((box.min.x + box.max.x) / 2) * scale, -box.min.y * scale, -((box.min.z + box.max.z) / 2) * scale);
     const holder = new THREE.Group();
-    holder.add(obj);
+    const rig = new THREE.Group(); // 슬롯머신 덜컹을 거는 자리 — 바닥 가운데가 원점이라 그대로 축이 된다
+    rig.add(obj);
+    holder.add(rig);
     const area = footprint(def, f.pos, f.rotation);
     holder.position.copy(v3((area.x0 + area.x1) / 2, (area.y0 + area.y1) / 2, 0));
     holder.rotation.y = -(f.rotation * Math.PI) / 180;
@@ -664,7 +747,9 @@ export class RoomScene implements RoomRenderer {
     });
     if (isRug) holder.traverse((o) => o.layers.set(GROUND_LAYER));
     f.group.add(holder);
-    f.model = { scale };
+    f.model = { scale, rig, height };
+    if (def.engineName === SLOT_MACHINE) void this.motionFile(SLOT_MOTION_CLIP); // 놓자마자 모션이 시작되게 미리 받아 둔다
+    if (def.engineName === SOFA_2SEAT) void this.motionFile(SOFA_MOTION_CLIP);
     if (this.highlighted === placementId) this.highlightFurniture(placementId);
     if (this.dropTarget?.kind === 'furniture' && this.dropTarget.placementId === placementId) this.applyDropTarget();
     this.invalidate();
@@ -711,7 +796,7 @@ export class RoomScene implements RoomRenderer {
    * 뽑기 결과를 서버에서 받은 뒤 HUD 가 부른다(RoomRenderer.pullLever, 마무리 M-4) — 캐릭터 모션과는 따로 돈다.
    * 모델을 아직 못 받았거나 Lever · Reel_* 이 없으면 false. 도는 중이면 새로 시작하지 않는다
    */
-  pullLever(placementId: number): boolean {
+  pullLever(placementId: number, delayS = 0): boolean {
     const f = this.furn.get(placementId);
     if (!f?.model || f.anim) return false;
     const lever = f.group.getObjectByName('Lever') ?? null;
@@ -728,7 +813,7 @@ export class RoomScene implements RoomRenderer {
       if (to < least) to += turn;
       return { node, from, to, t1: SLOT.reelStop[i] };
     });
-    f.anim = { t: 0, lever, reels };
+    f.anim = { t: -Math.max(0, delayS), lever, reels, rig: f.model.rig, height: f.model.height }; // 0 이 될 때까지는 레버 · 릴이 제자리(animateSlot)
     this.invalidate();
     return true;
   }
@@ -740,6 +825,12 @@ export class RoomScene implements RoomRenderer {
     if (a.lever) {
       const pulled = t < SLOT.pull ? easeIn(clamp01(t / SLOT.pull)) : 1 - easeOutBack(clamp01((t - SLOT.pull) / SLOT.back));
       a.lever.rotation.x = SLOT.leverMax * pulled;
+    }
+    if (a.rig) {
+      const s = slotShake(t);
+      a.rig.rotation.z = s.lean;
+      a.rig.scale.set(1 + s.squash * 0.5, 1 - s.squash, 1 + s.squash * 0.5);
+      a.rig.position.y = s.lift * a.height;
     }
     let done = t >= SLOT.pull + SLOT.back;
     for (const r of a.reels) {
@@ -755,6 +846,11 @@ export class RoomScene implements RoomRenderer {
     }
     if (done) {
       if (a.lever) a.lever.rotation.x = 0;
+      if (a.rig) {
+        a.rig.rotation.z = 0;
+        a.rig.scale.set(1, 1, 1);
+        a.rig.position.y = 0;
+      }
       f.anim = null;
     }
   }
@@ -930,7 +1026,7 @@ export class RoomScene implements RoomRenderer {
     const c: CharNode = {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
-      selected: false, lifted: false, hidden: false, outlined: false,
+      selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -967,10 +1063,8 @@ export class RoomScene implements RoomRenderer {
   private modelBytes(url: string): Promise<ArrayBuffer | null> {
     let file = this.modelFiles.get(url);
     if (!file) {
-      file = fetch(url).then(
-        (r) => (r.ok && !r.headers.get('content-type')?.includes('text/html') ? r.arrayBuffer() : null),
-        () => null,
-      );
+      if (PERF_ON && isStored(url)) this.perfHits.add(url);
+      file = fetchFile(url);
       this.modelFiles.set(url, file);
     }
     return file;
@@ -980,11 +1074,13 @@ export class RoomScene implements RoomRenderer {
    * 이 모습의 모델 파일 — 캐릭터 전용 → 공통 → 기본 치비 순으로 있는 것(catalog.modelUrlsOf, 3-⑩). 기본 치비도 없으면 null
    */
   private async findModel(c: CharNode, look: Look): Promise<{ url: string; buf: ArrayBuffer } | null> {
-    for (const url of [...modelUrlsOf(c.def.stockId, look), ROOM_ASSETS.chibi]) {
-      const buf = await this.modelBytes(url);
-      if (buf) return { url, buf };
+    const t0 = perfNow();
+    const found = await firstFile([...modelUrlsOf(c.def.stockId, look), ROOM_ASSETS.chibi], (url) => this.modelBytes(url));
+    if (found && PERF_ON) {
+      const note = this.perfHits.has(found.url) ? '보관소에서(받기 생략)' : downloadNote(found.url);
+      perfRow('거실', 'findModel(받기)', shortName(found.url), t0, `${c.def.stockCode} · 후보 ${found.tried}번째 · ${note}`);
     }
-    return null;
+    return found && { url: found.url, buf: found.buf };
   }
 
   /** 모델 파일을 VRM 으로 푼다 — 받는 사이 캐릭터가 치워졌거나 화면을 떠났으면 버리고 null */
@@ -1008,9 +1104,18 @@ export class RoomScene implements RoomRenderer {
     const found = await this.findModel(c, look);
     if (!found) throw new Error(`모델 파일 없음 ${ROOM_ASSETS.chibi}`);
     if (this.disposed || this.chars.get(charId) !== c) return;
+    const t1 = perfNow();
     const vrm = await this.parseVrm(c, found.buf);
     if (!vrm) return;
-    this.mountVrm(c, vrm);
+    if (PERF_ON) perfRow('거실', 'parseVrm', shortName(found.url), t1, `${c.def.stockCode} · ${(found.buf.byteLength / 1048576).toFixed(1)}MB`);
+    const t2 = perfNow();
+    const rims = this.fitVrm(vrm);
+    if (PERF_ON) perfRow('거실', 'mountVrm(손질·크기·테두리)', shortName(found.url), t2, c.def.stockCode);
+    const t3 = perfNow();
+    if (!(await this.prepareVrm(c, vrm, rims))) return;
+    if (PERF_ON) perfRow('거실', '그리기 준비(셰이더·텍스처)', shortName(found.url), t3, `${c.def.stockCode} · 세우기 전 — 보이기 전에 끝남`);
+    this.showVrm(c, vrm, rims);
+    if (PERF_ON) this.perfDraw.push({ file: shortName(found.url), vrm, start: performance.now() });
     c.modelUrl = found.url;
     if (c.look !== look) c.swapNeeded = true;
     // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다
@@ -1032,8 +1137,13 @@ export class RoomScene implements RoomRenderer {
       const look = c.look;
       const found = await this.findModel(c, look);
       if (!found || found.url === c.modelUrl || this.disposed || this.chars.get(c.id) !== c) return;
+      const t1 = perfNow();
       const next = await this.parseVrm(c, found.buf);
       if (!next) return;
+      if (PERF_ON) perfRow('거실', 'parseVrm(옷 바꾸기)', shortName(found.url), t1, c.def.stockCode);
+      // 새 모델을 손질하고 그리기 준비까지 — 그동안 옛 모델이 그대로 보인다
+      const rims = this.fitVrm(next);
+      if (!(await this.prepareVrm(c, next, rims))) return;
       // 옛 모델 내리기 — 동작은 뼈에 묶여 있어 새로 만든다
       let setReady: (ok: boolean) => void = () => {};
       c.whenReady = new Promise<boolean>((ok) => (setReady = ok));
@@ -1045,7 +1155,8 @@ export class RoomScene implements RoomRenderer {
         VRMUtils.deepDispose(c.vrm.scene);
       }
       Object.assign(c, { vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), engineActions: new Map(), rims: [], pose: 'rest' });
-      this.mountVrm(c, next);
+      this.showVrm(c, next, rims);
+      if (PERF_ON) this.perfDraw.push({ file: shortName(found.url), vrm: next, start: performance.now() });
       c.modelUrl = found.url;
       if (c.look !== look) c.swapNeeded = true;
       await this.attachMotions(c, next).catch((e: unknown) => {
@@ -1060,8 +1171,11 @@ export class RoomScene implements RoomRenderer {
     }
   }
 
-  /** 푼 VRM 을 도형 자리에 올린다 — 크기 · 발 높이 · 테두리. 첫 모델로 축척을 정하고 다음 모델도 같은 축척 */
-  private mountVrm(c: CharNode, vrm: VRM): void {
+  /**
+   * 푼 VRM 을 손질한다 — 꼭짓점 정리 · 뼈 합치기 · VRM0 돌리기 · 기본 자세 · 테두리 복제본. 첫 모델로 축척을 정하고 다음 모델도 같은 축척.
+   * 아직 장면에 넣지 않는다(prepareVrm → showVrm). 테두리 복제본을 돌려준다(showVrm 이 캐릭터에 붙임)
+   */
+  private fitVrm(vrm: VRM): THREE.Mesh[] {
     VRMUtils.removeUnnecessaryVertices(vrm.scene);
     VRMUtils.combineSkeletons(vrm.scene);
     if (vrm.meta?.metaVersion === '0') VRMUtils.rotateVRM0(vrm);
@@ -1081,7 +1195,7 @@ export class RoomScene implements RoomRenderer {
       o.frustumCulled = false; // 뼈로 움직인 모양은 원래 경계 상자를 벗어난다
       if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
     });
-    c.rims = meshes.map((m) => {
+    return meshes.map((m) => {
       m.renderOrder = BODY_ORDER;
       const rim = m.clone(false);
       rim.material = this.rimWhite;
@@ -1090,10 +1204,30 @@ export class RoomScene implements RoomRenderer {
       m.parent!.add(rim);
       return rim;
     });
-    c.holder.scale.setScalar(this.fit.scale);
-    c.holder.position.y = -this.fit.footY * this.fit.scale;
+  }
+
+  /**
+   * 그리기 준비(마무리 L-2 · 결정 7) — 셰이더 준비 · 텍스처 올리기를 세우기 전에 끝낸다(첫 그리기에서 멈추며 잘려 보이지 않게).
+   * 그 사이 캐릭터가 치워졌거나 화면을 떠났으면 모델을 버리고 false — 테두리 복제본은 같이 쓰는 재질이라 먼저 뗀다
+   */
+  private async prepareVrm(c: CharNode, vrm: VRM, rims: THREE.Mesh[]): Promise<boolean> {
+    const alive = () => !this.disposed && this.chars.get(c.id) === c;
+    await prepareDraw(this.renderer, vrm.scene, this.camera, this.scene, alive);
+    if (alive()) return true;
+    for (const r of rims) r.removeFromParent();
+    VRMUtils.deepDispose(vrm.scene);
+    return false;
+  }
+
+  /** 손질 · 준비가 끝난 VRM 을 도형 자리에 세운다 — 크기 · 발 높이 */
+  private showVrm(c: CharNode, vrm: VRM, rims: THREE.Mesh[]): void {
+    const fit = this.fit!;
+    c.rims = rims;
+    c.holder.scale.setScalar(fit.scale);
+    c.holder.position.y = -fit.footY * fit.scale;
     c.holder.add(vrm.scene);
     c.vrm = vrm;
+    c.groundSamples = null; // 모델이 바뀌었다 — 바닥 붙이기에 볼 꼭짓점을 다시 고른다
     c.body.visible = false;
     c.head.visible = false;
     this.drawChar(c);
@@ -1104,9 +1238,13 @@ export class RoomScene implements RoomRenderer {
   private async attachMotions(c: CharNode, vrm: VRM): Promise<void> {
     this.motionFiles ??= (async () => {
       const one = async (url: string) => {
-        const r = await fetch(url);
-        if (!r.ok) throw new Error(`${r.status} ${url}`);
-        const g = await this.loader.parseAsync(await r.arrayBuffer(), '');
+        const t0 = perfNow();
+        const fromStore = PERF_ON && isStored(url);
+        const buf = await fetchFile(url); // 받은 파일 보관소 — 전에 받았으면 받지 않는다
+        if (!buf) throw new Error(`모션 파일을 못 받음: ${url}`);
+        const t1 = perfNow();
+        const g = await this.loader.parseAsync(buf, '');
+        if (PERF_ON) perfRow('거실', '모션 받기+해석', shortName(url), t0, `${fromStore ? '보관소에서(받기 생략)' : downloadNote(url)} · 해석 ${Math.round(performance.now() - t1)}ms`);
         return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0];
       };
       const [idle, walk, pickup40, pickup60] = await Promise.all([one(ROOM_ASSETS.idle), one(ROOM_ASSETS.walk), one(ROOM_ASSETS.pickup40), one(ROOM_ASSETS.pickup60)]);
@@ -1411,9 +1549,9 @@ export class RoomScene implements RoomRenderer {
     if (!file) {
       file = (async () => {
         try {
-          const r = await fetch(MOTION_URL(clip));
-          if (!r.ok || r.headers.get('content-type')?.includes('text/html')) return null;
-          const g = await this.loader.parseAsync(await r.arrayBuffer(), '');
+          const buf = await fetchFile(MOTION_URL(clip)); // 받은 파일 보관소 — 없는 파일은 null(보관 안 함)
+          if (!buf) return null;
+          const g = await this.loader.parseAsync(buf, '');
           return (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0] ?? null;
         } catch {
           return null;
@@ -1441,10 +1579,32 @@ export class RoomScene implements RoomRenderer {
       c.mixer.update(dt);
     }
     // 대롱대롱 → 골반 맞추기 → 흔들림(spring bone) 순서 — 골반을 먼저 맞춰야 머리카락이 매 프레임 튀지 않는다
+    // 몸 높이 — 소파 앉기(seatLift, 엔진 모션 중에만) + 바닥 붙이기(GROUND_CLIPS — 엔진 모션 또는 평소 자세로 트는 중).
+    // 동작이 섞이는 시간(POSE_FADE_S) 동안 따라간다
+    const run = c.engine?.action ? c.engine : null;
+    const clip = run ? run.steps[run.actionStep]?.clip : c.pose === 'idle' ? (c.basePose?.idle ?? null) : null;
+    const grounding = !c.lifted && !!clip && GROUND_CLIPS.has(clip);
+    if (!grounding) c.groundWant = 0;
+    if (c.lifted) c.seatNow = 0;
+    else {
+      const ground = grounding ? c.groundWant : 0;
+      if (ground !== 0) c.seatRate = Math.max(c.seatRate, Math.abs(ground) / POSE_FADE_S);
+      const want = (c.seatLift !== 0 && run ? c.seatLift : 0) + ground;
+      const step = c.seatRate * dt;
+      c.seatNow = Math.abs(want - c.seatNow) <= step ? want : c.seatNow + Math.sign(want - c.seatNow) * step;
+      c.figure.position.y = c.seatNow;
+    }
     const swung = c.lifted ? this.applySwing(c, dt) : [];
     if (c.lifted) this.pinGrab(c);
     this.applyFace(c, dt); // vrm.update 가 표정 값을 모델에 옮긴다 — 그 전에
     c.vrm!.update(dt);
+    // 바닥 붙이기 — 이번 프레임 모양(vrm.update 로 실제 뼈에 옮겨진 뒤)의 가장 낮은 곳을 몸 자리(figure) 좌표로 재서 다음 프레임에 내린다.
+    // 몸 자리 안에서 재므로 지금 내린 높이(figure.position)와 무관하다. 파일을 받는 중(평소 idle 이 돌고 있음)이면 거의 0 이 나온다
+    if (grounding) {
+      c.groundSamples ??= pickGroundSamples(c.vrm!.scene);
+      const low = lowestY(c.groundSamples, c.figure);
+      if (low !== null) c.groundWant = -low;
+    }
     // 대롱대롱으로 더한 뼈 각을 원래대로 — 이번 프레임 모양은 이미 실제 뼈에 옮겨졌다(vrm.update).
     // 믹서는 값이 안 바뀌면(끝나서 멈춘 pickup) 뼈를 다시 쓰지 않아서, 안 되돌리면 더한 각이 프레임마다 쌓여 꺾인 채 남는다
     for (const [n, q] of swung) n.quaternion.copy(q);
@@ -1472,6 +1632,25 @@ export class RoomScene implements RoomRenderer {
     } else if (!c.lifted && dx * dx + dy * dy > 1e-8) c.heading = Math.atan2(dx, dy); // 방 y 가 three 의 +Z(모델이 보는 쪽). 들고 끄는 동안은 방향을 바꾸지 않는다
     c.pos = pos;
     this.drawChar(c);
+    this.invalidate();
+  }
+
+  face(charId: string, dir: Pt, snap = false): void {
+    const c = this.chars.get(charId);
+    if (!c || dir.x * dir.x + dir.y * dir.y < 1e-8) return;
+    c.heading = Math.atan2(dir.x, dir.y); // move 와 같은 규칙 — 방 y 가 three 의 +Z. 몸은 animate 가 TURN_RATE 로 돌린다
+    if (snap) {
+      c.yaw = c.heading;
+      c.holder.rotation.y = c.yaw;
+    }
+    this.invalidate();
+  }
+
+  setSeatLift(charId: string, lift: number): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    c.seatRate = Math.max(Math.abs(lift), Math.abs(c.seatNow), Math.abs(c.seatLift)) / POSE_FADE_S;
+    c.seatLift = lift;
     this.invalidate();
   }
 
@@ -1565,7 +1744,7 @@ export class RoomScene implements RoomRenderer {
     c.group.position.copy(v3(c.pos.x, c.pos.y));
     // 들린 VRM 은 매 프레임 골반을 맞춘다(pinGrab) — 여기서 되돌리면 머리카락이 출렁인다
     if (!(c.lifted && c.vrm)) {
-      c.figure.position.set(0, c.lifted ? CHAR.lift : 0, 0);
+      c.figure.position.set(0, c.lifted ? CHAR.lift : c.seatNow, 0);
       c.figure.quaternion.identity(); // 대롱대롱 기울기도 내려놓으면 0
       c.swing.reset();
     }

@@ -1,10 +1,21 @@
 [
     {
         "id": "basic_furnitures",
-        "when": {"self": ["happy", "sad"], "furniture": ["desk", "sofa"]},
+        "when": {"self": ["happy", "sad"], "furniture": ["desk"]},
         "priority": 80,
         "effect":[
             {"weight": 1, "self": "idle"}
+        ],
+        "occupy": true,
+        "cooldownMs": 20000,
+        "interruptible": true
+    },
+    {
+        "id": "basic_sofa",
+        "when": {"self": ["happy", "sad"], "furniture": ["sofa"]},
+        "priority": 80,
+        "effect":[
+            {"weight": 1, "self": "sit_sofa"}
         ],
         "occupy": true,
         "cooldownMs": 20000,

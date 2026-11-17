@@ -31,6 +31,28 @@ describe('characterOf — 종목 코드 → 캐릭터', () => {
     expect(c.motions.upset).toEqual(characterOf('005930').motions.upset);
   });
 
+  it('NAVER(035420) — 전용 모델, 연타 반응만 전용 VRMA(표정은 VRMA 안) + 모자, 나머지는 공용', () => {
+    const c = characterOf('035420');
+    expect(c.key).toBe('035420');
+    expect(c.model).toBe(`${BASE}characters/stocks/035420/character.vrm`);
+    expect(c.motions.annoying).toEqual({
+      file: 'naver_annoying.vrma',
+      loop: false,
+      face: [],
+      vrmaFace: true,
+      url: `${BASE}characters/stocks/035420/motions/naver_annoying.vrma`,
+    });
+    expect(c.spamTaps).toBeUndefined(); // 공용과 같은 3탭
+    expect(c.hatDrop).toBe(true);
+    const common = characterOf('005930');
+    const others = (m: typeof c.motions) => Object.entries(m).filter(([name]) => name !== 'annoying');
+    expect(others(c.motions)).toEqual(others(common.motions));
+    // 다른 캐릭터는 그대로 — 공용 탭 수 · 모자 없음
+    expect(common.spamTaps).toBeUndefined();
+    expect(common.hatDrop).toBeUndefined();
+    expect(characterOf('NVDA').hatDrop).toBeUndefined();
+  });
+
   it('코드는 대소문자를 가리지 않는다', () => {
     expect(characterOf('nvda')).toBe(characterOf('NVDA'));
   });

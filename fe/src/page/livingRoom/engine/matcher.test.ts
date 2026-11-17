@@ -34,7 +34,8 @@ it('쿨다운 중이면 null', () => {
 it('weight 6:4 선택 (basic_meet_tired)', () => {
     const tired = { id: 't', emotion: 'tired' as const }
     expect(matchCharacter(happy, tired, ctxChar({ random: () => 0.5 }))?.effect.self).toEqual(['cheer_up'])
-    expect(matchCharacter(happy, tired, ctxChar({ random: () => 0.7 }))?.effect.self).toEqual(['tease'])
+    // 놀리기는 발견(한 번) → 웃기(반복) 두 단계 (2026-11-14 도휘 teasing.vrma)
+    expect(matchCharacter(happy, tired, ctxChar({ random: () => 0.7 }))?.effect.self).toEqual(['tease_find', 'tease'])
 })
 
 const ctxFur = (over = {}): MatchContext => ({ rules: ruleSet, isOnCooldown: () => false, random: () => 0, ...over })
@@ -57,4 +58,30 @@ it('otherEmotionTo가 random으로 선택됨', () => {
     const sleepy = { id: 'b', emotion: 'sleepy' as const }
     expect(matchCharacter(happy, sleepy, ctxFur({ random: () => 0.1 }))?.otherEmotionTo).toBe('happy')
     expect(matchCharacter(happy, sleepy, ctxFur({ random: () => 0.9 }))?.otherEmotionTo).toBe('sad')
+})
+// 정해 둔 만남(데모 연출 — runtime/roomDemo.ts)
+const forceTease = (a: string, b: string) =>
+    (a === 'nv' && b === 'na') || (a === 'na' && b === 'nv')
+        ? { ruleId: 'basic_meet_tired', self: 'nv', other: 'na', effect: 1 }
+        : null
+it('정해 둔 만남: 감정 · 확률과 상관없이 그 규칙의 그 효과(놀리기), 순서를 바꿔도 같다', () => {
+    const nv = { id: 'nv', emotion: 'anxious' as const }   // 평소라면 anxious_meet_tired
+    const na = { id: 'na', emotion: 'tired' as const }
+    for (const [a, b] of [[nv, na], [na, nv]]) {
+        const r = matchCharacter(a, b, ctxChar({ random: () => 0, forceMeet: forceTease }))
+        expect(r?.rule.id).toBe('basic_meet_tired')
+        expect(r?.self).toBe('nv')
+        expect(r?.other).toBe('na')
+        expect(r?.effect.self).toEqual(['tease_find', 'tease'])
+        expect(r?.effect.other).toEqual(['tired'])
+    }
+})
+it('정해 둔 만남: 쿨다운 중이면 다른 규칙으로 새지 않고 null', () => {
+    const r = matchCharacter({ id: 'nv', emotion: 'happy' }, { id: 'na', emotion: 'tired' },
+        ctxChar({ forceMeet: forceTease, isOnCooldown: (id: string) => id === 'basic_meet_tired' }))
+    expect(r).toBeNull()
+})
+it('정해 두지 않은 쌍은 평소 규칙대로', () => {
+    const r = matchCharacter(happy, { id: 't', emotion: 'tired' }, ctxChar({ random: () => 0.5, forceMeet: forceTease }))
+    expect(r?.effect.self).toEqual(['cheer_up'])
 })

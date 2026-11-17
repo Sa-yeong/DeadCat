@@ -11,7 +11,6 @@ export interface StockBasic {
   change_rate: number;
   market: 'DOMESTIC' | 'FOREIGN';
   is_favorite: boolean;
-  is_event: boolean;
   /** 호가 단위 규칙 — 프론트가 같은 표(tick.ts)로 ±를 계산한다 */
   tick_rule: TickRule;
   /** 지금 장중인가 — 아니면 시장가 주문을 낼 수 없다. 해외는 네 장 중 하나라도 열려 있으면 true */

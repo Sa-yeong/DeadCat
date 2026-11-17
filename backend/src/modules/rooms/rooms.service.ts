@@ -36,7 +36,7 @@ export class RoomsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly holdingService: HoldingService,
-        private readonly assertService: AssetService,
+        private readonly assetService: AssetService,
     ) {}
 
     // GET /rooms/me — 내 거실 (지시서 3-①)
@@ -340,10 +340,9 @@ export class RoomsService {
             holdings.map((h) => [String(h.stock_id), h]),
         );
 
-        // 거실 수익률 = 세운 캐릭터의 평가손익 합 ÷ 매입금 합 (소수 둘째 자리 버림 — /holdings와 같은 방식)
-        // assertService의 getMyAssetInfo() 함수 사용
-        const userAssetInfo = this.assertService.getMyAssetInfo(ownerIdParam);
-        const roomReturnRate = (await userAssetInfo).valuation_return_rate;
+        // 거실 수익률 = 주인의 전체 자산 총 수익률 — GET /assets의 valuation_return_rate와 같은 계산(해외는 원화 환산)
+        const userAssetInfo = await this.assetService.getMyAssetInfo(ownerIdParam);
+        const roomReturnRate = userAssetInfo.valuation_return_rate;
 
         return {
             viewer_mode: viewerId === undefined ? 'GUEST' : 'VISITOR',

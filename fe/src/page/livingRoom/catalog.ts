@@ -6,6 +6,7 @@
  *   평면 더미 색         종목 번호 + 지금 모습으로 정한다(개발용)
  * 팀원이 카탈로그 API 를 만들면 characterDef 속만 바꿔 갈아탄다.
  */
+import { versioned } from '../../shared/assetVersion';
 import type { Look } from './runtime/outfitState';
 import type { CharacterDef } from './types';
 
@@ -14,15 +15,16 @@ const BASE = import.meta.env.BASE_URL;
 /**
  * 지금 모습의 3D 모델 후보 — 앞에서부터 찾고 없으면 다음(3-⑩ 4). 옷 모델은 몸 + 옷이 든 VRM 한 벌(통째 교체, S6+ 도휘 결정).
  *   1. characters/chibi/clothes/{stock_id}/{base|max}_{ragged|normal|fancy}.vrm   캐릭터 전용 — 나중에
- *   2. characters/chibi/clothes/{stock_id}/default.vrm                           캐릭터 전용 기본 모습 — 옷 6벌을 다 만들 때까지(2026-11-07, NVDA = 13)
+ *   2. characters/chibi/clothes/{stock_id}/default.vrm                           캐릭터 전용 기본 모습 — 옷 6벌을 다 만들 때까지(2026-11-07 NVDA = 13, 2026-11-15 NAVER = 5)
  *   3. characters/chibi/clothes/common/{base|max}_{ragged|normal|fancy}.vrm       공통 — 지금
  * 다 없으면 렌더러가 기본 치비 모델(char_chibi_2.vrm)로 대신한다. 옛 종목별 모델 {stock_id}.vrm 은 1번이 맡는다(S6+ 에서 지움)
  * 2번은 같은 파일을 6개 이름으로 복사하지 않으려고 둔 한 칸(치비 한 벌이 약 11MB)
+ * 주소는 versioned()를 지난다 — 빌드 때 있던 파일만 ?v=내용해시, 없는 파일은 그대로(404 → 다음 후보, 마무리 L-3)
  */
 export function modelUrlsOf(stockId: number, look: Look): string[] {
   const file = `${look.clothes}_${look.state}.vrm`;
   const own = `${BASE}characters/chibi/clothes/${stockId}/`;
-  return [`${own}${file}`, `${own}default.vrm`, `${BASE}characters/chibi/clothes/common/${file}`];
+  return [`${own}${file}`, `${own}default.vrm`, `${BASE}characters/chibi/clothes/common/${file}`].map(versioned);
 }
 
 /**
@@ -49,8 +51,8 @@ export function topReaction(counts: Record<string, number>): { reactionType: str
   }
   return top;
 }
-/** 가구 3D 모델 — 없으면 3D 는 설치 영역 크기의 상자 + 이름 글자로 대신한다 */
-export const furnitureModelUrl = (furnitureId: number): string => `${BASE}furnitures/models/${furnitureId}.glb`;
+/** 가구 3D 모델 — 없으면 3D 는 설치 영역 크기의 상자 + 이름 글자로 대신한다. 있는 파일은 ?v=내용해시(versioned, 마무리 L-3) */
+export const furnitureModelUrl = (furnitureId: number): string => versioned(`${BASE}furnitures/models/${furnitureId}.glb`);
 
 /** 평면 더미 · 도형 캐릭터 색 — 구분만 되면 된다 */
 const PALETTE = ['#C9C1F7', '#8FB3FF', '#F2C38B', '#9FD3C7', '#F2A0B3', '#B8C7D9', '#E8A0A0', '#C7E0A0'];

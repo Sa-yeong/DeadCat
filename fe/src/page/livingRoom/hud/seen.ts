@@ -100,10 +100,22 @@ export function seeCount(seen: Counts, id: number | string, now: number): Counts
 export function settle(seen: Seen, survey: Survey): Seen {
   const itemBtn = survey.items ? clampCounts(seen.itemBtn, survey.items) : seen.itemBtn;
   const itemTile = survey.items ? clampCounts(seen.itemTile, survey.items) : seen.itemTile;
+  // 가구도 같은 규칙 — 줄었다가(데모 계정 초기화 등) 다시 얻으면 새 것으로. 전엔 가구만 빠져 있어서
+  // 초기화 뒤 출석으로 슬롯머신을 다시 받아도 「본 수 1 = 가진 수 1」이라 배치 점이 안 떴다(2026-11-16)
+  const furnitureBtn = survey.furniture ? clampCounts(seen.furnitureBtn, survey.furniture) : seen.furnitureBtn;
+  const furnitureTile = survey.furniture ? clampCounts(seen.furnitureTile, survey.furniture) : seen.furnitureTile;
   const farewells = seen.farewells ?? survey.farewells;
   const guestbook = seen.guestbook ?? survey.guestbookLatest;
-  if (itemBtn === seen.itemBtn && itemTile === seen.itemTile && farewells === seen.farewells && guestbook === seen.guestbook) return seen;
-  return { ...seen, itemBtn, itemTile, farewells, guestbook };
+  if (
+    itemBtn === seen.itemBtn &&
+    itemTile === seen.itemTile &&
+    furnitureBtn === seen.furnitureBtn &&
+    furnitureTile === seen.furnitureTile &&
+    farewells === seen.farewells &&
+    guestbook === seen.guestbook
+  )
+    return seen;
+  return { ...seen, itemBtn, itemTile, furnitureBtn, furnitureTile, farewells, guestbook };
 }
 
 /** 배치 모드를 열었다 — 배치 버튼 점을 지운다(칸의 점은 그대로) */

@@ -1,4 +1,4 @@
-import { SLOT_MACHINE } from '../furnitureCatalog';
+import { SLOT_MACHINE, SOFA_2SEAT } from '../furnitureCatalog';
 import { charIdOf, type InteractionMode, type PlacementDto, type RoomCharacterDto, type RoomSnapshot, type SlotTimer } from '../types';
 import type { CharacterCatalog, FurnitureCatalog } from './catalogs';
 import type { CharacterEngine, Emotion, EngineCommand, EngineFactory } from './CharacterEngine';
@@ -13,6 +13,51 @@ import { ROOM, type Pt } from './projection';
 import { footprint } from './furnitureShape';
 import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import type { MotionTable } from './roomEngine';
+import type { RoomDemo } from './roomDemo';
+
+/**
+ * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
+ * 슬롯머신 모델 가운데(설치 영역 가운데 = 모델 경계 상자 가운데) 기준, 모델 좌표로
+ *   front  정면(+Z) 쪽으로 — 0.41m − 경계 상자 가운데 치우침 0.022m = 0.388m ÷ (0.731m / 2.5칸)
+ *   side   모델 +X(레버 쪽) — 경계 상자 가운데가 레버 쪽으로 0.030m 치우쳐 있어서 캐릭터는 그만큼 반대쪽
+ * 캐릭터는 슬롯머신 정면을 마주 본다 — 레버가 오른손 쪽
+ */
+const SLOT_STAND = { front: 1.327, side: -0.103 };
+/**
+ * 소파 좌석 — 소파 모델에서 잰 값(모델 좌표 = 칸, 모델 가운데 기준). 2026-11-14
+ *   y     좌석 윗면 높이
+ *   back  등받이 앞면(좌석이 시작되는 곳) — 뒤쪽이 −
+ * 모델이 없는 소파(14 · 20, 지금은 상자)는 노말 소파 값으로 둔다 — 모델이 생기면 재서 넣을 것
+ */
+const SOFA_SEATS: Record<number, { y: number; back: number }> = {
+  2: { y: 0.47, back: -0.47 },
+  8: { y: 0.39, back: -0.375 },
+};
+const SOFA_SEAT_DEFAULT = SOFA_SEATS[2];
+/**
+ * play_sofa.vrma 앉은 자세(캐릭터 발 원점 기준, 칸) — char_chibi_2 에 걸어 잰 값. 모션을 바꾸면 다시 잴 것
+ *   buttY     엉덩이 아랫면 높이
+ *   buttBack  엉덩이 뒷면 — 뒤쪽이 −
+ */
+const SIT_POSE = { buttY: 0.667, buttBack: -0.327 };
+/** 엉덩이 뒷면과 등받이 사이 틈(칸) — 등이 등받이에 파묻히지 않게 */
+const SOFA_BACK_GAP = 0.03;
+/**
+ * 둘이 마주 보고 하는 모션 — 첫 단계 이름 → 두 캐릭터 발 사이 거리(칸). 이 모션을 받은 쪽이 상대(마주친 캐릭터) 앞으로 옮겨 서고 서로 마주 본다.
+ * 놀리기(2026-11-14 도휘): 너무 붙지 않게 사이에 캐릭터 1.5명이 들어갈 만큼 — 캐릭터 몸 폭이 약 1칸이라 발 사이 2.5칸
+ */
+const PAIR_GAP: Record<string, number> = { tease_find: 2.5 };
+/** 앉는 소파 모션 이름(motions.json) */
+const SIT_SOFA = 'sit_sofa';
+
+/** 슬롯머신 앞에 세운 뒤 모션까지 뜸(초) — 모션이 휙 나가지 않게 (2026-11-14 도휘 — 0.5 → 0.75초) */
+const SLOT_PAUSE_S = 0.75;
+
+/** 슬롯머신 앞에 서서 뜸을 들이는 중 — wait 초 뒤 엔진에 알린다 */
+interface SlotWait {
+  placementId: number;
+  wait: number;
+}
 
 export interface RoomLoopEvents {
   /** 짧게 누름 — 페이지가 RoomHud.onSelect 에 잇는다. 화면 좌표는 방 기준 */
@@ -30,6 +75,11 @@ export interface RoomLoopEvents {
    * 엔진이 스스로 고른 play_slot(캐릭터가 혼자 슬롯머신에 감)은 여기로 오지 않는다 — 뽑기가 아니다
    */
   onSlotDrop?(charId: string, placementId: number): void;
+  /**
+   * 슬롯머신 앞에 세워 뜸을 들인 뒤 엔진에 알렸다 — playing 이면 지금 play_slot 모션이 시작됐다(레버 · 결과 창 타이밍의 기준).
+   * 그사이 다시 들었거나 배치 모드로 갔거나 엔진이 반응하지 않으면 playing = false (2026-11-14)
+   */
+  onSlotStart?(charId: string, placementId: number, playing: boolean): void;
 }
 
 /** 개발 모드 머리 위 글자의 지금 단계 — 엔진 이름 · 몇 번째(1부터) / 전체 단계 수 · 남은 시간 */
@@ -97,6 +147,11 @@ export class RoomLoop {
   private readonly gesture: PressGesture;
 
   private readonly handles = new Map<string, CharacterHandle>();
+  private readonly demo: () => RoomDemo | null;
+  /** 엔진이 마지막으로 준 기본 자세(모션 이름) — 데모 제자리 모션을 켜고 끌 때 되돌릴 값 */
+  private readonly basePoses = new Map<string, { idle: string; walk: string }>();
+  /** 데모 제자리 모션을 건 캐릭터 → 건 모션 */
+  private readonly stillOn = new Map<string, string>();
   /** 옷 상태(수익률로 헤진 · 일반 · 좋은, 3-⑩) — 판정은 outfitState 한 곳, 여기는 캐릭터별로 들고 렌더러에 알린다 */
   private readonly outfits = new OutfitStates();
   /** 고른 옷(서버 equipped_clothes_id) — null = 기본 */
@@ -113,6 +168,10 @@ export class RoomLoop {
   private raf = 0;
   private last = 0;
   private fieldTimer = 0;
+  /** 소파에 앉아 있는(앉기 높이를 건) 캐릭터 */
+  private readonly seated = new Set<string>();
+  /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
+  private readonly slotWaits = new Map<string, SlotWait>();
 
   constructor(deps: {
     renderer: RoomRenderer;
@@ -123,6 +182,8 @@ export class RoomLoop {
     /** 모션 이름 → 파일 · 움직임 (motions.json) */
     motions: MotionTable;
     events: RoomLoopEvents;
+    /** 데모 계정의 내 거실 연출(roomDemo.ts) — 없거나 null 이면 평소대로. 늦게 켜질 수 있어 매번 읽는다 */
+    demo?: () => RoomDemo | null;
   }) {
     this.renderer = deps.renderer;
     this.engine = deps.createEngine((cmd) => this.onCommand(cmd));
@@ -130,6 +191,7 @@ export class RoomLoop {
     this.furniture = deps.furniture;
     this.motions = deps.motions;
     this.events = deps.events;
+    this.demo = deps.demo ?? (() => null);
     this.gesture = new PressGesture({
       hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.renderer.pick(x, y)),
       canLift: () => this.mode === 'NORMAL',
@@ -341,8 +403,15 @@ export class RoomLoop {
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
+      const sw = this.slotWaits.get(h.id);
+      if (sw) {
+        this.waitAtSlot(h, sw, dt);
+        continue;
+      }
       // 엔진 모션 중엔 제자리 — 가구 위에 내려놓았으면 그 자리 그대로. 끝나면 평소처럼 걸어 나온다(findPath 가 가장 가까운 빈 칸으로 먼저 비킨다)
       if (h.acting) continue;
+      // 데모 — 제자리에서 정해 둔 모션만(돌아다니지 않는다). 다른 캐릭터가 다가와 마주치는 건 그대로
+      if (this.applyStill(h)) continue;
       if (h.away) {
         this.walkAway(h, dt);
         continue;
@@ -373,7 +442,8 @@ export class RoomLoop {
     if (this.fieldTimer > 0.5) {
       this.fieldTimer = 0;
       // 들린 캐릭터는 판정에서 뺀다 — 놓은 자리에서 새로 마주친다
-      const list = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
+      // 슬롯머신 앞에서 뜸을 들이는 캐릭터도 뺀다 — 그사이 마주쳐 다른 모션으로 새지 않게
+      const list = [...this.handles.values()].filter((h) => !h.lifted && !this.slotWaits.has(h.id)).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
       for (const e of this.field.evaluate(list)) this.onFieldEnter(e.a, e.b);
     }
   }
@@ -432,13 +502,17 @@ export class RoomLoop {
         return;
       case 'emotion':
         this.renderer.setExpression(h.id, cmd.emotion);
-        this.renderer.setBasePose(h.id, { idle: this.motions.clipOf(cmd.idle), walk: this.motions.clipOf(cmd.walk) });
+        this.basePoses.set(h.id, { idle: cmd.idle, walk: cmd.walk });
+        this.setPose(h.id); // 데모 제자리 모션이 걸려 있으면 그 모션이 idle 로 남는다
         return;
       case 'play': {
         if (h.lifted) return;
+        this.dropSlotWait(h); // 뜸을 들이던 중 다른 명령이 오면 슬롯머신은 그만둔다
+        this.unseat(h); // 앉아 있다 다른 명령이 오면 일어선다(새 명령이 앉기면 sitOnSofa 가 다시 앉힌다)
         const run: ActRun = { steps: cmd.steps, i: -1 };
         h.run = run; // 앞 명령은 여기서 끝 — 끝 신호 없이(렌더러도 새 play 가 앞 요청을 밀어낸다)
         this.nextStep(h, run);
+        this.facePartner(h, cmd.steps);
       }
     }
   }
@@ -455,6 +529,7 @@ export class RoomLoop {
     run.i++;
     h.away = false;
     if (run.i >= run.steps.length) {
+      this.unseat(h);
       h.run = null;
       h.acting = false;
       const last = run.steps.at(-1);
@@ -497,7 +572,59 @@ export class RoomLoop {
   }
 
   /** 엔진 모션을 멈추고 다시 걷게 한다 — 끝 신호는 없다 */
+  /**
+   * 데모 트리거 버튼 — 누를 때마다 켜고 끈다(roomDemo.ts). 걸려 보내지는 않는다:
+   * 켜져 있는 동안 사용자가 엔비디아를 들어 네이버 옆에 놓으면(놓은 자리에서 새로 마주침) 쿨다운 없이 매번 놀리기.
+   * 켜고 끌 때 둘이 하던 상호작용을 멈춘다 — 켤 땐 엔진이 상호작용 중인 캐릭터의 만남을 받지 않아서, 끌 땐 놀리던 걸 바로 멈추려고.
+   * 끄면 정해 둔 만남도 풀려 원래 규칙(쿨다운 15초)대로.
+   * 바뀐 뒤 상태 — 둘 중 하나가 거실에 없으면 null
+   */
+  demoToggle(): boolean | null {
+    const d = this.demo();
+    const m = d?.meet;
+    if (!d || !m || this.mode !== 'NORMAL') return null;
+    const a = this.handles.get(m.self);
+    const b = this.handles.get(m.other);
+    if (!a || !b) return null;
+    const on = d.toggle();
+    for (const h of [a, b]) {
+      if (h.held || h.lifted) continue; // 들고 있는 중이면 엔진은 이미 멈춰 있다
+      this.stopActing(h);
+      this.engine.interrupt(h.id);
+    }
+    return on;
+  }
+
+  /** 기본 자세를 렌더러에 — 데모 제자리 모션이 걸려 있으면 그 모션을 idle 로 */
+  private setPose(id: string): void {
+    const base = this.basePoses.get(id);
+    const still = this.stillOn.get(id);
+    if (!base && !still) return;
+    this.renderer.setBasePose(id, {
+      idle: this.motions.clipOf(still ?? base!.idle),
+      walk: base ? this.motions.clipOf(base.walk) : null,
+    });
+  }
+
+  /** 데모 제자리 캐릭터인가 — 맞으면 모션을 걸고(한 번) 걷던 길을 버린다. 데모가 꺼지면 원래 자세로 */
+  private applyStill(h: CharacterHandle): boolean {
+    const want = this.demo()?.stillIdle.get(h.id) ?? null;
+    const have = this.stillOn.get(h.id) ?? null;
+    if (want !== have) {
+      if (want) this.stillOn.set(h.id, want);
+      else this.stillOn.delete(h.id);
+      this.setPose(h.id);
+    }
+    if (!want) return false;
+    if (h.path.length) {
+      h.path = [];
+      this.renderer.move(h.id, h.position); // 걷다 멈춘 자리에서 서게
+    }
+    return true;
+  }
+
   private stopActing(h: CharacterHandle): void {
+    this.unseat(h);
     h.run = null;
     h.away = false;
     h.acting = false;
@@ -540,6 +667,7 @@ export class RoomLoop {
     }
     for (const h of this.handles.values()) {
       h.held = false;
+      if (m === 'PLACEMENT') this.dropSlotWait(h);
       this.renderer.setCharacterState(h.id, { hidden: m === 'PLACEMENT', selected: false });
     }
   }
@@ -608,6 +736,8 @@ export class RoomLoop {
   onDragStart(charId: string): void {
     const h = this.handles.get(charId);
     if (!h) return;
+    this.dropSlotWait(h);
+    this.unseat(h);
     h.lifted = true;
     h.path = [];
     h.held = false;
@@ -691,12 +821,169 @@ export class RoomLoop {
     // 놓은 상대 — 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
     // 가구는 엔진에 알린다. 내려놓은 자리에 그대로 서 있는다 — 설치 영역 안 어디에 설지 · 방향은 앵커(#7)에서
     if (target?.kind === 'furniture' && this.mode === 'NORMAL') {
+      // 슬롯머신은 앞 자리에 바로 세워 마주 보게 하고 뜸을 들인 뒤에 엔진에 알린다(2026-11-14 도휘) — 모션이 그 거리에서 레버를 당기도록 만들어졌다.
+      // 걸어가게도 해 봤지만 오래 걸리고 주변 가구를 뚫고 지나가서 바로 세운다.
+      // 뽑기(서버)는 놓는 순간 시작하고, 레버 · 결과 창 타이밍은 onSlotStart 에서 맞춘다
+      if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE && this.standAtSlot(h, target.placementId)) {
+        this.events.onSlotDrop?.(charId, target.placementId);
+        return;
+      }
       this.engine.visitFurniture(charId, target.placementId);
+      // 소파에 앉기 모션이 시작됐으면 좌석 가운데에 바로 세워 앉힌다(2026-11-14 도휘)
+      if (this.engineFurniture.get(target.placementId) === SOFA_2SEAT && h.acting && h.run?.steps.some((s) => s.name === SIT_SOFA)) {
+        this.sitOnSofa(h, target.placementId);
+      }
       // 슬롯머신에 직접 끌어다 놓았을 때만 뽑기 시도(M-4) — 엔진이 반응하든 말든(쿨다운 · 감정 대기) 알린다. 캐릭터 동작은 엔진 play_slot 그대로
       if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE) this.events.onSlotDrop?.(charId, target.placementId);
       return;
     }
     this.stepAside(h); // 장식 가구 위에 내려놓았으면 내려온다
+  }
+
+  /** 슬롯머신 앞 자리(SLOT_STAND)에 바로 세워 마주 보게 한다. 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y) — RoomScene.attachFurnitureModel 과 같은 규칙 */
+  private standAtSlot(h: CharacterHandle, placementId: number): boolean {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    const def = p && this.furniture.def(p.furnitureId);
+    if (!p || !def) return false;
+    const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+    const r = (p.rotation * Math.PI) / 180;
+    const front = { x: -Math.sin(r), y: Math.cos(r) };
+    const side = { x: Math.cos(r), y: Math.sin(r) };
+    const spot = {
+      x: (f.x0 + f.x1) / 2 + front.x * SLOT_STAND.front + side.x * SLOT_STAND.side,
+      y: (f.y0 + f.y1) / 2 + front.y * SLOT_STAND.front + side.y * SLOT_STAND.side,
+    };
+    h.position = spot;
+    h.path = [];
+    this.renderer.move(h.id, spot);
+    this.renderer.face?.(h.id, { x: -front.x, y: -front.y }, true);
+    this.slotWaits.set(h.id, { placementId, wait: SLOT_PAUSE_S });
+    return true;
+  }
+
+  /**
+   * 소파 좌석 가운데에 세워 소파 정면을 보게 하고, 엉덩이가 좌석 윗면에 닿도록 몸 높이를 맞춘다.
+   * 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y). 앞뒤 자리는 엉덩이 뒷면이 등받이 앞면에 닿게
+   */
+  private sitOnSofa(h: CharacterHandle, placementId: number): void {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    const def = p && this.furniture.def(p.furnitureId);
+    if (!p || !def) return;
+    const seat = SOFA_SEATS[p.furnitureId] ?? SOFA_SEAT_DEFAULT;
+    const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+    const r = (p.rotation * Math.PI) / 180;
+    const front = { x: -Math.sin(r), y: Math.cos(r) };
+    const along = seat.back - SIT_POSE.buttBack + SOFA_BACK_GAP;
+    const spot = { x: (f.x0 + f.x1) / 2 + front.x * along, y: (f.y0 + f.y1) / 2 + front.y * along };
+    h.position = spot;
+    h.path = [];
+    this.renderer.move(h.id, spot);
+    this.renderer.face?.(h.id, front, true);
+    this.renderer.setSeatLift?.(h.id, seat.y - SIT_POSE.buttY);
+    this.seated.add(h.id);
+  }
+
+  /**
+   * 둘이 하는 모션(PAIR_GAP)이면 마주친 상대 앞 정해진 거리로 옮겨 서고 서로 마주 본다 — 상대 쪽에서 보던 방향은 그대로 두고 거리만 맞춘다.
+   * 그 자리가 가구 · 벽이면 상대 둘레를 30°씩 돌며 빈 자리를 찾고, 없으면 제자리에서 마주 보기만 한다
+   */
+  private facePartner(h: CharacterHandle, steps: readonly { name: string }[]): void {
+    const gap = steps[0] ? PAIR_GAP[steps[0].name] : undefined;
+    const o = gap !== undefined && h.metWith ? this.handles.get(h.metWith) : undefined;
+    if (gap === undefined || !o || o.lifted) return;
+    const dx = h.position.x - o.position.x;
+    const dy = h.position.y - o.position.y;
+    const base = dx * dx + dy * dy > 1e-6 ? Math.atan2(dy, dx) : 0;
+    for (let k = 0; k < 12; k++) {
+      const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6);
+      const spot = { x: o.position.x + Math.cos(a) * gap, y: o.position.y + Math.sin(a) * gap };
+      if (!this.grid.freeAt(spot)) continue;
+      h.position = spot;
+      h.path = [];
+      this.renderer.move(h.id, spot);
+      break;
+    }
+    const to = { x: o.position.x - h.position.x, y: o.position.y - h.position.y };
+    this.renderer.face?.(h.id, to, true);
+    this.renderer.face?.(o.id, { x: -to.x, y: -to.y }, true);
+    o.path = [];
+  }
+
+  /* ── 모션 실험(?lab) — 주가와 상관없이 원할 때 모션을 본다. 실제 서비스엔 쓰지 않는다 ── */
+
+  /**
+   * 엔진을 거치지 않고 바로 튼다 — names 를 차례로(마지막만 반복 여부를 따른다). partner 가 있으면 둘이 마주친 것으로 보고
+   * 상대에게 partnerNames 를 먼저 틀어 둔다(둘이 하는 모션은 자리 · 방향을 맞춘다)
+   */
+  labPlay(id: string, names: string[], partner?: { id: string; names: string[] }): void {
+    const h = this.handles.get(id);
+    if (!h || names.length === 0) return;
+    const steps = (list: string[]) =>
+      list.map((name, i) => ({ name, kind: 'clip' as const, loop: i === list.length - 1 && this.motions.loopOf(name) }));
+    this.engine.interrupt(id);
+    const o = partner && partner.id !== id ? this.handles.get(partner.id) : undefined;
+    if (o && partner) {
+      this.engine.interrupt(o.id);
+      h.metWith = o.id;
+      o.metWith = h.id;
+      if (partner.names.length) this.onCommand({ type: 'play', characterId: o.id, steps: steps(partner.names) });
+    }
+    this.onCommand({ type: 'play', characterId: id, steps: steps(names) });
+  }
+
+  /** 하던 모션을 멈춘다 */
+  labStop(id: string): void {
+    const h = this.handles.get(id);
+    if (!h) return;
+    this.engine.interrupt(id);
+    this.stopActing(h);
+  }
+
+  /** 둘을 붙여 세우고 마주친 것으로 엔진에 알린다 — 무엇을 할지는 엔진이 감정 · 규칙(확률 포함)대로 고른다. 쿨다운 중이면 아무 일도 없다 */
+  labMeet(a: string, b: string): void {
+    const A = this.handles.get(a);
+    const B = this.handles.get(b);
+    if (!A || !B || a === b) return;
+    for (const h of [A, B]) {
+      this.engine.interrupt(h.id);
+      this.stopActing(h);
+      h.path = [];
+    }
+    for (let k = 0; k < 8; k++) {
+      const ang = (k * Math.PI) / 4;
+      const spot = { x: A.position.x + Math.cos(ang) * 1.2, y: A.position.y + Math.sin(ang) * 1.2 };
+      if (!this.grid.freeAt(spot)) continue;
+      B.position = spot;
+      this.renderer.move(B.id, spot);
+      break;
+    }
+    this.onFieldEnter(a, b);
+  }
+
+  /** 앉기를 푼다 — 모션이 끝났거나 멈췄거나 다시 들었다 */
+  private unseat(h: CharacterHandle): void {
+    if (!this.seated.delete(h.id)) return;
+    this.renderer.setSeatLift?.(h.id, 0);
+  }
+
+  /** 슬롯머신 앞에서 뜸을 들이는 중 — 다 되면 엔진에 알린다 */
+  private waitAtSlot(h: CharacterHandle, sw: SlotWait, dt: number): void {
+    sw.wait -= dt;
+    if (sw.wait > 0) return;
+    this.slotWaits.delete(h.id);
+    h.rest = between(REST_MIN, REST_SPAN);
+    this.engine.visitFurniture(h.id, sw.placementId);
+    const playing = h.acting && !!h.run?.steps.some((s) => s.name === 'play_slot');
+    this.events.onSlotStart?.(h.id, sw.placementId, playing);
+  }
+
+  /** 슬롯머신 앞에서 뜸을 들이던 것을 그만둔다(다시 들었다 · 다른 명령 · 배치 모드) — HUD 가 기다리지 않게 알린다 */
+  private dropSlotWait(h: CharacterHandle): void {
+    const sw = this.slotWaits.get(h.id);
+    if (!sw) return;
+    this.slotWaits.delete(h.id);
+    h.path = [];
+    this.events.onSlotStart?.(h.id, sw.placementId, false);
   }
 
   /* ── 포인터 → 위 진입점들. 좌표는 방 기준 px ─────────────────────── */

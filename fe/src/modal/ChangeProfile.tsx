@@ -1,6 +1,7 @@
 import './ChangeProfile.css'
 import { api } from '../api/axios';
 import { IoClose } from 'react-icons/io5';
+import { setMyProfileImg } from '../common/profile/myProfile';
 
 const defaultProfiles = [
     'default_1.png',
@@ -17,11 +18,14 @@ export function ChangeProfileModal({isOpen, onClose, token, setImgUrl}: any){
             const formData = new FormData();
             formData.append('file', file);
 
-            await api.patch('/users/me/profile-image', formData,{
+            const response = await api.patch('/users/me/profile-image', formData,{
                 headers: {
                     Authorization: `Bearer ${token}`
                 }
             });
+            // 글로벌 네비 프로필 원도 바로 바꾼다(서버가 저장한 주소로)
+            const saved = response.data?.data?.profile_img_url ?? response.data?.profile_img_url;
+            if (saved) setMyProfileImg(saved);
         }catch(e){console.error('사용자 프로필 이미지 저장 실패: ', e)}
     }
 

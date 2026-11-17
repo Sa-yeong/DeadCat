@@ -9,7 +9,10 @@ export type MotionName =
   | 'idle' | 'tired' | 'depression' | 'sleep' | 'anxious'
   | 'surprise' | 'upset' | 'annoying' | 'relief' | 'madness'
   // 차트를 밀어 캐릭터가 밀려났다가 가운데로 돌아올 때 (2026-10-05 도휘 제작)
-  | 'walk' | 'run' | 'stoprun';
+  | 'walk' | 'run' | 'stoprun'
+  // 화면에 들어와 처음 걸어온 뒤 인사(2026-11-15 도휘 제작, 마무리 L-4).
+  // **프론트 전용** — 백엔드 엔진이 보내는 모션 이름이 아니다(StockStageLoop 가 첫 등장 도착 때만 튼다)
+  | 'greeting';
 
 export type EmotionName =
   | 'happy' | 'sad' | 'tired' | 'depress' | 'euphoria' | 'panic' | 'anxious' | 'sleepy';
@@ -43,6 +46,11 @@ export interface MotionDef {
   fadeOut?: number;
   /** 재생 배속. 1 = 원래 속도, 0.5 = 절반 속도(두 배 길게). 없으면 1 */
   speed?: number;
+  /**
+   * 표정 키가 .vrma 안에 있다 — 재생 중엔 코드가 표정을 쓰지 않는다(face 는 비워 둔다).
+   * 들어설 때 코드가 켜 둔 표정만 한 번 내리고, 끝나면(멈추면) 원래 표정 처리로 돌아간다
+   */
+  vrmaFace?: boolean;
 }
 
 /** 모션 표 — 파일 이름은 폴더(base) 기준 */
@@ -71,6 +79,7 @@ const f = (frame: number) => (frame - 1) / 30;
  *
  * walk · run — 제자리 걷기/달리기 반복. 몸을 가는 쪽으로 트는 것과 실제 이동은 코드(StageReturn)가 한다.
  * stoprun — 달려와 멈춘 뒤 숨 고르기(한 번). 걷기는 멈춘 뒤 바로 유지 모션으로 섞여 넘어간다.
+ * greeting — 화면에 들어올 때 왼쪽 밖에서 걸어와 처음 도착했을 때만(한 번, 개별종목 전용 — 거실과 무관).
  */
 export const MOTIONS: Partial<Record<MotionName, MotionDef>> = {
   idle: { file: 'idle.vrma', loop: true, face: [] }, // 표정은 유지 감정이 준다 — IDLE_FACE
@@ -89,6 +98,8 @@ export const MOTIONS: Partial<Record<MotionName, MotionDef>> = {
   run: { file: 'run.vrma', loop: true, face: [] },
   // 숨 고르기 — 달리기에서 들어오는 시간(fadeIn), 끝나고 유지 모션으로 돌아가는 시간(fadeOut), 배속(speed)
   stoprun: { file: 'stoprun.vrma', loop: false, face: [], fadeIn: 0.4, fadeOut: 0.6, speed: 1 },
+  // 첫 등장 인사(4초, 한 번) — 걸어와 도착하면 stoprun 없이 바로. 섞는 시간 · 배속은 기본값(화면을 보고 도휘가 정함)
+  greeting: { file: 'greeting.vrma', loop: false, face: [{ expr: 'happy', value: 1 }] },
   relief: {
     file: 'relief.vrma',
     loop: false,

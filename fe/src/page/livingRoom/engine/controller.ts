@@ -1,6 +1,6 @@
 import type { RuleSet } from "./ruleLoader"
 import type { CharacterRule, Emotion } from "./type/type"
-import { matchCharacter, matchFurniture, type Decision_C, type Decision_F, type MatchContext } from "./matcher"
+import { matchCharacter, matchFurniture, type Decision_C, type Decision_F, type ForceMeet, type MatchContext } from "./matcher"
 import { InteractionState, type Clock } from "./state"
 
 // BE가 내려주는 가구 배치 중 컨트롤러에 필요한 부분 (위치는 update()의 Obstacle로 따로 들어온다)
@@ -13,6 +13,7 @@ export type ControllerOptions = {
     groupDurationMs?: number
     furnitureDurationMs?: number // 반복 모션으로 끝나는 가구 상호작용의 시간 제한
     random?: () => number
+    forceMeet?: ForceMeet // 정해 둔 만남(데모) — matcher.ts ForcedMeet
     log?: (line: string) => void // 사건 하나당 결과와 이유 한 줄
     labelOf?: (characterId: string) => string | undefined // 로그에 곁들일 이름 (예: 종목명)
     onEmotionChanged?: (characterId: string, emotion: Emotion) => void // 규칙이 감정을 바꿨을 때 (otherEmotionTo)
@@ -61,7 +62,7 @@ export class LivingRoomController {
         this.dispatcher = opts.dispatcher
         this.now = opts.now ?? (() => performance.now())
         this.state = new InteractionState(this.now)
-        this.ctx = this.state.createMatchContext(opts.rules, opts.random)
+        this.ctx = this.state.createMatchContext(opts.rules, opts.random, opts.forceMeet)
         this.groupDurationMs = opts.groupDurationMs ?? 15000
         this.furnitureDurationMs = opts.furnitureDurationMs ?? 30000
         this.log = opts.log ?? (() => undefined)

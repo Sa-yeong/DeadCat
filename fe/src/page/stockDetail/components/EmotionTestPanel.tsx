@@ -177,6 +177,14 @@ export function EmotionTestPanel({
         );
       })}
 
+      <div style={S.section}>첫 등장</div>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {/* 왼쪽 밖에서 다시 걸어와 인사 — 장외(자는 중)면 등장 없이 가운데에서 잠. 지금 감정 그대로 */}
+        <button type="button" onClick={() => getLoop()?.reenter(false)} style={S.btn(false)}>
+          등장 다시 보기
+        </button>
+      </div>
+
       <div style={S.section}>주문 반응</div>
       <div style={{ display: 'flex', gap: 4 }}>
         <button type="button" onClick={() => run(input, 'BUY')} style={S.btn(false)}>

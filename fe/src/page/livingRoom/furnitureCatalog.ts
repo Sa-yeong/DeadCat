@@ -21,6 +21,8 @@ const carpet = (color: string, border: string): Colors => [color, border, ''];
 
 const DESK = 'desk_small';
 const SOFA = 'sofa_2seat';
+/** 소파의 엔진 이름 — 앉기 모션(sit_sofa)을 틀면 좌석 가운데에 세운다(RoomLoop.sitOnSofa) */
+export const SOFA_2SEAT = SOFA;
 /** 슬롯머신의 엔진 이름 — 캐릭터를 끌어 놓으면 뽑기(RoomLoop.onDragEnd), 위에 타이머(hud/SlotMachine) */
 export const SLOT_MACHINE = 'slot_machine';
 
@@ -45,13 +47,13 @@ export const FURNITURE_CATALOG: FurnitureDef[] = [
   box(7, '책상 (레어)', 4, 4, 1.0, RARE, DESK),
   box(8, '소파 (레어)', 4, 2, 1.0, RARE, SOFA),
   box(9, '화분 (레어)', 2, 2, 2.4, RARE), // 큰 화분(2026-11-07 도휘) — 키만 다르다
-  box(10, '스탠드 조명 (레어)', 2, 2, 2.2, RARE),
-  box(11, '책장 (레어)', 4, 2, 2.4, RARE),
+  box(10, '괘종시계 (레어)', 2, 2, 2.2, RARE), // 조명(레어) 자리를 괘종시계로(2026-11-14 도휘) — 영역·키는 조명과 같다
+  box(11, '수납장 (레어)', 4, 2, 1.0, RARE), // 책장(레어) 자리를 낮은 수납장(장식)으로(2026-11-14 도휘) — 낮은 가구라 키만 1.0
   rug(12, '카펫 (레어)', carpet('#2A3040', 'rgba(143,179,255,0.25)')),
   // 에픽 스킨
   box(13, '책상 (에픽)', 4, 4, 1.0, EPIC, DESK),
   box(14, '소파 (에픽)', 4, 2, 1.0, EPIC, SOFA),
-  box(15, '화분 (에픽)', 2, 2, 1.2, EPIC),
+  box(15, '금고 (에픽)', 2, 2, 1.2, EPIC), // 화분(에픽) 자리를 금고로(2026-11-14 도휘) — 영역·키는 화분과 같다
   box(16, '스탠드 조명 (에픽)', 2, 2, 2.2, EPIC),
   box(17, '책장 (에픽)', 4, 2, 2.4, EPIC),
   rug(18, '카펫 (에픽)', carpet('#2F2A42', 'rgba(164,151,255,0.25)')),

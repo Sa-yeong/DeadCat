@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthToken } from '../../../common/authToken';
+import { ProfileAvatar } from '../../../common/profile/ProfileAvatar';
 import { myUserId } from '../../livingRoom/api';
 import { createComment, deleteComment, deletePost, errorMessage, getComments, getPosts, isUnauthorized, statusOf, toggleFollow, toggleLike, votePost } from '../api';
 import { removePost } from '../communityPost';
@@ -413,7 +414,7 @@ function PostCard({
     <article style={{ padding: '14px 16px', background: '#26262B', borderRadius: R.card }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center" style={{ gap: 8 }}>
-          <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#3A3A42' }} />
+          <ProfileAvatar url={post.writer.profile_img_url} size={22} />
           <Nickname userId={post.writer.user_id} name={post.writer.nickname} size={12.5} />
           <span style={{ fontSize: 11.5, color: '#6E6E68' }}>
             · {ago(post.write_time)}
@@ -628,6 +629,7 @@ function PostCard({
           {comments.map((c) => (
             <div key={c.comment_id} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <div className="flex items-center" style={{ gap: 6, fontSize: 12 }}>
+                <ProfileAvatar url={c.writer.profile_img_url} size={18} />
                 <Nickname userId={c.writer.user_id} name={c.writer.nickname} size={12} />
                 <span style={{ color: '#6E6E68' }}>· {ago(c.write_time)}</span>
                 {isMine(c.writer.user_id, me) && (

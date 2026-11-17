@@ -3,6 +3,7 @@ import {
     Injectable,
     Logger,
     NotFoundException,
+    Optional,
     ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrdersRepository, type OrderGuard } from './orders.repository';
@@ -30,6 +31,7 @@ import {
 } from './order-rules';
 import { TagAssignmentService } from '../tags/services/tag-assignment.service';
 import { MarketTimeService } from '../character-engine/service/market-time.service';
+import { DemoService } from '../demo/demo.service';
 
 /**
  * 주문 접수.
@@ -53,6 +55,8 @@ export class OrdersService {
         private readonly tagAssignmentService: TagAssignmentService,
         private readonly marketTime: MarketTimeService,
         private readonly funds: OrderFundsService,
+        // 데모 계정의 NVDA · 035420 — 장외여도 즉시 체결. 데모 계정이 없으면 아무것도 안 함
+        @Optional() private readonly demo?: DemoService,
     ) {}
 
     async createOrder(
@@ -87,7 +91,11 @@ export class OrdersService {
             }
         }
 
-        const marketOpen = this.marketTime.isTradingOpen(marketOf(foreign));
+        // 데모 계정의 데모 종목 — 장외여도 시장가 · 지정가 · 예약 모두 현재가로 즉시 체결(아래 시장가 경로를 그대로 탄다).
+        // 현재가는 이 요청이 데모 요청이라 가짜 시세다(DemoService). 그 밖의 계정 · 종목은 아래 그대로
+        const demo = this.demo?.isDemoStock(userId, stock.code) ?? false;
+        const marketOpen =
+            demo || this.marketTime.isTradingOpen(marketOf(foreign));
         if (isMarket && !marketOpen) {
             throw new BadRequestException(
                 '장 시간이 아니라 시장가로 주문할 수 없어요. 지정가로 주문하면 다음 장에 체결돼요.',
@@ -97,7 +105,7 @@ export class OrdersService {
         const now = await this.currentPrice(dto.stock_code);
 
         // ── 시장가: 즉시 체결 ─────────────────────────────
-        if (isMarket) {
+        if (isMarket || demo) {
             if (now == null) {
                 throw new BadRequestException('현재가 조회에 실패했습니다.');
             }

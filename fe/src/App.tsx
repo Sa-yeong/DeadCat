@@ -19,6 +19,7 @@ import { SearchingView } from './page/searchingLivingRoom/SearchingView';
 import { RoomList } from './page/searchingLivingRoom/RoomsList';
 import { SearchedRooms } from './page/searchingLivingRoom/SearchedRooms';
 import { Follower, Followee } from './modal/Follow';
+import { DemoPage } from './page/demo/DemoPage';
 
 const router = createBrowserRouter([
   {
@@ -34,6 +35,8 @@ const router = createBrowserRouter([
       {path: 'stocks/:stockCode', element: <StockDetailPage />},
       {path: 'room', element: <LivingRoomPage />},
       {path: 'room/:userId', element: <LivingRoomPage />},
+      // 데모 관리(졸프 데모 영상) — 데모 계정에게만 내용이 보인다
+      {path: 'demo', element: <DemoPage />},
       {path: 'mypage', element: <MyPageLayout />, children: [
         {index: true, element: <Navigate to='assets' replace />},
         {path: 'assets', element: <Tab1 />, children: [

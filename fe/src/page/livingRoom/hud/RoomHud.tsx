@@ -34,7 +34,7 @@ import { PlacementEditor } from './PlacementEditor';
 import { PressRing } from './PressRing';
 import { SidePanel } from './SidePanel';
 import { SlotResultModal, SlotTimers } from './SlotMachine';
-import { remainingMs, SLOT_NOTE_MS, SLOT_SPIN_MS, waitNotice, type SlotNote } from './slotText';
+import { remainingMs, SLOT_LEVER_AT_MS, SLOT_MOTION_END_MS, SLOT_NOTE_MS, SLOT_SPIN_MS, SLOT_START_TIMEOUT_MS, testDrawResult, waitNotice, type SlotNote } from './slotText';
 import { StatRing, type BadgeKind } from './StatRing';
 import { useEscape } from './useEscape';
 import { useRedDots } from './useRedDots';
@@ -59,6 +59,8 @@ export interface RoomHudApi {
    * 뽑으면 서버 결과를 받은 뒤 레버 · 릴 → 결과 창 → 빨간점 다시 살피기
    */
   onSlotDrop(charId: string, placementId: number): void;
+  /** 캐릭터가 슬롯머신 앞에 서서 모션을 시작했다(playing) / 못 했다 — 레버 · 결과 창 타이밍 (RoomLoop onSlotStart) */
+  onSlotStart(charId: string, placementId: number, playing: boolean): void;
   /**
    * 빨간점 **다시 살피기**(M-2) — 가구 · 아이템 · 출석 · 이별 · 방명록을 서버에서 다시 조회해 버튼 점을 맞춘다(조회만, 주인이 아니면 아무것도 안 함).
    * 가구 · 아이템이 생긴 직후에 부른다 — 뽑기 직후(M-4)는 페이지에서 `hud.current?.recheckDots()`
@@ -306,18 +308,63 @@ export function RoomHud({
     return () => window.clearTimeout(t);
   }, [slotNote]);
 
+  /**
+   * 한 판 — 서버 결과(result)와 캐릭터 모션 시작(startAt)을 둘 다 받으면 레버 · 결과 창을 건다(runSlot).
+   * 캐릭터는 슬롯머신 앞에 서서 뜸을 들인 뒤에 모션을 시작하니, 서버 응답과 어느 쪽이 먼저 올지 모른다 (2026-11-14)
+   */
+  const slotRuns = useRef(new Map<number, { result?: SlotDrawResult; startAt?: number; playing?: boolean; test: boolean; giveUp: number }>());
+  useEffect(() => () => slotRuns.current.forEach((s) => window.clearTimeout(s.giveUp)), []);
+
+  const runSlot = (placementId: number) => {
+    const s = slotRuns.current.get(placementId);
+    if (!s || !s.result || s.startAt === undefined) return;
+    slotRuns.current.delete(placementId);
+    window.clearTimeout(s.giveUp);
+    const r = s.result;
+    const since = performance.now() - s.startAt;
+    // 모션 중이면 레버는 50프레임에, 모션이 없으면 바로. 결과 창은 릴이 다 선 뒤에(모션이 더 길면 모션이 끝난 뒤에) — 2026-11-14 도휘
+    const leverIn = s.playing ? Math.max(0, SLOT_LEVER_AT_MS - since) : 0;
+    const spinning = renderer.pullLever?.(placementId, leverIn / 1000) ?? false;
+    const reelsDone = spinning ? leverIn + SLOT_SPIN_MS : 0;
+    const showIn = s.playing ? Math.max(reelsDone, SLOT_MOTION_END_MS - since) : reelsDone;
+    spinTimer.current = window.setTimeout(() => {
+      drawing.current = false;
+      setSlotResult(r);
+      if (!s.test) recheckRef.current(); // 받은 가구 · 아이템이 배치 · 아이템 버튼의 빨간점으로 뜬다
+    }, showIn);
+  };
+
+  const slotStart = (placementId: number, playing: boolean) => {
+    const s = slotRuns.current.get(placementId);
+    if (!s || s.startAt !== undefined) return;
+    s.startAt = performance.now();
+    s.playing = playing;
+    runSlot(placementId);
+  };
+
   const slotDrop = async (placementId: number) => {
     if (!owner || interaction !== 'NORMAL' || drawing.current) return;
+    // 모션 · 레버 · 결과 창 시험용(개발 서버에서 주소 끝에 ?slot=test) — 서버 · 타이머 없이 가짜 결과로 한 판. 확인이 끝나면 지울 것
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('slot') === 'test') {
+      drawing.current = true;
+      const giveUp = window.setTimeout(() => slotStart(placementId, false), SLOT_START_TIMEOUT_MS);
+      slotRuns.current.set(placementId, { result: testDrawResult(placementId), test: true, giveUp });
+      return;
+    }
     const p = loop.currentPlacements.find((q) => q.placementId === placementId);
     if (!p) return;
     // 아직 못 뽑는다 — 서버를 부르지 않고 남은 시간만(판정 자체는 서버가 한다)
     const left = remainingMs(p.slot, Date.now());
     if (left > 0) return setSlotNote({ placementId, text: waitNotice(left), key: Date.now() });
     drawing.current = true;
+    const giveUp = window.setTimeout(() => slotStart(placementId, false), SLOT_START_TIMEOUT_MS);
+    slotRuns.current.set(placementId, { test: false, giveUp });
     let r: SlotDrawResult;
     try {
       r = await api.drawSlot(placementId);
     } catch (e) {
+      window.clearTimeout(giveUp);
+      slotRuns.current.delete(placementId);
       drawing.current = false;
       if (e instanceof api.AuthRequiredError) return askLogin();
       setSlotNote({ placementId, text: e instanceof api.HttpError ? e.message : '뽑지 못했어요', key: Date.now() });
@@ -325,18 +372,12 @@ export function RoomHud({
       if (e instanceof api.HttpError) void api.getRoom(undefined).then((s) => loop.refreshSlotTimers(s.placements), () => {});
       return;
     }
-    // 서버에 이미 반영됐다 — 타이머부터 맞추고, 레버 · 릴이 선 뒤 결과를 띄운다(모델이 없으면 바로)
+    // 서버에 이미 반영됐다 — 타이머부터 맞추고, 레버 · 결과 창은 캐릭터 모션에 맞춰 건다(runSlot)
     loop.setSlotTimer(placementId, r.slot);
     setSlotNote(null);
-    const spinning = renderer.pullLever?.(placementId) ?? false;
-    spinTimer.current = window.setTimeout(
-      () => {
-        drawing.current = false;
-        setSlotResult(r);
-        recheckRef.current(); // 받은 가구 · 아이템이 배치 · 아이템 버튼의 빨간점으로 뜬다
-      },
-      spinning ? SLOT_SPIN_MS : 0,
-    );
+    const s = slotRuns.current.get(placementId);
+    if (s) s.result = r;
+    runSlot(placementId);
   };
 
   /* ── 증여 ── */
@@ -412,6 +453,9 @@ export function RoomHud({
     },
     onSlotDrop(_charId, placementId) {
       void slotDrop(placementId);
+    },
+    onSlotStart(_charId, placementId, playing) {
+      slotStart(placementId, playing);
     },
     recheckDots,
   }));

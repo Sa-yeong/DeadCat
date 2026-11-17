@@ -65,8 +65,8 @@ export function ItemPanel({
                   }}
                 >
                   {/* 그림 파일(public/items/{id}.png)이 없으면 선물 상자로 */}
-                  <Picture src={itemImgUrl(it.itemId)} size={34} fallback={<ItemIcon icon="gift" size={34} />} />
-                  <span style={{ position: 'absolute', left: 6, bottom: 4, fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: C.text }}>
+                  <Picture src={itemImgUrl(it.itemId)} size={34} fill fallback={<ItemIcon icon="gift" size={34} />} />
+                  <span style={{ position: 'absolute', left: 6, bottom: 4, fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, color: C.text, textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
                     ×{it.quantity}
                   </span>
                   {dots.isNew(it.itemId, it.quantity) && <RedDot right={5} top={5} />}

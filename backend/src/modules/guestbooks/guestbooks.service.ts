@@ -79,6 +79,8 @@ export class GuestbooksService {
                         reply_id: Number(reply.id),
                         writer_id: Number(reply.user_id),
                         writer_nickname: reply.users?.nickname ?? '알 수 없음',
+                        writer_profile_img_url:
+                            reply.users?.profile_img_url ?? null,
                         content:
                             !post.is_secret ||
                             canReadSecret(

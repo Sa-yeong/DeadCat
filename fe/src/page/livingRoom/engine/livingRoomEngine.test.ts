@@ -316,7 +316,8 @@ describe('특수 모션 가구 5종', () => {
         s.engine.addCharacter('1')
         s.snapshot([['1', 'panic']])
         s.engine.visitFurniture('1', PIANO)
-        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: true }] }])
+        // 슬롯머신은 한 번만(2026-11-14 play_slot.vrma) — 나머지는 반복
+        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: motion !== 'play_slot' }] }])
     })
 
     it('반복 모션이라 30초에 끝나고, 쓰는 동안은 자리가 없고, 끝나면 20초 쿨다운', () => {

@@ -61,7 +61,7 @@ export function MyStockList({token}:any) {
     </div>;
 }
 
-function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, market, onClick}:any){
+function MyStock({s_name, s_img, quantity, price, mean_price, profit, rate, onClick}:any){
     const formatComma = (value: number|string) => {
         const num = Number(value);
 

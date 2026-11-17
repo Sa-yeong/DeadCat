@@ -521,7 +521,7 @@ interface GuestbookListRes {
     content: string | null;
     is_secret: boolean;
     created_at: string;
-    replies: { reply_id: number; writer_id: number | null; writer_nickname: string; content: string | null; created_at: string }[];
+    replies: { reply_id: number; writer_id: number | null; writer_nickname: string; writer_profile_img_url?: string | null; content: string | null; created_at: string }[];
   }[];
   next_cursor: number | null;
 }
@@ -543,7 +543,14 @@ export async function getGuestbook(ownerId: OwnerId, cursor: number | null = nul
       content: p.content,
       writeTime: p.created_at,
       isSecret: p.is_secret,
-      replies: p.replies.map((r) => ({ replyId: r.reply_id, userId: r.writer_id, nickname: r.writer_nickname, content: r.content, writeTime: r.created_at })),
+      replies: p.replies.map((r) => ({
+        replyId: r.reply_id,
+        userId: r.writer_id,
+        nickname: r.writer_nickname,
+        profileImgUrl: r.writer_profile_img_url ?? null,
+        content: r.content,
+        writeTime: r.created_at,
+      })),
     })),
     nextCursor: d.next_cursor,
   };

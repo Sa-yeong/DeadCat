@@ -1,12 +1,11 @@
 import './Tab1.css'
 import { useNavigate } from 'react-router-dom';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../../api/axios';
 import { MyStockList } from './MyStockList';
 import { ChangeNickModal } from '../../modal/ChangeNickModal';
 import { FollowModal } from '../../modal/Follow';
 import { ChangeProfileModal } from '../../modal/ChangeProfile';
-import { FaS } from 'react-icons/fa6';
 
 interface Me{
     nickname:string;
@@ -103,19 +102,6 @@ function Represent({token, mydata, setMydata}:any){
 
             setMydata((prev: Me | null) => prev ? {...prev, share_option:newState} : prev);
         }catch(e){console.error('공유 여부 변경 실패: ', e);}
-    }
-
-    const sendProfileImg = async (file: File) => {
-        try{
-            await api.patch('/users/me/profile-image', {
-                file: file
-            },{
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": 'multipart/form-data'
-                }
-            });
-        }catch(e){console.error('사용자 프로필 이미지 저장 실패: ', e)}
     }
 
     useEffect(() => {
@@ -233,4 +219,4 @@ function AssetInfo({token}: any){
         </div>
         
     </>;
-}
+}

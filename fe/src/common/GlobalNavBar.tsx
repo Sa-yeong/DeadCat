@@ -4,6 +4,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { clearToken, leavesOnLogout, useAuthToken } from './authToken';
 import { SearchBar } from './SearchBar';
 import { SidebarLogin } from './sidebar/panels/parts';
+import { ProfileAvatar } from './profile/ProfileAvatar';
+import { useMyProfileImg } from './profile/myProfile';
+import { useDemoMode } from './demo/demoMode';
 
 /**
  * 프로필 원 옆 버튼. 비로그인 — 팀 공용 로그인 창(로그인하면 지금 주소로 돌아오고 창은 스스로 닫힌다).
@@ -45,6 +48,11 @@ function AuthButton(){
  */
 export function GlobalNavBar(){
     const { pathname } = useLocation();
+    // 로그인했으면 마이페이지에서 고른 프로필 이미지, 아니면 지금까지의 보라 원
+    const token = useAuthToken();
+    const myImg = useMyProfileImg();
+    // 데모 계정에게만 — 데모 관리 화면(초기화 · 가짜 시세 · 거실 바로 가기). 영상에 안 나오게 투명(자리 · 크기는 그대로)
+    const { demo } = useDemoMode();
     const on = (prefix: string) => (pathname.startsWith(prefix) ? 'on' : undefined);
 
     return <header className='globalNav'>
@@ -54,10 +62,17 @@ export function GlobalNavBar(){
             <Link to='/stocks' className={on('/stocks')}>전체종목</Link>
             <Link to='/explore' className={on('/explore')}>거실 탐색</Link>
             <Link to='/mypage' className={on('/mypage')}>마이페이지</Link>
+            {demo && (
+                // 보고 있을 때의 굵게 · 빨간 밑줄(on), 마우스를 올렸을 때 색 — 전부 안 보이게. 「마이페이지」 오른쪽 빈자리를 누르면 된다
+                <Link to='/demo' aria-label='데모 관리' tabIndex={-1}
+                    style={{opacity: 0, cursor: 'default', WebkitTapHighlightColor: 'transparent'}}>데모</Link>
+            )}
         </nav>
         <div className='gnb-right'>
             <div className='gnb-search'><SearchBar /></div>
-            <Link to='/mypage' className='gnb-avatar' aria-label='내 프로필' />
+            <Link to='/mypage' className='gnb-avatar' aria-label='내 프로필'>
+                {token && <ProfileAvatar url={myImg} size={32} />}
+            </Link>
             <AuthButton />
         </div>
     </header>;

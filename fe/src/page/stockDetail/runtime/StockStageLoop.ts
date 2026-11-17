@@ -3,6 +3,7 @@ import { CROSSFADE_S, IDLE_FACE, type Emotion, type MotionName, type MotionSet }
 import { SPAM_TAPS, TAP_WINDOW_MS, clickReaction, spamReaction } from './reactions';
 import { StageReturn, type ReturnMode } from './StageReturn';
 import { StageZoom } from './StageZoom';
+import { EMOTION_WAIT_MS, ENTER_PX_S, arrivalAction, entranceKind, type EntrancePhase } from './entrance';
 
 export interface Rect {
   left: number;
@@ -21,6 +22,9 @@ const FACE_ONCE_S = 2;
 
 /** 표정을 감정 이름으로 얹는 모션 — 나머지 모션은 표정이 모션에 붙어 있다(모션 표의 face) */
 const FACE_BY_EMOTION: MotionName[] = ['idle', 'madness'];
+
+/** 첫 화면 전에 모델과 같이 준비해 둘 모션 — 첫 등장(walk · greeting) · 장외에 들어오면 바로 잠(sleep) */
+const FIRST_MOTIONS: MotionName[] = ['walk', 'greeting', 'sleep'];
 
 /** 마지막으로 바뀐 것 — 감정 테스트 패널이 보여 준다 */
 export interface StageChange {
@@ -42,11 +46,18 @@ export interface StageChange {
  * 감정을 어디서 계산하든(브라우저든 서버든) 여기는 setEmotions 로 받기만 한다.
  * 이 화면 고유 동작 — 탭 반응(onTap), 차트 슬라이드 연동(panBy · StageReturn),
  * 가림 회피(setOcclusion, 아직 쓰지 않음).
+ *
+ * 첫 등장(마무리 L-4) — 들어올 때마다(load · 같은 캐릭터의 다른 종목으로 옮김 reenter):
+ * 모델 + 첫 감정(최대 EMOTION_WAIT_MS) + 그리기 준비를 기다린 뒤, 장외(sleepy)면 가운데에서 바로 잠,
+ * 아니면 무대 왼쪽 밖에서 걸어와(ENTER_PX_S) 도착하면 stoprun 없이 greeting(+ happy) → 유지 감정.
+ * 등장 중(걷기 · 인사)에 온 감정은 줄 세웠다가 인사가 끝난 뒤(단발 줄 → 유지 감정), 클릭은 무시.
  */
 export class StockStageLoop {
   private readonly scene: StockScene;
   private hold: Emotion = NEUTRAL;
   private taps: number[] = [];
+  /** 연타 반응이 나오는 탭 수 — 캐릭터마다(assets spamTaps), 없으면 SPAM_TAPS */
+  private spamTaps = SPAM_TAPS;
   private occlusion: Rect[] = [];
   private ready = false;
   /** 차트를 밀었다가 돌아오는 동작. 걷거나 달리는 동안은 감정 모션을 바꾸지 않는다 */
@@ -77,29 +88,94 @@ export class StockStageLoop {
   private faceTimer = 0;
   /** 이 캐릭터의 모션 표(공용 + 덮어쓰기, assets.characterOf) — load 때 받는다 */
   private motions: MotionSet = {};
+  /** 첫 등장 단계 — 처음엔 숨어서 기다림(그동안 차트를 끌어도 움직이지 않는다) */
+  private phase: EntrancePhase = 'waiting';
+  /** 이번 등장에서 감정 응답을 받았나(실패 응답도 받은 것으로 — 더 기다리지 않음) · 기다리는 쪽을 깨우기 */
+  private answered = false;
+  private wakeWaiter: (() => void) | null = null;
+  /** 등장을 새로 시작할 때마다 하나씩 — 기다리는 사이에 또 새로 시작했으면 옛 등장은 버린다 */
+  private entrySeq = 0;
+  private disposed = false;
 
   constructor(scene: StockScene) {
     this.scene = scene;
     this.scene.onMotionEnd = (name) => this.onMotionEnd(name);
     this.back = new StageReturn(scene);
     this.back.onMove = (mode) => this.onMove(mode);
-    this.back.onArrive = (mode) => this.onArrive(mode);
+    this.back.onArrive = (mode, arrived) => this.onArrive(mode, arrived);
     this.zoom = new StageZoom();
     this.scene.beforeFrame = (dt) => {
       const v = this.zoom.update(dt);
       this.scene.setView(v.zoom, v.drone);
       this.back.update(dt);
+      // 걸어오다 끌려 멈췄는데 놓고 보니 갈 데가 없다(가운데 근처) — 그 자리에서 인사
+      if (this.phase === 'walking' && this.ready && this.back.settled) this.greet();
     };
+    this.updateStill();
   }
 
-  /** 캐릭터 하나(모델 + 그 캐릭터의 모션 표)를 띄운다 — assets.characterOf */
-  async load(character: { model: string; motions: MotionSet }): Promise<void> {
+  /**
+   * 캐릭터 하나(모델 + 그 캐릭터의 모션 표)를 띄운다 — assets.characterOf.
+   * 끝나면(= 캔버스를 보여도 될 때) 이미 첫 자리 · 첫 모션으로 한 번 그려 둔 뒤다. 걸어 들어오기는 그때 시작
+   */
+  async load(character: { model: string; motions: MotionSet; spamTaps?: number; hatDrop?: boolean }): Promise<void> {
     this.motions = character.motions;
-    await this.scene.load(character.model, character.motions, 'idle');
+    this.spamTaps = character.spamTaps ?? SPAM_TAPS;
+    const seq = ++this.entrySeq;
+    const also = FIRST_MOTIONS.filter((m) => this.motions[m]);
+    await this.scene.load(character.model, character.motions, 'idle', also, { hatDrop: character.hatDrop });
+    await this.waitEmotion();
+    if (this.disposed || seq !== this.entrySeq) return;
+    const walk = await this.begin(seq);
+    if (this.disposed || seq !== this.entrySeq) return;
+    this.scene.drawNow(); // 캔버스가 숨어 있는 동안 첫 자리에서 한 번 — 보인 뒤 첫 그리기로 멈칫하지 않게
     this.ready = true;
-    this.applyHold();
+    if (walk) this.back.walkIn(ENTER_PX_S);
     // 나머지는 뒤에서 — 첫 화면을 모션 아홉 개 받을 때까지 붙잡지 않는다
-    this.scene.preload(Object.keys(this.motions).filter((m) => m !== 'idle') as MotionName[]);
+    this.scene.preload(Object.keys(this.motions).filter((m) => m !== 'idle' && !also.includes(m as MotionName)) as MotionName[]);
+  }
+
+  /**
+   * 새로 들어온 것으로 보고 다시 등장한다 — 같은 캐릭터를 쓰는 다른 종목으로 옮겼을 때(캔버스는 그대로).
+   * 하던 것(단발 · 잠 · 걷기)은 버리고 왼쪽 밖에 숨긴 채 새 종목의 첫 감정을 기다린다.
+   * wait = false 면 기다리지 않고 지금 감정으로 바로(감정 테스트 패널의 「등장 다시 보기」).
+   * 아직 처음 뜨는 중이면 아무것도 안 한다(load 가 등장을 한다)
+   */
+  reenter(wait = true) {
+    if (!this.ready) return;
+    const seq = ++this.entrySeq;
+    window.clearTimeout(this.faceTimer);
+    this.queue.length = 0;
+    this.once = false;
+    this.settling = false;
+    this.awake = false;
+    this.waking = false;
+    this.moving = null;
+    if (wait) {
+      this.hold = NEUTRAL; // 옛 종목의 감정 — 새 종목 것을 받을 때까지 쓰지 않는다
+      this.answered = false;
+    }
+    this.phase = 'waiting';
+    this.updateStill();
+    this.back.placeOffLeft();
+    void (async () => {
+      if (wait) await this.waitEmotion();
+      if (this.disposed || seq !== this.entrySeq) return;
+      const walk = await this.begin(seq);
+      if (this.disposed || seq !== this.entrySeq) return;
+      if (walk) this.back.walkIn(ENTER_PX_S);
+    })();
+  }
+
+  /** 첫 감정 요청이 실패했다 — 더 기다리지 않고 장외가 아닌 것으로 본다 */
+  emotionMissed() {
+    this.answered = true;
+    this.wakeWaiter?.();
+  }
+
+  /** 첫 등장 단계 — 미리보기 확인용 */
+  get entrance(): EntrancePhase {
+    return this.phase;
   }
 
   /**
@@ -107,6 +183,8 @@ export class StockStageLoop {
    * 세기 순으로 보고 — 유지 감정은 가장 센 duration=null 하나, 한 번 감정은 가장 센 것 하나.
    */
   setEmotions(list: Emotion[]) {
+    this.answered = true;
+    this.wakeWaiter?.();
     const sorted = [...list].sort((a, b) => b.weight - a.weight);
     const hold = sorted.find((e) => e.duration === null) ?? NEUTRAL;
     // 단발은 엔진이 보낸 순서 그대로 전부 — 예: 장외 매수 = surprise 다음 happy
@@ -116,10 +194,10 @@ export class StockStageLoop {
     this.updateStill();
     if (!this.ready || this.waking) return; // 깨는 중 — 끝나면 유지 감정
     for (const e of onces) if (this.queue.length < ONCE_QUEUE_MAX) this.queue.push(e);
-    // 돌아오는 중·숨 고르는 중·단발 중 — 끝나면 줄 선 단발, 그다음 유지 감정 순
-    if (this.moving || this.settling || this.once) return;
+    // 돌아오는 중·숨 고르는 중·단발 중·등장 중 — 끝나면 줄 선 단발, 그다음 유지 감정 순
+    if (this.moving || this.settling || this.once || this.phase !== 'none') return;
     if (this.queue.length) this.next();
-    else if (changed) this.applyHold();
+    else if (changed) void this.applyHold();
   }
 
   /**
@@ -133,7 +211,7 @@ export class StockStageLoop {
     this.taps.push(now);
     const n = this.taps.length;
 
-    if (this.waking || this.once) return true; // 깨는 중·단발 중 — 끝까지 본다(클릭은 무시)
+    if (this.waking || this.once || this.phase !== 'none') return true; // 깨는 중·단발 중·등장 중 — 끝까지 본다(클릭은 무시)
     // 자는 중이면 깨운다 — 놀라며 깨고(surprise), 그 뒤로는 보고 있는 동안 깨어 있다
     if (this.asleep && this.motions.surprise) {
       this.awake = true;
@@ -146,7 +224,7 @@ export class StockStageLoop {
 
     let react: MotionName | null = null;
     const current = this.current.emotion;
-    if (n >= SPAM_TAPS) react = spamReaction(current);
+    if (n >= this.spamTaps) react = spamReaction(current);
     else if (n === 1) react = clickReaction(current);
     if (react && !this.moving && !this.settling) {
       this.queue.length = 0; // 클릭 반응이 먼저 — 걸어오던 단발은 없다(단발 중엔 위에서 막힘)
@@ -163,7 +241,7 @@ export class StockStageLoop {
     this.waking = false;
     this.queue.length = 0;
     this.updateStill();
-    if (this.ready && !this.moving && !this.settling && !this.once) this.applyHold(true);
+    if (this.ready && !this.moving && !this.settling && !this.once && this.phase === 'none') void this.applyHold(true);
   }
 
   /** 장외 잠 상태 — 테스트 패널용. 장외(sleepy)가 아니면 null */
@@ -231,6 +309,8 @@ export class StockStageLoop {
 
   dispose() {
     this.ready = false;
+    this.disposed = true;
+    this.wakeWaiter?.();
     window.clearTimeout(this.faceTimer);
     this.scene.dispose();
   }
@@ -248,10 +328,15 @@ export class StockStageLoop {
   }
 
   private onMotionEnd(name: MotionName) {
+    if (name === 'greeting' && this.phase === 'greeting') {
+      this.endEntrance();
+      return;
+    }
+    if (this.phase !== 'none') return; // 숨어 기다리는 중 · 걸어오는 중 — 인사 전에는 다른 모션이 끝나도 상관없다
     if (name === 'surprise' && this.waking) {
       this.waking = false; // 다 깼다 — 이제 평소처럼(밀려나 있었으면 돌아온다)
       this.updateStill();
-      if (!this.moving && !this.settling) this.applyHold(true);
+      if (!this.moving && !this.settling) void this.applyHold(true);
       return;
     }
     if (name === 'stoprun' && this.settling) {
@@ -261,7 +346,7 @@ export class StockStageLoop {
     }
     if (this.moving || this.settling) return;
     if (this.once) this.next(); // 단발 끝 — 다음 단발 또는 유지 감정
-    else if (!this.motions[name]?.loop) this.applyHold(true);
+    else if (!this.motions[name]?.loop) void this.applyHold(true);
   }
 
   /**
@@ -276,7 +361,7 @@ export class StockStageLoop {
     if (!e) {
       this.once = false;
       this.updateStill();
-      this.applyHold(true);
+      void this.applyHold(true);
       return;
     }
     this.once = true;
@@ -296,7 +381,7 @@ export class StockStageLoop {
     }
     // 앞 단발 모션의 마지막 자세에 멈춰 있지 않게 — 유지 모션으로 돌려 놓고 그 위에 표정
     const playing = this.scene.playing;
-    if (playing && !this.motions[playing]?.loop) this.applyHold(true);
+    if (playing && !this.motions[playing]?.loop) void this.applyHold(true);
     this.note('once', e.emotion, this.scene.playing ?? 'idle');
     this.scene.flashFace(expr, e.weight, FACE_ONCE_S);
     this.faceTimer = window.setTimeout(() => this.once && this.next(), FACE_ONCE_S * 1000);
@@ -305,12 +390,79 @@ export class StockStageLoop {
   /** 걷기·숨 고르기가 끝났다 — 줄 선 단발이 있으면 그것부터 */
   private afterBusy() {
     if (this.queue.length) this.next();
-    else this.applyHold(true);
+    else void this.applyHold(true);
   }
 
-  /** 제자리에 둘지 — 자는 중·깨는 중·단발 중에는 끌어도 걸어오지 않는다(끝나면 그때 온다) */
+  /** 제자리에 둘지 — 자는 중·깨는 중·단발 중·숨어 기다리는 중·인사 중에는 끌어도 걸어오지 않는다(끝나면 그때 온다) */
   private updateStill() {
-    this.back.setStill(this.asleep || this.waking || this.once);
+    this.back.setStill(this.asleep || this.waking || this.once || this.phase === 'waiting' || this.phase === 'greeting');
+  }
+
+  /** 첫 감정 응답(또는 실패)을 기다린다 — 최대 EMOTION_WAIT_MS. 이미 받았으면 바로 */
+  private waitEmotion(): Promise<void> {
+    if (this.answered || this.disposed) return Promise.resolve();
+    return new Promise((resolve) => {
+      const prev = this.wakeWaiter;
+      const done = () => {
+        window.clearTimeout(timer);
+        if (this.wakeWaiter === wake) this.wakeWaiter = null;
+        resolve();
+      };
+      // 앞 기다림(옛 등장)도 같이 깨운다 — 그쪽은 등장 번호가 달라 그냥 끝난다
+      const wake = () => {
+        prev?.();
+        done();
+      };
+      const timer = window.setTimeout(wake, EMOTION_WAIT_MS);
+      this.wakeWaiter = wake;
+    });
+  }
+
+  /**
+   * 기다림이 끝났다 — 첫 자리 · 첫 모션을 정한다(아직 걷지는 않는다). 걸어 들어올 거면 true.
+   *  · 장외(sleepy) → 가운데에서 바로 잠(등장 없음, 지금 잠 동작 그대로)
+   *  · 아니면 → 왼쪽 밖에 walk 로 세운다. 표정은 비우고(인사 때 happy, 그 뒤 유지 감정)
+   * 첫 모션이 붙은 뒤에 끝난다 — 보일 때 T자 · 앞 모션이 비치지 않게
+   */
+  private async begin(seq: number): Promise<boolean> {
+    if (entranceKind(this.answered ? this.hold : null) === 'sleep') {
+      this.phase = 'none';
+      this.back.placeHome();
+      this.updateStill();
+      await this.applyHold(true);
+      return false;
+    }
+    this.back.placeOffLeft();
+    this.scene.setBase(null);
+    const ok = this.motions.walk ? await this.scene.play('walk') : false;
+    if (!ok) await this.scene.play('idle'); // walk 파일이 없으면 지금 모션 그대로 미끄러져 온다(평소 복귀와 같게)
+    if (this.disposed || seq !== this.entrySeq) return false;
+    this.phase = 'walking';
+    this.updateStill();
+    this.note('once', this.hold.emotion, 'walk');
+    return true;
+  }
+
+  /** 첫 도착 — stoprun 없이 인사(greeting + happy). 끝나면 endEntrance */
+  private greet() {
+    this.phase = 'greeting';
+    this.moving = null;
+    this.updateStill();
+    if (!this.motions.greeting) {
+      this.endEntrance();
+      return;
+    }
+    this.note('once', 'happy', 'greeting');
+    void this.scene.play('greeting').then((ok) => {
+      if (!ok && this.phase === 'greeting') this.endEntrance();
+    });
+  }
+
+  /** 등장 끝 — 줄 선 단발, 그다음 유지 감정(평소대로). 인사 중에 밀려났으면 그다음에 돌아온다 */
+  private endEntrance() {
+    this.phase = 'none';
+    this.updateStill();
+    this.afterBusy();
   }
 
   /** 돌아오기 시작 — walk/run 파일이 없으면 지금 모션 그대로 미끄러져 온다 */
@@ -321,13 +473,18 @@ export class StockStageLoop {
   }
 
   /**
-   * 도착. 달려왔으면 숨 고르기(stoprun) 뒤에 유지 감정으로, 걸어왔으면 바로 유지 감정으로 섞어 넘어간다.
-   * 숨 고르는 동안은 감정 모션이 끼어들지 않는다.
+   * 멈춤(entrance.arrivalAction).
+   *  · 첫 등장의 도착 → stoprun 없이 인사(greeting). 걸어오다 끌려 멈췄으면 그 자리에 서서(idle) 다음 도착을 기다린다
+   *  · 그 밖 — 달려왔으면 숨 고르기(stoprun) 뒤에 유지 감정으로, 걸어왔으면 바로 유지 감정으로 섞어 넘어간다.
+   *    숨 고르는 동안은 감정 모션이 끼어들지 않는다.
    */
-  private onArrive(mode: ReturnMode) {
+  private onArrive(mode: ReturnMode, arrived: boolean) {
     this.moving = null;
-    if (!this.ready) return;
-    if (mode === 'run' && this.motions.stoprun) {
+    if (!this.ready || this.phase === 'waiting' || this.phase === 'greeting') return;
+    const act = arrivalAction(mode, arrived, this.phase, !!this.motions.stoprun);
+    if (act === 'greeting') this.greet();
+    else if (act === 'stand') void this.scene.play('idle');
+    else if (act === 'stoprun') {
       this.settling = true;
       void this.scene.play('stoprun');
     } else if (this.motions[mode]) {
@@ -335,17 +492,19 @@ export class StockStageLoop {
     }
   }
 
-  private applyHold(force = false) {
+  /** 유지 감정을 튼다 — 모션이 붙을 때까지 기다릴 수 있게 Promise */
+  private applyHold(force = false): Promise<void> {
     const h = this.current;
     const face = FACE_BY_EMOTION.includes(h.motion) ? IDLE_FACE[h.emotion] : undefined;
     this.scene.setBase(face && h.weight > 0 ? { expr: face, weight: h.weight } : null);
     this.note('hold', h.emotion, h.motion);
     if (force || this.scene.playing !== h.motion) {
       // 파일이 없는 모션(예: 아직 없는 madness)이면 idle 로 — 앞 단발의 마지막 자세에 멈춰 있지 않게
-      void this.scene.play(h.motion).then((ok) => {
-        if (!ok && h.motion !== 'idle') void this.scene.play('idle');
+      return this.scene.play(h.motion).then(async (ok) => {
+        if (!ok && h.motion !== 'idle') await this.scene.play('idle');
       });
     }
+    return Promise.resolve();
   }
 
   /** 무엇에서 무엇으로, 몇 초 섞으며 넘어가는지 적어 둔다 — StockScene.play 와 같은 규칙 */
