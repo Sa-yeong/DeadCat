@@ -492,15 +492,16 @@ export class RoomLoop {
    * 가구에 왔다고 엔진에 알린다 — 내려놓기 · 근접이 같이 쓴다(슬롯머신 뜸 들이기는 따로).
    * 엔진이 반응하지 않으면(쿨다운 · 감정 대기 · 자리 없음 · 규칙 없음) 아무것도 바꾸지 않는다 — 걷던 길 그대로.
    * 모션이 시작됐으면 걷던 길을 버린다 — 끝난 뒤 새 목적지를 고르게(옛 길을 이으면 앉았던 자리에서 가구를 뚫고 갈 수 있다).
-   * 소파 앉기면 좌석 가운데에 앉힌다(2026-11-14 도휘) — 근접은 가구 바깥에서 걸리니 옮기지 않으면 허공에 앉는다.
+   * 소파 앉기면 좌석(엔진이 고른 앵커 자리)에 앉힌다 — 근접은 가구 바깥에서 걸리니 옮기지 않으면 허공에 앉는다.
    * 다른 가구는 그 자리에 선 채로 — 서는 위치 · 방향은 앵커(#7)에서
    */
   private visitFurniture(h: CharacterHandle, placementId: number): void {
     this.engine.visitFurniture(h.id, placementId);
     if (!h.acting) return;
     h.path = [];
+    // 엔진이 고른 앵커(왼쪽 · 오른쪽 자리)에 앉힌다 — 앵커를 모르면 좌석 가운데(허공에 앉지 않게)
     if (this.engineFurniture.get(placementId) === SOFA_2SEAT && h.run?.steps.some((s) => s.name === SIT_SOFA)) {
-      this.sitOnSofa(h, placementId);
+      this.sitOnSofa(h, placementId, h.run.anchorId);
     }
   }
 
@@ -567,6 +568,12 @@ export class RoomLoop {
         this.unseat(h); // 앉아 있다 다른 명령이 오면 일어선다(새 명령이 앉기면 sitOnSofa 가 다시 앉힌다)
         const run: ActRun = { steps: cmd.steps, i: -1 };
         h.run = run; // 앞 명령은 여기서 끝 — 끝 신호 없이(렌더러도 새 play 가 앞 요청을 밀어낸다)
+
+        if(cmd.furnitureId !== undefined){
+          h.run.furnitureId = cmd.furnitureId;
+          h.run.anchorId = cmd.anchorId;
+        }
+
         this.nextStep(h, run);
         this.facePartner(h, cmd.steps);
       }
@@ -884,7 +891,7 @@ export class RoomLoop {
         this.events.onSlotDrop?.(charId, target.placementId);
         return;
       }
-      this.visitFurniture(h, target.placementId); // 소파 앉기면 좌석 가운데에 앉힌다
+      this.visitFurniture(h, target.placementId); // 소파 앉기면 엔진이 고른 자리(앵커)에 앉힌다
       // 슬롯머신에 직접 끌어다 놓았을 때만 뽑기 시도(M-4) — 엔진이 반응하든 말든(쿨다운 · 감정 대기) 알린다. 캐릭터 동작은 엔진 play_slot 그대로
       if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE) this.events.onSlotDrop?.(charId, target.placementId);
       return;
@@ -917,7 +924,7 @@ export class RoomLoop {
    * 소파 좌석 가운데에 세워 소파 정면을 보게 하고, 엉덩이가 좌석 윗면에 닿도록 몸 높이를 맞춘다.
    * 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y). 앞뒤 자리는 엉덩이 뒷면이 등받이 앞면에 닿게
    */
-  private sitOnSofa(h: CharacterHandle, placementId: number): void {
+  private sitOnSofa(h: CharacterHandle, placementId: number, anchorId?: string): void {
     const p = this.placements.find((q) => q.placementId === placementId);
     const def = p && this.furniture.def(p.furnitureId);
     if (!p || !def) return;
@@ -925,14 +932,21 @@ export class RoomLoop {
     const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
     const r = (p.rotation * Math.PI) / 180;
     const front = { x: -Math.sin(r), y: Math.cos(r) };
+    const side = {x: Math.cos(r), y: Math.sin(r)};
     const along = seat.back - SIT_POSE.buttBack + SOFA_BACK_GAP;
-    const spot = { x: (f.x0 + f.x1) / 2 + front.x * along, y: (f.y0 + f.y1) / 2 + front.y * along };
+    const anchors = def.engine?.anchors;
+    const anchor = anchors?.find(a => a.id === anchorId);
+    const offsetX = anchor? anchor.offset[0] : 0;
+    const spot = { x: ((f.x0 + f.x1) / 2 + front.x * along) + side.x*offsetX,
+       y: ((f.y0 + f.y1) / 2 + front.y * along) + side.y*offsetX };
+
     h.position = spot;
     h.path = [];
+
     this.renderer.move(h.id, spot);
     this.renderer.face?.(h.id, front, true);
     this.renderer.setSeatLift?.(h.id, seat.y - SIT_POSE.buttY);
-    this.seated.add(h.id);
+    this.seated.add(h.id); 
   }
 
   /**

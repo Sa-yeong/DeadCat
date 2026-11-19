@@ -1,3 +1,4 @@
+import type { FurnitureDef as EngineFurnitureDef } from "./engine/type/type";
 /**
  * 거실 화면 타입.
  * 서버 응답 모양은 「거실화면_클래스_서버」(r11)의 DTO를 그대로 옮겼다.
@@ -154,6 +155,7 @@ export interface FurnitureDef {
   colors: [string, string, string];
   /** 엔진 가구 이름(engine/data/furniture.json) — 상호작용 가구만. 있으면 캐릭터를 들어 올려놓을 수 있고 테두리가 빛난다 */
   engineName?: string;
+  engine?: EngineFurnitureDef;
   /**
    * 3D 모델(glb) 주소 — 파일이 있으면 3D 는 상자 대신 이 모델을 세운다(받기 전·없으면 상자 + 이름 글자). 키(h)에 맞춰 배율을 정하고 바닥 자리 가운데에 둔다.
    * 평면 더미는 계속 상자로 그린다

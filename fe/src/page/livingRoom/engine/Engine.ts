@@ -38,7 +38,8 @@ export type EmotionFeed = {
 }
 
 export type EngineCommand =
-  | { type: 'play'; characterId: string; steps: MotionStep[] } // 순차 재생, 마지막이 반복이면 cancel 전까지 유지
+  // 순차 재생, 마지막이 반복이면 cancel 전까지 유지
+  | { type: 'play'; characterId: string; steps: MotionStep[]; furnitureId?: number; anchorId?: string }
   | { type: 'cancel'; characterId: string }
   // 감정이 정해지거나 바뀔 때. idle·walk = 이 감정의 기본 자세(motions.json의 모션 이름, poses.json에서 정함)
   | { type: 'emotion'; characterId: string; emotion: Emotion; idle: string; walk: string }
@@ -96,10 +97,12 @@ export class LivingRoomEngine implements CharacterEngine{
     const engineDispatcher: Dispatcher = {
       play: (req, onFinish) => {
         this.finishCallbacks.set(req.characterId, onFinish)
-
+        
         this.onCommand({
           type: 'play',
           characterId: req.characterId,
+          furnitureId: req.furnitureId,
+          anchorId: req.anchorId,
           steps: req.motions.map(name => {
             const def = opts.rules.motions.get(name);
 

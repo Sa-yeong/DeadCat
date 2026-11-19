@@ -10,8 +10,8 @@
     "category": "sofa",
     "interactionRadius": 1.0,
     "anchors": [
-      { "id": "seat_l", "offset": [-0.5, 0], "facing": 0 },
-      { "id": "seat_r", "offset": [0.5, 0], "facing": 0 }
+      { "id": "seat_l", "offset": [-0.7, 0], "facing": 0 },
+      { "id": "seat_r", "offset": [0.7, 0], "facing": 0 }
     ]
   },
   "desk_reading": {

@@ -408,6 +408,8 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
   const PIANO = 28;
   const SLOT = 29;
   const pl = (placementId: number, furnitureId: number, x = 15, y = 15, rotation = 0): PlacementDto => ({ placementId, furnitureId, positionX: x, positionY: y, rotation });
+  /** 소파 첫 빈 앵커(왼쪽 자리)의 옆 치우침(칸) — 혼자 앉으면 여기(89afa2a, 여럿이 앉을 때 겹치지 않게) */
+  const SEAT_L = ROOM_RULES.furniture.get('sofa_2seat')!.anchors[0].offset[0];
 
   /** 진짜 엔진(실제 규칙 데이터) + 가짜 렌더러. 시계 · 무작위는 테스트가 쥔다 */
   function room(placements: PlacementDto[], emotions: Emotion[] = ['happy']) {
@@ -638,12 +640,13 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       const f = boxOf(p);
       return { x: (f.x0 + f.x1) / 2, y: f.y1 + gap };
     };
+    /** 회전 0 소파의 왼쪽 앵커 자리 */
     const seatOf = (p: PlacementDto) => {
       const f = boxOf(p);
-      return { x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 + (-0.47 + 0.327 + 0.03) };
+      return { x: (f.x0 + f.x1) / 2 + SEAT_L, y: (f.y0 + f.y1) / 2 + (-0.47 + 0.327 + 0.03) };
     };
 
-    it('소파 반경 안으로 걸어 들어오면 sit_sofa 가 시작되고 좌석 가운데에 앉는다', () => {
+    it('소파 반경 안으로 걸어 들어오면 sit_sofa 가 시작되고 엔진이 고른 앵커 자리에 앉는다', () => {
       const sofa = pl(14, SOFA);
       const t = room([sofa]);
       standAt(t, '1', front(sofa, 3));
@@ -818,7 +821,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
   });
 
   describe('소파 앉기 (2026-11-14 sit_sofa · play_sofa.vrma)', () => {
-    it('기쁨 · 슬픔으로 소파에 놓으면 sit_sofa — 좌석 가운데(등받이에 엉덩이가 닿는 자리)에 소파 정면을 보고 앉는다, 돌려 놓아도', () => {
+    it('기쁨 · 슬픔으로 소파에 놓으면 sit_sofa — 왼쪽 앵커 자리(등받이에 엉덩이가 닿는 자리)에 소파 정면을 보고 앉는다, 돌려 놓아도', () => {
       for (const rotation of [0, 90, 180, 270]) {
         for (const emotion of ['happy', 'sad'] as Emotion[]) {
           const t = room([pl(14, SOFA, 15, 15, rotation)], [emotion]);
@@ -828,8 +831,8 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
           const r = (rotation * Math.PI) / 180;
           const along = -0.47 + 0.327 + 0.03;
           const got = t.at.get('1')!;
-          expect(got.x).toBeCloseTo((f.x0 + f.x1) / 2 - Math.sin(r) * along, 5);
-          expect(got.y).toBeCloseTo((f.y0 + f.y1) / 2 + Math.cos(r) * along, 5);
+          expect(got.x).toBeCloseTo((f.x0 + f.x1) / 2 - Math.sin(r) * along + Math.cos(r) * SEAT_L, 5);
+          expect(got.y).toBeCloseTo((f.y0 + f.y1) / 2 + Math.cos(r) * along + Math.sin(r) * SEAT_L, 5);
         }
       }
     });
