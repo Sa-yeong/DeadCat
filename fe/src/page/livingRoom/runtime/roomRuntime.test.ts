@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '../api';
 import type { CharacterEngine, EngineCommand } from './CharacterEngine';
+import type { CharacterHandle } from './CharacterHandle';
 import { CharacterCatalog, FurnitureCatalog } from './catalogs';
 import { RoomFeed } from './RoomFeed';
 import { ROOM_MOTIONS } from './roomEngine';
@@ -611,6 +612,193 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       t.loop.setInteractionMode('PLACEMENT');
       t.loop.onDragEnd('1');
       expect(t.visit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('배회 중 근접 (가구근접 지시서 2026-11-19)', () => {
+    type Inner = { handles: Map<string, CharacterHandle> };
+    const handleOf = (t: ReturnType<typeof room>, id: string) => (t.loop as unknown as Inner).handles.get(id)!;
+    const boxOf = (p: PlacementDto) => footprint(FURNITURE_CATALOG.find((d) => d.furnitureId === p.furnitureId)!, { x: p.positionX, y: p.positionY }, p.rotation);
+    /** 그 자리에 내려놓고 세워 둔다 — 스스로 목적지를 고르지 않게(무작위 배회를 빼고 테스트가 길을 준다) */
+    const standAt = (t: ReturnType<typeof room>, id: string, pos: Pt) => {
+      t.drop(id, pos);
+      Object.assign(handleOf(t, id), { position: pos, path: [], rest: 999, pause: 0, walkLeft: 999 });
+      t.at.set(id, pos);
+    };
+    /** pos 까지 걷는다(가구를 피하지 않는 직선) — 닿거나 모션이 시작돼 길이 비면 판정이 한 번 더 돌 만큼 기다린다 */
+    const walkTo = (t: ReturnType<typeof room>, id: string, pos: Pt) => {
+      const h = handleOf(t, id);
+      Object.assign(h, { path: [pos], pause: 0, walkLeft: 999 });
+      for (let i = 0; i < 200 && h.path.length; i++) t.loop.tick(0.1);
+      h.rest = 999;
+      for (let i = 0; i < 6; i++) t.loop.tick(0.1);
+    };
+    /** 소파 앞(+y) 가운데에서 가구 상자까지 gap 칸 떨어진 자리 */
+    const front = (p: PlacementDto, gap: number) => {
+      const f = boxOf(p);
+      return { x: (f.x0 + f.x1) / 2, y: f.y1 + gap };
+    };
+    const seatOf = (p: PlacementDto) => {
+      const f = boxOf(p);
+      return { x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 + (-0.47 + 0.327 + 0.03) };
+    };
+
+    it('소파 반경 안으로 걸어 들어오면 sit_sofa 가 시작되고 좌석 가운데에 앉는다', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      t.loop.tick(0.6);
+      expect(t.visit).not.toHaveBeenCalled();
+      walkTo(t, '1', front(sofa, 0.6));
+      expect(t.visit.mock.calls).toEqual([['1', 14]]);
+      expect(t.playsOf('1')).toEqual([['sit_sofa']]);
+      const got = t.at.get('1')!;
+      const seat = seatOf(sofa);
+      expect(got.x).toBeCloseTo(seat.x, 5);
+      expect(got.y).toBeCloseTo(seat.y, 5);
+      expect(handleOf(t, '1').path).toEqual([]);
+    });
+
+    it('반경 1.0칸 — 1.1칸 앞을 지나면 걸리지 않고, 0.9칸이면 걸린다', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      const f = boxOf(sofa);
+      standAt(t, '1', { x: f.x0 - 3, y: f.y1 + 1.1 });
+      walkTo(t, '1', { x: f.x1 + 3, y: f.y1 + 1.1 });
+      expect(t.visit).not.toHaveBeenCalled();
+      walkTo(t, '1', { x: f.x1 + 3, y: f.y1 + 0.9 }); // 오른쪽 끝 옆(상자 모서리에서 √(3² + 0.9²) 밖)에서 아래로 내려온 뒤
+      walkTo(t, '1', { x: f.x0 - 3, y: f.y1 + 0.9 }); // 소파 앞을 지나간다
+      expect(t.visit.mock.calls).toEqual([['1', 14]]);
+    });
+
+    it('30초 뒤 끝나고, 근처에 그대로 있으면 다시 시작하지 않는다 — 쿨다운이 지나도', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      walkTo(t, '1', front(sofa, 0.6));
+      t.clock.t = 30000;
+      t.loop.tick(0.1);
+      expect(t.commands.at(-1)).toEqual({ type: 'cancel', characterId: '1' });
+      t.clock.t = 60000;
+      for (let i = 0; i < 100; i++) t.loop.tick(0.1);
+      expect(t.visit).toHaveBeenCalledTimes(1);
+      expect(t.playsOf('1')).toHaveLength(1);
+    });
+
+    it('반경 + 0.4 밖으로 나갔다가 쿨다운(20초)이 지난 뒤 다시 들어오면 또 시작한다', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      walkTo(t, '1', front(sofa, 0.6));
+      t.clock.t = 30000;
+      t.loop.tick(0.1);
+      walkTo(t, '1', front(sofa, 1.6));
+      t.clock.t = 50000;
+      walkTo(t, '1', front(sofa, 0.6));
+      expect(t.playsOf('1')).toEqual([['sit_sofa'], ['sit_sofa']]);
+    });
+
+    it('쿨다운 안에 다시 들어오면 시작하지 않고, 그 자리에서 쿨다운이 끝나도 그대로 — 멀어졌다 다가와야 한다', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      walkTo(t, '1', front(sofa, 0.6));
+      t.clock.t = 30000;
+      t.loop.tick(0.1);
+      walkTo(t, '1', front(sofa, 3));
+      t.clock.t = 40000;
+      walkTo(t, '1', front(sofa, 0.6));
+      expect(t.visit).toHaveBeenCalledTimes(2);
+      expect(t.logs.at(-1)).toMatch(/쿨다운 중/);
+      expect(t.playsOf('1')).toHaveLength(1);
+      expect(t.at.get('1')).toEqual(front(sofa, 0.6)); // 반응하지 않으면 아무것도 안 바꾼다
+      t.clock.t = 60000;
+      for (let i = 0; i < 30; i++) t.loop.tick(0.1);
+      expect(t.visit).toHaveBeenCalledTimes(2);
+    });
+
+    it('소파 말고 다른 가구(피아노)는 들어온 그 자리에 선 채로', () => {
+      const piano = pl(14, PIANO);
+      const t = room([piano]);
+      standAt(t, '1', front(piano, 3));
+      walkTo(t, '1', front(piano, -1)); // 피아노 안까지 가는 길 — 반경에서 걸려 멈춰야 한다
+      expect(t.playsOf('1')).toEqual([['play_piano']]);
+      const got = t.at.get('1')!;
+      const f = boxOf(piano);
+      expect(got.y - f.y1).toBeGreaterThan(0); // 피아노 밖, 반경(0.8) 안 — 걸린 자리에서 섰다
+      expect(got.y - f.y1).toBeLessThan(0.8);
+      expect(handleOf(t, '1').path).toEqual([]);
+    });
+
+    it('슬롯머신 근처는 아무 일 없다 — play_slot 도, 뽑기도 없다', () => {
+      const slot = pl(16, SLOT);
+      const t = room([slot]);
+      standAt(t, '1', front(slot, 3));
+      walkTo(t, '1', front(slot, 0.3));
+      expect(t.visit).not.toHaveBeenCalled();
+      expect(t.playsOf('1')).toEqual([]);
+      expect(t.slotDrop).not.toHaveBeenCalled();
+      expect(t.slotStart).not.toHaveBeenCalled();
+    });
+
+    it('장식 가구(엔진 이름 없음)는 판정 대상이 아니다', () => {
+      const plant = pl(12, PLANT);
+      const t = room([plant]);
+      standAt(t, '1', front(plant, 3));
+      walkTo(t, '1', front(plant, 0.2));
+      expect(t.visit).not.toHaveBeenCalled();
+    });
+
+    it('모션 중에 반경에 들어오면 알리지 않는다 — 끝나도 그 자리에선 그대로', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      t.loop.tick(0.6);
+      t.loop.labPlay('1', ['crying']);
+      Object.assign(handleOf(t, '1'), { position: front(sofa, 0.5) }); // 모션 중엔 걷지 않으니 자리만 옮긴다
+      t.loop.tick(0.6);
+      expect(t.visit).not.toHaveBeenCalled();
+      t.loop.labStop('1');
+      t.loop.tick(0.6);
+      expect(t.visit).not.toHaveBeenCalled();
+    });
+
+    it('스탯 링이 열린(held) 캐릭터는 알리지 않는다', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      t.loop.tick(0.6);
+      t.loop.onPick('1');
+      Object.assign(handleOf(t, '1'), { position: front(sofa, 0.5) });
+      t.loop.tick(0.6);
+      expect(t.visit).not.toHaveBeenCalled();
+      t.loop.release();
+      t.loop.tick(0.6);
+      expect(t.visit).not.toHaveBeenCalled();
+    });
+
+    it('들린 캐릭터는 반경 안을 지나가도 알리지 않는다', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa]);
+      standAt(t, '1', front(sofa, 3));
+      t.loop.tick(0.6);
+      t.loop.onDragStart('1');
+      t.loop.onDragMove('1', front(sofa, 0.6));
+      t.loop.tick(0.6);
+      t.loop.onDragMove('1', front(sofa, 3));
+      t.loop.tick(0.6);
+      t.loop.onDragEnd('1');
+      t.loop.tick(0.6);
+      expect(t.visit).not.toHaveBeenCalled();
+    });
+
+    it('캐릭터끼리 마주침은 지금처럼 한 번만 알린다', () => {
+      const t = room([pl(14, SOFA)], ['happy', 'happy']);
+      standAt(t, '1', { x: 5, y: 5 });
+      standAt(t, '2', { x: 5.3, y: 5 });
+      const enc = vi.spyOn(t.engine!, 'encounter');
+      for (let i = 0; i < 20; i++) t.loop.tick(0.1);
+      expect(enc).toHaveBeenCalledTimes(1);
     });
   });
 

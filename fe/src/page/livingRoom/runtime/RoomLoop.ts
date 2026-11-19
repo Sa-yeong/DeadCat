@@ -12,7 +12,8 @@ import { ProximityField } from './ProximityField';
 import { ROOM, type Pt } from './projection';
 import { footprint } from './furnitureShape';
 import type { DropTarget, RoomRenderer } from './RoomRenderer';
-import type { MotionTable } from './roomEngine';
+import { ROOM_RULES, type MotionTable } from './roomEngine';
+import { Perception, type Obstacle } from '../engine/perception';
 import type { RoomDemo } from './roomDemo';
 
 /**
@@ -144,6 +145,8 @@ export class RoomLoop {
   private readonly motions: MotionTable;
   private readonly events: RoomLoopEvents;
   private readonly field = new ProximityField();
+  /** 캐릭터 ↔ 가구 근접 — 엔진의 감지기를 가구 판정에만 쓴다(캐릭터끼리는 field). 들어올 때 한 번, 반경 + 틈 밖으로 나가야 다시 */
+  private readonly nearFurniture = new Perception();
   private readonly gesture: PressGesture;
 
   private readonly handles = new Map<string, CharacterHandle>();
@@ -396,6 +399,7 @@ export class RoomLoop {
     this.raf = 0;
     this.engine.dispose();
     this.gesture.cancel();
+    this.nearFurniture.reset();
   }
 
   tick(dt: number): void {
@@ -445,6 +449,58 @@ export class RoomLoop {
       // 슬롯머신 앞에서 뜸을 들이는 캐릭터도 뺀다 — 그사이 마주쳐 다른 모션으로 새지 않게
       const list = [...this.handles.values()].filter((h) => !h.lifted && !this.slotWaits.has(h.id)).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
       for (const e of this.field.evaluate(list)) this.onFieldEnter(e.a, e.b);
+      // 가구 — 들린 캐릭터만 뺀다. 바쁜 캐릭터도 넘겨 위치를 따라간다(뺐다 넣으면 exit → enter 가 새로 나서 모션을 마치자마자 또 반응한다)
+      const bodies = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.id, x: h.position.x, z: h.position.y, radius: 0 }));
+      for (const e of this.nearFurniture.update(bodies, this.furnitureObstacles())) {
+        // char-char 는 버린다 — 캐릭터끼리는 위 field 가 알린다(두 번 알리지 않게)
+        if (e.kind === 'char-furniture' && e.type === 'enter') this.onFurnitureEnter(e.char, Number(e.furniture));
+      }
+    }
+  }
+
+  /**
+   * 근접 판정할 가구 — 엔진에 알린 가구만, 설치 영역 상자 + 엔진 데이터의 interactionRadius(칸).
+   * 슬롯머신은 뺀다 — 뽑기는 끌어다 놓을 때만(M-4). 근접으로 알리면 play_slot 만 돌고 뽑기는 안 해서 레버만 당긴다
+   */
+  private furnitureObstacles(): Obstacle[] {
+    const out: Obstacle[] = [];
+    for (const p of this.placements) {
+      const name = this.engineFurniture.get(p.placementId);
+      if (!name || name === SLOT_MACHINE) continue;
+      const def = this.furniture.def(p.furnitureId);
+      const radius = ROOM_RULES.furniture.get(name)?.interactionRadius;
+      if (!def || radius === undefined) continue;
+      const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+      out.push({ id: String(p.placementId), minX: f.x0, maxX: f.x1, minZ: f.y0, maxZ: f.y1, interactionRadius: radius });
+    }
+    return out;
+  }
+
+  /**
+   * 배회하다 가구 반경에 들어왔다 — 평소 배회 중일 때만 엔진에 알린다. 바쁘면 버린다(다시 반응하려면 멀어졌다 다가와야 한다).
+   * 그다음은 엔진 규칙대로 — 반복 모션은 30초 뒤 끝, 쿨다운 20초
+   */
+  private onFurnitureEnter(charId: string, placementId: number): void {
+    const h = this.handles.get(charId);
+    if (!h || this.mode !== 'NORMAL' || !this.engineFurniture.has(placementId)) return;
+    if (h.held || h.lifted || h.charging || h.awaiting || h.acting || h.away) return;
+    if (this.slotWaits.has(h.id) || this.stillOn.has(h.id)) return;
+    this.visitFurniture(h, placementId);
+  }
+
+  /**
+   * 가구에 왔다고 엔진에 알린다 — 내려놓기 · 근접이 같이 쓴다(슬롯머신 뜸 들이기는 따로).
+   * 엔진이 반응하지 않으면(쿨다운 · 감정 대기 · 자리 없음 · 규칙 없음) 아무것도 바꾸지 않는다 — 걷던 길 그대로.
+   * 모션이 시작됐으면 걷던 길을 버린다 — 끝난 뒤 새 목적지를 고르게(옛 길을 이으면 앉았던 자리에서 가구를 뚫고 갈 수 있다).
+   * 소파 앉기면 좌석 가운데에 앉힌다(2026-11-14 도휘) — 근접은 가구 바깥에서 걸리니 옮기지 않으면 허공에 앉는다.
+   * 다른 가구는 그 자리에 선 채로 — 서는 위치 · 방향은 앵커(#7)에서
+   */
+  private visitFurniture(h: CharacterHandle, placementId: number): void {
+    this.engine.visitFurniture(h.id, placementId);
+    if (!h.acting) return;
+    h.path = [];
+    if (this.engineFurniture.get(placementId) === SOFA_2SEAT && h.run?.steps.some((s) => s.name === SIT_SOFA)) {
+      this.sitOnSofa(h, placementId);
     }
   }
 
@@ -828,11 +884,7 @@ export class RoomLoop {
         this.events.onSlotDrop?.(charId, target.placementId);
         return;
       }
-      this.engine.visitFurniture(charId, target.placementId);
-      // 소파에 앉기 모션이 시작됐으면 좌석 가운데에 바로 세워 앉힌다(2026-11-14 도휘)
-      if (this.engineFurniture.get(target.placementId) === SOFA_2SEAT && h.acting && h.run?.steps.some((s) => s.name === SIT_SOFA)) {
-        this.sitOnSofa(h, target.placementId);
-      }
+      this.visitFurniture(h, target.placementId); // 소파 앉기면 좌석 가운데에 앉힌다
       // 슬롯머신에 직접 끌어다 놓았을 때만 뽑기 시도(M-4) — 엔진이 반응하든 말든(쿨다운 · 감정 대기) 알린다. 캐릭터 동작은 엔진 play_slot 그대로
       if (this.engineFurniture.get(target.placementId) === SLOT_MACHINE) this.events.onSlotDrop?.(charId, target.placementId);
       return;
