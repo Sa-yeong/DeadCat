@@ -71,6 +71,15 @@ export class InteractionState {
         return anchors.some(a => !used.has(a));
     }
 
+    getFreeAnchor(id: number): string | undefined{
+        const anchors = this.furnitureAnchors.get(id);
+
+        if(!anchors) return undefined;
+        const used = this.anchorOccupants(id);
+
+        return anchors.find(a => !used.has(a));
+    }
+
     occupy(furnitureId: number, charId: string, ruleId: string): string | null{
         const anchors = this.furnitureAnchors.get(furnitureId);
 

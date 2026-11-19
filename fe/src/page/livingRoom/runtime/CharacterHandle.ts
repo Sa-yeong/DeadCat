@@ -5,6 +5,8 @@ import type { Pt } from './projection';
 export interface ActRun {
   steps: EngineStep[];
   i: number;
+  furnitureId?: number;
+  anchorId?: string;
 }
 
 /** 캐릭터 한 명의 런타임 상태. 위치는 클라가 정한다 — 스냅샷에 없고 저장하지 않는다. 감정은 들지 않는다(엔진 몫) */

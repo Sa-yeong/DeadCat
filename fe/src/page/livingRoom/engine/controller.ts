@@ -220,8 +220,11 @@ export class LivingRoomController {
             this.log(`${pair}: 자리 없음`)    // 가구가 없는 것처럼 취급
             return
         }
+
+        const anchor = this.state.getFreeAnchor(furnitureId);
+
         const d = matchFurniture({ id: charId, emotion }, model, furniture.category, this.ctx)
-        if (d) this.startFurniture(d, furnitureId)
+        if (d) this.startFurniture(d, furnitureId, anchor)
         else this.log(`${pair}: ${this.whyNoMatch([
             [this.rules.furnitureIndex.get(`${emotion}|${furniture.category}`), charId, model],
         ], `${emotion} × ${furniture.category}`)}`)
@@ -302,9 +305,9 @@ export class LivingRoomController {
         if (effect.other.length === 0) applyEmotion()    // 모션이 없으면 감정만 바로 바꾼다
     }
 
-    private startFurniture(d: Decision_F, placementId: number): void {
+    private startFurniture(d: Decision_F, placementId: number, anchor?: string): void {
         const { rule, self: charId, effect } = d
-        const pair = `${this.label(charId)} × ${this.furnitureLabel(placementId)}`
+        const pair = `${this.label(charId)} × ${this.furnitureLabel(placementId)} - ${anchor}`
         if (effect.self.length === 0) {
             this.log(`${pair}: ${rule.id}에 모션 없음`)
             return
@@ -325,9 +328,10 @@ export class LivingRoomController {
 
         this.log(`${pair}: 시작 → ${rule.id} (${effect.self.join('>')})${rule.occupy ? ' 점유' : ''}${endsWithLoop ? ` ${this.furnitureDurationMs / 1000}초 제한` : ''}`)
 
-        const interactionId = this.begin(rule.id, rule.cooldownMs, charId, model, [charId], placementId, null, endAt)
+        const interactionId = this.begin(rule.id, rule.cooldownMs, charId, model, [charId], placementId, null, endAt);
+        
         this.dispatcher.play(
-            { characterId: charId, motions: effect.self },
+            { characterId: charId, motions: effect.self, furnitureId: placementId, anchorId: anchor },
             () => this.finished(charId, interactionId),
         )
     }
@@ -412,8 +416,10 @@ export class LivingRoomController {
 
 // dispatcher 간소화 (test용)
 export type PlayRequest = {
-    characterId: string
-    motions: string[]
+    characterId: string;
+    motions: string[];
+    furnitureId?: number;
+    anchorId?: string;
 }
 
 export type Dispatcher = {

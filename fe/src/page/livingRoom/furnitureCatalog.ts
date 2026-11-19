@@ -8,8 +8,10 @@
  */
 import { furnitureModelUrl } from './catalog';
 import type { FurnitureDef } from './types';
+import furnitureFormats from './engine/data/furniture.json'
 
 type Colors = FurnitureDef['colors'];
+type FurnitureEngineName = keyof typeof furnitureFormats;
 
 /** 상자 색 — 등급이 구분만 되면 된다. [윗면, 앞면, 옆면] */
 const NORMAL: Colors = ['#4B4B53', '#3E3E46', '#35353C'];
@@ -26,7 +28,12 @@ export const SOFA_2SEAT = SOFA;
 /** 슬롯머신의 엔진 이름 — 캐릭터를 끌어 놓으면 뽑기(RoomLoop.onDragEnd), 위에 타이머(hud/SlotMachine) */
 export const SLOT_MACHINE = 'slot_machine';
 
-function box(furnitureId: number, name: string, w: number, d: number, h: number, colors: Colors, engineName?: string): FurnitureDef {
+function box(furnitureId: number, name: string, w: number, d: number, h: number, colors: Colors, engineName?: FurnitureEngineName): FurnitureDef {
+  if(engineName !== undefined){
+    const engineFurniture = furnitureFormats[engineName];
+
+    return { furnitureId, name, kind: 'box', w, d, h, colors, engineName, model: furnitureModelUrl(furnitureId), engine: engineFurniture };
+  }
   return { furnitureId, name, kind: 'box', w, d, h, colors, engineName, model: furnitureModelUrl(furnitureId) };
 }
 
