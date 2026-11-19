@@ -6,9 +6,10 @@ import { HomeRoomsRepository } from '../home/home-room.repository';
 import { HomeStocksService } from './home-stock.service';
 import { HomeStocksRepository } from './home-stock.repository';
 import { PriceModule } from 'src/price/price.module';
+import { AssetModule } from '../asset/asset.module';
 
 @Module({
-    imports: [PriceModule],
+    imports: [PriceModule, AssetModule],
     controllers: [
         HomeRoomsController,
         HomeStocksController, // 종목 검색 Controller 추가
