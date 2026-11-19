@@ -1,4 +1,4 @@
-import type { Anchor, FurnitureDef as EngineFurnitureDef } from "./engine/type/type";
+import type { FurnitureDef as EngineFurnitureDef } from "./engine/type/type";
 /**
  * 거실 화면 타입.
  * 서버 응답 모양은 「거실화면_클래스_서버」(r11)의 DTO를 그대로 옮겼다.
