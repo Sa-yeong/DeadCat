@@ -326,6 +326,8 @@ interface CharNode {
   /** 바닥 붙이기(GROUND_CLIPS) — 볼 꼭짓점(모델을 올린 뒤 처음 쓸 때 고름) · 지난 프레임에 잰 내릴 높이(칸, 음수 = 내림) */
   groundSamples: GroundSample[] | null;
   groundWant: number;
+  /** 가구 모션 자리의 바닥 붙이기(setGrounded, H-2) — 엔진 모션 중에만 */
+  groundForce: boolean;
   /** 앉기 높이가 1초에 움직이는 양 — 들어갈 때 · 나올 때 둘 다 섞이는 시간(POSE_FADE_S) 안에 닿게 */
   seatRate: number;
   /** 배치 모드 — 그림자까지 통째로 숨긴다 */
@@ -1082,7 +1084,7 @@ export class RoomScene implements RoomRenderer {
     const c: CharNode = {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
-      selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0,
+      selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0, groundForce: false,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1653,7 +1655,7 @@ export class RoomScene implements RoomRenderer {
     // 동작이 섞이는 시간(POSE_FADE_S) 동안 따라간다
     const run = c.engine?.action ? c.engine : null;
     const clip = run ? run.steps[run.actionStep]?.clip : c.pose === 'idle' ? (c.basePose?.idle ?? null) : null;
-    const grounding = !c.lifted && !!clip && GROUND_CLIPS.has(clip);
+    const grounding = !c.lifted && ((!!clip && GROUND_CLIPS.has(clip)) || (c.groundForce && !!run));
     if (!grounding) c.groundWant = 0;
     if (c.lifted) c.seatNow = 0;
     else {
@@ -1721,6 +1723,13 @@ export class RoomScene implements RoomRenderer {
     if (!c) return;
     c.seatRate = Math.max(Math.abs(lift), Math.abs(c.seatNow), Math.abs(c.seatLift)) / POSE_FADE_S;
     c.seatLift = lift;
+    this.invalidate();
+  }
+
+  setGrounded(charId: string, on: boolean): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    c.groundForce = on;
     this.invalidate();
   }
 

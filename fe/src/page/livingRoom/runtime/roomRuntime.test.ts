@@ -18,6 +18,7 @@ import { LivingRoomEngine, type EmotionFeed } from '../engine/Engine';
 import type { Emotion } from '../engine/type/type';
 import type { Pt } from './projection';
 import type { PlacementDto, RoomCharacterDto } from '../types';
+import { MOTION_SPOTS, spotOf } from './motionFx';
 
 // 거실 런타임 S4 — 감정 스트림 읽기(2-1 · 2-2)와 엔진 명령 단계 처리(1-1 · 1-2). 브라우저 없이 확인할 수 있는 것만
 
@@ -488,6 +489,12 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
     return { loop, engine, add, del, visit, slotDrop, slotStart, arrive, drop, clock, commands, logs, playsOf, inside, ...r };
   }
 
+  /** 가구 모션 자리(거실모션 H-2) — 설치 영역 가운데 + MOTION_SPOTS 보정 */
+  const spotFor = (p: PlacementDto, motion: string) => {
+    const a = footprint(FURNITURE_CATALOG.find((d) => d.furnitureId === p.furnitureId)!, { x: p.positionX, y: p.positionY }, p.rotation);
+    return spotOf({ x: (a.x0 + a.x1) / 2, y: (a.y0 + a.y1) / 2 }, p.rotation, MOTION_SPOTS[motion]).at;
+  };
+
   /** 다 걸어 나올 때까지(또는 시간 끝까지) 돌린다 */
   const walkOut = (t: ReturnType<typeof room>, id: string, p: PlacementDto) => {
     for (let i = 0; i < 300 && t.inside(id, p); i++) t.loop.tick(0.1);
@@ -553,12 +560,12 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       expect(t.playsOf('2')).toEqual([['space_out']]);
     });
 
-    it('내려놓은 자리에 그대로 서 있고, 모션이 끝나면(30초) 걸어 나온다', () => {
+    it('내려놓으면 가구 모션 자리(가운데 + 보정, 거실모션 H-2)에 서 있고, 모션이 끝나면(30초) 설치 영역 밖으로', () => {
       const piano = pl(14, PIANO);
       const t = room([piano]);
       t.drop('1', { x: 15.2, y: 15.3 });
       for (let i = 0; i < 100; i++) t.loop.tick(0.1);
-      expect(t.at.get('1')).toEqual({ x: 15.2, y: 15.3 });
+      expect(t.at.get('1')).toEqual(spotFor(piano, 'play_piano'));
 
       t.clock.t = 30000;
       walkOut(t, '1', piano);
@@ -720,16 +727,13 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       expect(t.visit).toHaveBeenCalledTimes(2);
     });
 
-    it('소파 말고 다른 가구(피아노)는 들어온 그 자리에 선 채로', () => {
+    it('소파 말고 다른 가구(피아노)도 반경에서 걸리면 가구 모션 자리로(거실모션 H-2 — 전엔 걸린 자리에 선 채로)', () => {
       const piano = pl(14, PIANO);
       const t = room([piano]);
       standAt(t, '1', front(piano, 3));
       walkTo(t, '1', front(piano, -1)); // 피아노 안까지 가는 길 — 반경에서 걸려 멈춰야 한다
       expect(t.playsOf('1')).toEqual([['play_piano']]);
-      const got = t.at.get('1')!;
-      const f = boxOf(piano);
-      expect(got.y - f.y1).toBeGreaterThan(0); // 피아노 밖, 반경(0.8) 안 — 걸린 자리에서 섰다
-      expect(got.y - f.y1).toBeLessThan(0.8);
+      expect(t.at.get('1')).toEqual(spotFor(piano, 'play_piano'));
       expect(handleOf(t, '1').path).toEqual([]);
     });
 
@@ -837,11 +841,13 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       }
     });
 
-    it('앉기가 아닌 소파 모션(피곤 lie_down 등)은 놓은 자리 그대로', () => {
-      const t = room([pl(14, SOFA)], ['tired']);
+    it('앉기가 아닌 소파 모션(피곤 lie_down 등)은 소파 가운데 + 보정 자리(거실모션 H-2 — 전엔 놓은 자리 그대로)', () => {
+      const sofa = pl(14, SOFA);
+      const t = room([sofa], ['tired']);
       t.drop('1', { x: 15.2, y: 15.3 });
-      expect(t.playsOf('1')[0][0]).not.toBe('sit_sofa');
-      expect(t.at.get('1')).toEqual({ x: 15.2, y: 15.3 });
+      const motion = t.playsOf('1')[0][0];
+      expect(motion).not.toBe('sit_sofa');
+      expect(t.at.get('1')).toEqual(spotFor(sofa, motion));
     });
   });
 

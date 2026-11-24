@@ -15,7 +15,7 @@ import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import { ROOM_RULES, type MotionTable } from './roomEngine';
 import { Perception, type Obstacle } from '../engine/perception';
 import type { RoomDemo } from './roomDemo';
-import { BREAK_FX, BreakRun } from './motionFx';
+import { BREAK_FX, BreakRun, furnitureAxes, MOTION_SPOTS, NO_SPOT, spotOf } from './motionFx';
 
 /**
  * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
@@ -47,6 +47,10 @@ const SOFA_BACK_GAP = 0.03;
 const PAIR_GAP: Record<string, number> = { tease_find: 2.5 };
 /** 앉는 소파 모션 이름(motions.json) */
 const SIT_SOFA = 'sit_sofa';
+/** 슬롯머신 모션 — 앞 자리(SLOT_STAND)에 따로 세운다 */
+const PLAY_SLOT = 'play_slot';
+/** 가구 모션이 끝나고 설치 영역 밖으로 나올 때 정면 끝에서 더 띄우는 거리(칸) */
+const STEP_OUT_GAP = 0.5;
 
 /** 슬롯머신 앞에 세운 뒤 모션까지 뜸(초) — 모션이 휙 나가지 않게 (2026-11-14 도휘 — 0.5 → 0.75초) */
 const SLOT_PAUSE_S = 0.75;
@@ -181,6 +185,8 @@ export class RoomLoop {
   private fieldTimer = 0;
   /** 소파에 앉아 있는(앉기 높이를 건) 캐릭터 */
   private readonly seated = new Set<string>();
+  /** 가구 모션 자리(MOTION_SPOTS, H-2)에 세운 캐릭터 → 그 가구 배치 id — 끝나면 높이를 풀고 설치 영역 밖으로 */
+  private readonly spotted = new Map<string, number>();
   /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
   private readonly slotWaits = new Map<string, SlotWait>();
   /** 진행 중인 박살(G-2) — 터진 뒤엔 캐릭터가 다른 일을 해도 가구는 사라진다 */
@@ -437,7 +443,7 @@ export class RoomLoop {
         this.waitAtSlot(h, sw, dt);
         continue;
       }
-      // 엔진 모션 중엔 제자리 — 가구 위에 내려놓았으면 그 자리 그대로. 끝나면 평소처럼 걸어 나온다(findPath 가 가장 가까운 빈 칸으로 먼저 비킨다)
+      // 엔진 모션 중엔 제자리 — 가구 모션이면 가구 모션 자리(takeSpot). 끝나면 설치 영역 밖으로 옮겨 서고(stepOut) 평소처럼 걷는다
       if (h.acting) continue;
       // 데모 — 제자리에서 정해 둔 모션만(돌아다니지 않는다). 다른 캐릭터가 다가와 마주치는 건 그대로
       if (this.applyStill(h)) continue;
@@ -518,7 +524,7 @@ export class RoomLoop {
    * 엔진이 반응하지 않으면(쿨다운 · 감정 대기 · 자리 없음 · 규칙 없음) 아무것도 바꾸지 않는다 — 걷던 길 그대로.
    * 모션이 시작됐으면 걷던 길을 버린다 — 끝난 뒤 새 목적지를 고르게(옛 길을 이으면 앉았던 자리에서 가구를 뚫고 갈 수 있다).
    * 소파 앉기면 좌석(엔진이 고른 앵커 자리)에 앉힌다 — 근접은 가구 바깥에서 걸리니 옮기지 않으면 허공에 앉는다.
-   * 다른 가구는 그 자리에 선 채로 — 서는 위치 · 방향은 앵커(#7)에서
+   * 다른 가구 모션은 가구 가운데 + 모션별 보정(MOTION_SPOTS) 자리에 가구 정면을 보고 선다(거실모션 H-2 — 방향은 모션 안에 들어 있다)
    */
   private visitFurniture(h: CharacterHandle, placementId: number): void {
     if (this.broken.has(placementId)) return; // 부서져 사라지는 중
@@ -528,7 +534,55 @@ export class RoomLoop {
     // 엔진이 고른 앵커(왼쪽 · 오른쪽 자리)에 앉힌다 — 앵커를 모르면 좌석 가운데(허공에 앉지 않게)
     if (this.engineFurniture.get(placementId) === SOFA_2SEAT && h.run?.steps.some((s) => s.name === SIT_SOFA)) {
       this.sitOnSofa(h, placementId, h.run.anchorId);
+      return;
     }
+    const first = h.run?.steps[0];
+    if (first?.kind === 'clip' && first.name !== PLAY_SLOT) this.takeSpot(h, placementId, first.name);
+  }
+
+  /**
+   * 가구 모션 자리(거실모션 H-2 결정 1) — 설치 영역 가운데 + 보정, 캐릭터 정면 = 가구 정면(가구 회전을 따라 돎) + turn.
+   * 코드로 180° 돌리지 않는다(방향은 모션 안에). 높이는 lift(소파 앉기와 같은 길), ground 면 바닥 붙이기
+   */
+  private takeSpot(h: CharacterHandle, placementId: number, motion: string): void {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    const def = p && this.furniture.def(p.furnitureId);
+    if (!p || !def) return;
+    const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
+    const s = MOTION_SPOTS[motion] ?? NO_SPOT;
+    const { at, face } = spotOf({ x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 }, p.rotation, s);
+    h.position = at;
+    h.path = [];
+    this.renderer.move(h.id, at);
+    this.renderer.face?.(h.id, face, true);
+    if (s.lift !== 0) this.renderer.setSeatLift?.(h.id, s.lift);
+    if (s.ground) this.renderer.setGrounded?.(h.id, true);
+    this.spotted.set(h.id, placementId);
+  }
+
+  /**
+   * 가구 모션이 끝났다 — 설치 영역 안(또는 걷지 못하는 칸)에 서 있으면 가구 정면 쪽 가장 가까운 빈 칸으로 옮겨 세운다(가구에 박혀 걷지 않게).
+   * 가구가 이미 없어졌으면(박살 · 배치 저장) 가장 가까운 빈 칸
+   */
+  private stepOut(h: CharacterHandle, placementId: number): void {
+    const p = this.placements.find((q) => q.placementId === placementId);
+    const def = p && this.furniture.def(p.furnitureId);
+    const f = p && def ? footprint(def, { x: p.positionX, y: p.positionY }, p.rotation) : null;
+    const inArea = !!f && h.position.x > f.x0 && h.position.x < f.x1 && h.position.y > f.y0 && h.position.y < f.y1;
+    if (!inArea && this.grid.freeAt(h.position)) return;
+    let want = h.position;
+    if (p && f) {
+      const { front, side } = furnitureAxes(p.rotation);
+      const c = { x: (f.x0 + f.x1) / 2, y: (f.y0 + f.y1) / 2 };
+      const half = (Math.abs(front.x) * (f.x1 - f.x0) + Math.abs(front.y) * (f.y1 - f.y0)) / 2;
+      const across = (h.position.x - c.x) * side.x + (h.position.y - c.y) * side.y; // 옆으로 서 있던 만큼은 그대로
+      want = { x: c.x + front.x * (half + STEP_OUT_GAP) + side.x * across, y: c.y + front.y * (half + STEP_OUT_GAP) + side.y * across };
+    }
+    const out = this.grid.freeAt(want) ? want : this.grid.nearestFree(want);
+    if (!out) return;
+    h.position = out;
+    h.path = [];
+    this.renderer.move(h.id, out);
   }
 
   /** 길을 따라 stepLen 칸 걷는다 — 경유지를 넘어가도 남은 걸음은 다음 구간에 이어 쓴다(꺾을 때 멈칫하지 않게) */
@@ -830,7 +884,7 @@ export class RoomLoop {
     const h = this.handles.get(charId);
     if (!h) return;
     this.dropSlotWait(h);
-    this.unseat(h);
+    this.unseat(h, false); // 들려 나가니 설치 영역 밖으로 옮기지 않는다
     h.lifted = true;
     h.path = [];
     h.held = false;
@@ -912,7 +966,7 @@ export class RoomLoop {
     this.setDropTarget(null);
     this.renderer.setCharacterState(charId, { lifted: false }); // 먼저 풀어야 렌더러가 아래 play 를 받는다
     // 놓은 상대 — 캐릭터는 들린 동안 근접 판정에서 빠져 있었으니 다음 판정에서 새로 마주친다.
-    // 가구는 엔진에 알린다. 내려놓은 자리에 그대로 서 있는다 — 설치 영역 안 어디에 설지 · 방향은 앵커(#7)에서
+    // 가구는 엔진에 알린다. 모션이 시작되면 가구 모션 자리(소파 앉기 = 좌석, 그 밖 = 가운데 + MOTION_SPOTS)로 옮겨 선다
     if (target?.kind === 'furniture' && this.mode === 'NORMAL') {
       // 슬롯머신은 앞 자리에 바로 세워 마주 보게 하고 뜸을 들인 뒤에 엔진에 알린다(2026-11-14 도휘) — 모션이 그 거리에서 레버를 당기도록 만들어졌다.
       // 걸어가게도 해 봤지만 오래 걸리고 주변 가구를 뚫고 지나가서 바로 세운다.
@@ -1126,8 +1180,15 @@ export class RoomLoop {
     });
   }
 
-  /** 앉기를 푼다 — 모션이 끝났거나 멈췄거나 다시 들었다 */
-  private unseat(h: CharacterHandle): void {
+  /** 앉기를 푼다 — 모션이 끝났거나 멈췄거나 다시 들었다. 가구 모션 자리였으면 높이 · 바닥 붙이기를 풀고 설치 영역 밖으로(stepOut) */
+  private unseat(h: CharacterHandle, out = true): void {
+    const spot = this.spotted.get(h.id);
+    if (spot !== undefined) {
+      this.spotted.delete(h.id);
+      this.renderer.setSeatLift?.(h.id, 0);
+      this.renderer.setGrounded?.(h.id, false);
+      if (out && !h.lifted) this.stepOut(h, spot);
+    }
     if (!this.seated.delete(h.id)) return;
     this.renderer.setSeatLift?.(h.id, 0);
   }

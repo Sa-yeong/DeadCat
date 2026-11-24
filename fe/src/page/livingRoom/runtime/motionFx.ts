@@ -110,3 +110,60 @@ export const MOTION_FACE: Record<string, FaceLevels> = { sleep: { blink: 1 } };
 export function faceTargetOf(motion: string | null | undefined, emotionFace: FaceLevels): FaceLevels {
   return (motion && MOTION_FACE[motion]) || emotionFace;
 }
+
+/* ── 가구 모션 자리(거실모션 H-2) ───────────────────────────── */
+
+export interface Spot {
+  along: number;
+  side: number;
+  lift: number;
+  turn: number;
+  ground?: boolean;
+}
+// 랩에서 맞춘 값(11-24) — 가구 모션만(캐릭터 상호작용 모션은 H-5 PAIR_SPOTS). 없는 모션 = 전부 0
+// along = 가구 정면(front) 쪽 + · side = side 쪽 + · lift = 위 + (칸) · turn = 도 · ground = 바닥 붙이기
+export const MOTION_SPOTS: Record<string, Spot> = {
+  // 소파
+  lie_down: { along: 0, side: 0, lift: 0, turn: 0 },
+  sleep: { along: 0, side: 0, lift: 0.195, turn: 0 },
+  crouch_crying: { along: 0.28, side: 0.415, lift: 0.125, turn: 0 },
+  jumping: { along: 0.11, side: -0.03, lift: -0.095, turn: 0 }, // 랩 값 side 0.67 + 앵커 seat_l(−0.7)
+  breaking_sofa: { along: 0.25, side: 0.25, lift: 0, turn: 0 }, // 랩 값 side 0.95 + 앵커 seat_l(−0.7)
+  // 책상
+  desk_idle: { along: 0.89, side: 0, lift: 0, turn: 0 },
+  space_out: { along: 0.75, side: 0, lift: 0, turn: 0 },
+  lean_forward: { along: 0.78, side: 0, lift: 0, turn: 0 },
+  desk_crying: { along: 0.75, side: 0, lift: 0, turn: 0 },
+  hiding: { along: 0.86, side: 0, lift: 0, turn: 0 },
+  breaking_desk: { along: 0.835, side: 0, lift: 0, turn: 0 },
+  // 특수가구
+  play_piano: { along: 0.28, side: 0, lift: 0, turn: 0 },
+  read_book: { along: 0.72, side: 0, lift: 0, turn: 0 },
+  use_computer: { along: 0.86, side: 0, lift: 0, turn: 0 },
+};
+export const NO_SPOT: Spot = { along: 0, side: 0, lift: 0, turn: 0 };
+
+/** 방향 (fx, fy)를 위에서 봐 반시계로 deg 도 돌린다 — (fx·cos t + fy·sin t, −fx·sin t + fy·cos t), 랩 three.js rotation.y + 와 같은 쪽 */
+export function turnDir(f: { x: number; y: number }, deg: number): { x: number; y: number } {
+  const t = (deg * Math.PI) / 180;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  return { x: f.x * c + f.y * s, y: -f.x * s + f.y * c };
+}
+
+/** 가구 회전(도) → 정면(front) · 옆(side) 방향 — 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y). RoomLoop.sitOnSofa 와 같다 */
+export function furnitureAxes(rotationDeg: number): { front: { x: number; y: number }; side: { x: number; y: number } } {
+  const r = (rotationDeg * Math.PI) / 180;
+  return { front: { x: -Math.sin(r), y: Math.cos(r) }, side: { x: Math.cos(r), y: Math.sin(r) } };
+}
+
+/**
+ * 가구 모션 자리(결정 1) — 설치 영역 가운데 + front·along + side·side, 방향 = front 를 turn 도 돌린 쪽. 앵커 offset 은 더하지 않는다
+ */
+export function spotOf(center: { x: number; y: number }, rotationDeg: number, s: Spot): { at: { x: number; y: number }; face: { x: number; y: number } } {
+  const { front, side } = furnitureAxes(rotationDeg);
+  return {
+    at: { x: center.x + front.x * s.along + side.x * s.side, y: center.y + front.y * s.along + side.y * s.side },
+    face: turnDir(front, s.turn),
+  };
+}
