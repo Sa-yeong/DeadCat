@@ -15,7 +15,7 @@ import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import { ROOM_RULES, type MotionTable } from './roomEngine';
 import { Perception, type Obstacle } from '../engine/perception';
 import type { RoomDemo } from './roomDemo';
-import { BREAK_FX, BreakRun, furnitureAxes, MOTION_SPOTS, NO_SPOT, spotOf } from './motionFx';
+import { BREAK_FX, BreakRun, furnitureAxes, MOTION_SPOTS, NO_SPOT, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf } from './motionFx';
 
 /**
  * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
@@ -40,11 +40,8 @@ const SOFA_SEAT = { y: 0.47, back: -0.47 };
 const SIT_POSE = { buttY: 0.667, buttBack: -0.327 };
 /** 엉덩이 뒷면과 등받이 사이 틈(칸) — 등이 등받이에 파묻히지 않게 */
 const SOFA_BACK_GAP = 0.03;
-/**
- * 둘이 마주 보고 하는 모션 — 첫 단계 이름 → 두 캐릭터 발 사이 거리(칸). 이 모션을 받은 쪽이 상대(마주친 캐릭터) 앞으로 옮겨 서고 서로 마주 본다.
- * 놀리기(2026-11-14 도휘): 너무 붙지 않게 사이에 캐릭터 1.5명이 들어갈 만큼 — 캐릭터 몸 폭이 약 1칸이라 발 사이 2.5칸
- */
-const PAIR_GAP: Record<string, number> = { tease_find: 2.5 };
+// 둘이 마주 보고 하는 모션의 거리(PAIR_GAP) · 보정(PAIR_SPOTS)은 motionFx 한 곳(거실모션 H-5).
+// 놀리기(2026-11-14 도휘): 너무 붙지 않게 사이에 캐릭터 1.5명이 들어갈 만큼 — 캐릭터 몸 폭이 약 1칸이라 발 사이 2.5칸
 /** 앉는 소파 모션 이름(motions.json) */
 const SIT_SOFA = 'sit_sofa';
 /** 슬롯머신 모션 — 앞 자리(SLOT_STAND)에 따로 세운다 */
@@ -187,6 +184,13 @@ export class RoomLoop {
   private readonly seated = new Set<string>();
   /** 가구 모션 자리(MOTION_SPOTS, H-2)에 세운 캐릭터 → 그 가구 배치 id — 끝나면 높이를 풀고 설치 영역 밖으로 */
   private readonly spotted = new Map<string, number>();
+  /**
+   * 둘이 하는 모션(H-5) — 캐릭터 → 상대 · 마주 선 기준 자리(보정 전) · 자기 첫 모션 · 옮겨 섰는지. 보정(PAIR_SPOTS)은 늘 두 기준 자리에서 잰다
+   * (명령을 받는 순서와 상관없이 — 나중에 받은 쪽이 옮겨 서면 먼저 받은 쪽 보정을 새 기준에서 다시 건다)
+   */
+  private readonly pairs = new Map<string, { with: string; base: Pt; first: string; moved: boolean }>();
+  /** 두 캐릭터 보정으로 높이(lift)를 건 캐릭터 — 끝나면 0 으로 */
+  private readonly pairLifted = new Set<string>();
   /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
   private readonly slotWaits = new Map<string, SlotWait>();
   /** 진행 중인 박살(G-2) — 터진 뒤엔 캐릭터가 다른 일을 해도 가구는 사라진다 */
@@ -1035,28 +1039,60 @@ export class RoomLoop {
 
   /**
    * 둘이 하는 모션(PAIR_GAP)이면 마주친 상대 앞 정해진 거리로 옮겨 서고 서로 마주 본다 — 상대 쪽에서 보던 방향은 그대로 두고 거리만 맞춘다.
-   * 그 자리가 가구 · 벽이면 상대 둘레를 30°씩 돌며 빈 자리를 찾고, 없으면 제자리에서 마주 보기만 한다
+   * 그 자리가 가구 · 벽이면 상대 둘레를 30°씩 돌며 빈 자리를 찾고, 없으면 제자리에서 마주 보기만 한다.
+   * 둘 다 PAIR_GAP 모션이면 먼저 받은 쪽만 옮겨 선다(둘 다 움직여 어긋나지 않게).
+   * 그다음 각 캐릭터에게 자기 첫 모션의 보정(PAIR_SPOTS)을 마주 선 기준 자리에서 건다 — 양쪽 다(거실모션 H-5)
    */
   private facePartner(h: CharacterHandle, steps: readonly { name: string }[]): void {
-    const gap = steps[0] ? PAIR_GAP[steps[0].name] : undefined;
-    const o = gap !== undefined && h.metWith ? this.handles.get(h.metWith) : undefined;
-    if (gap === undefined || !o || o.lifted) return;
-    const dx = h.position.x - o.position.x;
-    const dy = h.position.y - o.position.y;
-    const base = dx * dx + dy * dy > 1e-6 ? Math.atan2(dy, dx) : 0;
-    for (let k = 0; k < 12; k++) {
-      const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6);
-      const spot = { x: o.position.x + Math.cos(a) * gap, y: o.position.y + Math.sin(a) * gap };
-      if (!this.grid.freeAt(spot)) continue;
-      h.position = spot;
-      h.path = [];
-      this.renderer.move(h.id, spot);
-      break;
+    this.pairs.delete(h.id); // 새 명령 — 앞 만남의 기준 자리는 끝
+    const first = steps[0]?.name;
+    const gap = first !== undefined ? PAIR_GAP[first] : undefined;
+    const fix = first !== undefined ? PAIR_SPOTS[first] : undefined;
+    const o = (gap !== undefined || fix) && h.metWith ? this.handles.get(h.metWith) : undefined;
+    if (first === undefined || !o || o.lifted) return;
+    const mine = this.pairs.get(o.id);
+    const oPair = mine?.with === h.id ? mine : undefined; // 상대가 이번 만남의 명령을 먼저 받았다
+    const oBase = oPair ? oPair.base : o.position;
+    let moved = false;
+    if (gap !== undefined && !oPair?.moved) {
+      const dx = h.position.x - oBase.x;
+      const dy = h.position.y - oBase.y;
+      const base = dx * dx + dy * dy > 1e-6 ? Math.atan2(dy, dx) : 0;
+      for (let k = 0; k < 12; k++) {
+        const a = base + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6);
+        const spot = { x: oBase.x + Math.cos(a) * gap, y: oBase.y + Math.sin(a) * gap };
+        if (!this.grid.freeAt(spot)) continue;
+        h.position = spot;
+        h.path = [];
+        this.renderer.move(h.id, spot);
+        break;
+      }
+      moved = true;
+      const to = { x: oBase.x - h.position.x, y: oBase.y - h.position.y };
+      this.renderer.face?.(h.id, to, true);
+      this.renderer.face?.(o.id, { x: -to.x, y: -to.y }, true);
+      o.path = [];
     }
-    const to = { x: o.position.x - h.position.x, y: o.position.y - h.position.y };
-    this.renderer.face?.(h.id, to, true);
-    this.renderer.face?.(o.id, { x: -to.x, y: -to.y }, true);
-    o.path = [];
+    const hBase = h.position;
+    this.pairs.set(h.id, { with: o.id, base: hBase, first, moved });
+    this.applyPairSpot(h, first, hBase, oBase);
+    // 먼저 받은 상대의 보정은 옮기기 전 자리에서 걸렸다 — 새 기준 자리에서 다시
+    if (oPair && moved) this.applyPairSpot(o, oPair.first, oPair.base, hBase);
+  }
+
+  /** 두 캐릭터 보정 하나 — 기준 자리(base)에서 상대 기준 자리 쪽을 앞으로 along · 몸 +X 로 side · turn · lift */
+  private applyPairSpot(c: CharacterHandle, first: string, base: Pt, partner: Pt): void {
+    const s = PAIR_SPOTS[first];
+    const got = s && pairSpotOf(base, partner, s);
+    if (!s || !got) return;
+    c.position = got.at;
+    c.path = [];
+    this.renderer.move(c.id, got.at);
+    this.renderer.face?.(c.id, got.face, true);
+    if (s.lift !== 0) {
+      this.renderer.setSeatLift?.(c.id, s.lift);
+      this.pairLifted.add(c.id);
+    }
   }
 
   /* ── 모션 실험(?lab) — 주가와 상관없이 원할 때 모션을 본다. 실제 서비스엔 쓰지 않는다 ── */
@@ -1190,6 +1226,7 @@ export class RoomLoop {
 
   /** 앉기를 푼다 — 모션이 끝났거나 멈췄거나 다시 들었다. 가구 모션 자리였으면 높이 · 바닥 붙이기를 풀고 설치 영역 밖으로(stepOut) */
   private unseat(h: CharacterHandle, out = true): void {
+    if (this.pairLifted.delete(h.id)) this.renderer.setSeatLift?.(h.id, 0);
     const spot = this.spotted.get(h.id);
     if (spot !== undefined) {
       this.spotted.delete(h.id);

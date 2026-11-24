@@ -187,3 +187,36 @@ export function loopRangeFix(range: readonly [number, number], prevT: number | u
   if (t >= en - 1e-4) return st + ((t - en) % (en - st));
   return null;
 }
+
+/* ── 두 캐릭터 보정(거실모션 H-5) ────────────────────────────── */
+
+/**
+ * 둘이 마주 보고 하는 모션 — 옮겨 서는 쪽의 첫 모션 → 두 캐릭터 발 사이 거리(칸). 이 모션을 받은 쪽이 상대 앞으로 옮겨 서고 서로 마주 본다.
+ * 둘 다 키가 있으면 먼저 받은 쪽만 옮겨 선다
+ */
+// 랩은 모든 만남을 발 사이 1.5칸으로 두고 아래 보정으로 맞췄다(11-24) — 새로 만든 만남 모션은 1.5, 놀리기는 그대로
+export const PAIR_GAP: Record<string, number> = { tease_find: 2.5, console: 1.5, cheer_up: 1.5, anxious: 1.5 };
+// along = 상대 쪽(바라보는 방향) + · side = 몸 기준 +X + · turn = 도 · lift = 위 + (칸). 없는 모션 = 0
+export const PAIR_SPOTS: Record<string, Spot> = {
+  console: { along: 0.415, side: -1.135, lift: 0, turn: -5 },
+  crying: { along: 0, side: 0.21, lift: 0, turn: 180 },
+  cheer_up: { along: 0, side: 0, lift: 0, turn: 30 },
+  tired: { along: 0, side: 0, lift: 0, turn: -15 }, // 바닥 붙이기는 GROUND_CLIPS 그대로
+};
+
+/**
+ * 두 캐릭터 보정 자리 — 마주 선 기준 자리(base)에서 상대 기준 자리 쪽을 f 로, 몸 기준 +X = (fy, −fx).
+ * 자리 = base + f·along + (+X)·side, 방향 = f 를 turn 도 돌린 쪽(turnDir). 둘이 같은 자리면 null
+ */
+export function pairSpotOf(base: { x: number; y: number }, partner: { x: number; y: number }, s: Spot): { at: { x: number; y: number }; face: { x: number; y: number } } | null {
+  const dx = partner.x - base.x;
+  const dy = partner.y - base.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return null;
+  const f = { x: dx / len, y: dy / len };
+  const right = { x: f.y, y: -f.x };
+  return {
+    at: { x: base.x + f.x * s.along + right.x * s.side, y: base.y + f.y * s.along + right.y * s.side },
+    face: turnDir(f, s.turn),
+  };
+}

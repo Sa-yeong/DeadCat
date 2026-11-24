@@ -18,7 +18,7 @@ import { LivingRoomEngine, type EmotionFeed } from '../engine/Engine';
 import type { Emotion } from '../engine/type/type';
 import type { Pt } from './projection';
 import type { PlacementDto, RoomCharacterDto } from '../types';
-import { MOTION_SPOTS, spotOf } from './motionFx';
+import { MOTION_SPOTS, PAIR_SPOTS, pairSpotOf, spotOf, turnDir } from './motionFx';
 
 // 거실 런타임 S4 — 감정 스트림 읽기(2-1 · 2-2)와 엔진 명령 단계 처리(1-1 · 1-2). 브라우저 없이 확인할 수 있는 것만
 
@@ -821,6 +821,40 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeCloseTo(2.5, 5);
       expect(a.x).toBeCloseTo(8.5, 5); // 1 은 2 의 왼쪽에 있었다
       expect(t.playsOf('1')).toEqual([]); // 엔진을 거치지 않는다(모션 실험)
+    });
+  });
+
+  describe('두 캐릭터 보정 (거실모션 H-5 PAIR_GAP · PAIR_SPOTS)', () => {
+    const near = (a: Pt, b: Pt) => {
+      expect(a.x).toBeCloseTo(b.x, 6);
+      expect(a.y).toBeCloseTo(b.y, 6);
+    };
+
+    it('pairSpotOf — 상대 쪽 along · 몸 +X(fy, −fx) side · turn', () => {
+      const got = pairSpotOf({ x: 0, y: 0 }, { x: 2, y: 0 }, { along: 0.5, side: 1, lift: 0, turn: 90 })!;
+      near(got.at, { x: 0.5, y: -1 });
+      near(got.face, turnDir({ x: 1, y: 0 }, 90));
+      expect(pairSpotOf({ x: 1, y: 1 }, { x: 1, y: 1 }, PAIR_SPOTS.console)).toBeNull();
+    });
+
+    it('위로하기 — 우는 쪽이 먼저 받아도, 위로하는 쪽이 1.5칸 앞으로 옮겨 선 뒤 양쪽 다 기준 자리에서 보정', () => {
+      const t = room([], ['happy', 'depress']);
+      t.drop('1', { x: 10, y: 10 });
+      t.drop('2', { x: 11, y: 10 });
+      t.loop.labPlay('1', ['console'], { id: '2', names: ['crying'] }); // 상대(2 · 우는 쪽)가 먼저 받는다
+      const base1 = { x: 9.5, y: 10 }; // 2 에서 1.5칸, 1 이 있던 쪽
+      const base2 = { x: 11, y: 10 };
+      near(t.at.get('1')!, pairSpotOf(base1, base2, PAIR_SPOTS.console)!.at);
+      near(t.at.get('2')!, pairSpotOf(base2, base1, PAIR_SPOTS.crying)!.at);
+    });
+
+    it('둘 다 PAIR_GAP 모션이면(불안 × 위로) 먼저 받은 쪽만 옮겨 선다', () => {
+      const t = room([], ['anxious', 'happy']);
+      t.drop('1', { x: 10, y: 10 });
+      t.drop('2', { x: 11, y: 10 });
+      t.loop.labPlay('1', ['anxious'], { id: '2', names: ['console'] }); // 2(console)가 먼저 받아 옮겨 선다
+      expect(t.at.get('1')).toEqual({ x: 10, y: 10 }); // 1 은 그대로(보정 없는 모션)
+      near(t.at.get('2')!, pairSpotOf({ x: 11.5, y: 10 }, { x: 10, y: 10 }, PAIR_SPOTS.console)!.at);
     });
   });
 
