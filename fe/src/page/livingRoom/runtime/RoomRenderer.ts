@@ -2,6 +2,7 @@ import type { CharacterDef } from '../types';
 import type { Footprint } from './furnitureShape';
 import type { Pt } from './projection';
 import type { Look } from './outfitState';
+import type { MotionClock } from './motionFx';
 
 /**
  * 거실을 **어떻게 그릴지**만 아는 쪽. 무엇을 할지는 RoomLoop 이 정한다.
@@ -22,6 +23,13 @@ export interface MotionStep {
   clip: string | null;
   /** 반복 — 마지막 단계에서만 의미가 있다(반복하면 끝나지 않는다) */
   loop: boolean;
+  /** 엔진 모션 이름(motions.json) — 모션별 연출(표정 덮어쓰기 MOTION_FACE 등)을 찾는 데. 없으면 연출 없음 */
+  name?: string;
+  /**
+   * 끝까지 틀면 마지막 자세로 멈춘 채 onFinish 를 부르지 않는다(cancel 까지) — 박살 모션(G-2): 먼지가 가장 짙을 때 RoomLoop 이 끝낸다.
+   * 파일이 없으면 평소처럼 건너뛴다(onFinish)
+   */
+  hold?: boolean;
 }
 
 /** 거실 썸네일 — 찍을 시점(1칸 px · 뒤 꼭짓점 자리)과 무대 px 영역. 영역은 2:1 이어야 찌그러지지 않는다 */
@@ -131,6 +139,16 @@ export interface RoomRenderer {
    * 모션이 실제로 돌 때만 걸리고, 들어가고 나올 때 동작이 섞이는 시간 동안 서서히 옮겨 간다. 0 이면 풀기
    */
   setSeatLift?(charId: string, lift: number): void;
+  /**
+   * 지금 트는 엔진 모션 단계의 시간(초) · 길이 — 박살 프레임을 재는 데(G-2). 파일을 받는 중 · 없는 파일 · 엔진 모션이 없으면 null
+   */
+  motionClock?(charId: string): MotionClock | null;
+  /** 가구를 화면에서 숨긴다 / 다시 보인다 — 박살로 먼지가 가장 짙을 때(G-2). 숨긴 가구는 클릭 · 드롭 대상에서도 빠진다 */
+  setFurnitureHidden?(placementId: number, hidden: boolean): void;
+  /** 가구 자리에 흙먼지를 터뜨린다(3D 만, G-2) — 크기는 그 가구의 설치 영역 · 키 기준. 그리기만 하고 알림은 없다 */
+  burstDust?(placementId: number): void;
+  /** 가구 모델을 살짝 들썩인다(3D 만, G-2 — 책상을 주먹으로 내려침) */
+  bumpFurniture?(placementId: number): void;
   /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
   whenSettled?(): Promise<void>;
   dispose(): void;

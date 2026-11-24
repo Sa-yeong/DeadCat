@@ -15,6 +15,7 @@ import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import { ROOM_RULES, type MotionTable } from './roomEngine';
 import { Perception, type Obstacle } from '../engine/perception';
 import type { RoomDemo } from './roomDemo';
+import { BREAK_FX, BreakRun } from './motionFx';
 
 /**
  * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
@@ -55,6 +56,17 @@ interface SlotWait {
   placementId: number;
   wait: number;
 }
+
+/** 박살 하나(G-2) — 누가 · 어느 명령으로 · 어느 가구를 */
+interface BreakEntry {
+  charId: string;
+  fx: BreakRun;
+  run: ActRun;
+  placementId: number;
+}
+
+/** 방 배치 저장 — 배치 모드의 「저장」과 같은 길(PUT /rooms/layout, 보내는 목록 = 저장 뒤 방에 있어야 할 가구 전부) */
+export type SaveLayout = (placements: readonly PlacementDto[]) => Promise<PlacementDto[]>;
 
 export interface RoomLoopEvents {
   /** 짧게 누름 — 페이지가 RoomHud.onSelect 에 잇는다. 화면 좌표는 방 기준 */
@@ -171,6 +183,15 @@ export class RoomLoop {
   private readonly seated = new Set<string>();
   /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
   private readonly slotWaits = new Map<string, SlotWait>();
+  /** 진행 중인 박살(G-2) — 터진 뒤엔 캐릭터가 다른 일을 해도 가구는 사라진다 */
+  private readonly breaks = new Set<BreakEntry>();
+  /** 박살로 숨기고 배치 해제를 저장하는 중인 가구 — 그동안은 근접 · 드롭 대상에서 뺀다 */
+  private readonly broken = new Set<number>();
+  /** 배치 해제 저장은 하나씩 차례로 — 동시에 보내면 앞 저장으로 빠진 가구를 뒤 저장이 다시 놓는다(목록 전체를 보내서) */
+  private releaseChain: Promise<void> = Promise.resolve();
+  /** 내 방이면 배치 저장 — 없으면(남의 방) 박살 연출 없이 모션만 지금처럼 */
+  private readonly saveLayout: SaveLayout | null;
+  private stopped = false;
 
   constructor(deps: {
     renderer: RoomRenderer;
@@ -183,6 +204,11 @@ export class RoomLoop {
     events: RoomLoopEvents;
     /** 데모 계정의 내 거실 연출(roomDemo.ts) — 없거나 null 이면 평소대로. 늦게 켜질 수 있어 매번 읽는다 */
     demo?: () => RoomDemo | null;
+    /**
+     * 내 방 배치 저장(api.savePlacements) — 박살로 부서진 가구를 보관함으로 보낼 때(G-2). 남의 방은 넘기지 않는다:
+     * 남의 방에서 박살을 어떻게 보일지는 도휘 결정 전이라 그때는 지금처럼 모션만 튼다
+     */
+    saveLayout?: SaveLayout;
   }) {
     this.renderer = deps.renderer;
     this.engine = deps.createEngine((cmd) => this.onCommand(cmd));
@@ -191,6 +217,7 @@ export class RoomLoop {
     this.motions = deps.motions;
     this.events = deps.events;
     this.demo = deps.demo ?? (() => null);
+    this.saveLayout = deps.saveLayout ?? null;
     this.gesture = new PressGesture({
       hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.renderer.pick(x, y)),
       canLift: () => this.mode === 'NORMAL',
@@ -393,6 +420,7 @@ export class RoomLoop {
   stop(): void {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.stopped = true;
     this.engine.dispose();
     this.gesture.cancel();
     this.nearFurniture.reset();
@@ -401,6 +429,7 @@ export class RoomLoop {
   tick(dt: number): void {
     this.engine.tick(); // 시간 제한이 지난 상호작용을 엔진이 끝낸다(지시서 1-6) — 배치 모드에도 시계는 간다
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
+    this.stepBreaks(dt);
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
       const sw = this.slotWaits.get(h.id);
@@ -462,7 +491,7 @@ export class RoomLoop {
     const out: Obstacle[] = [];
     for (const p of this.placements) {
       const name = this.engineFurniture.get(p.placementId);
-      if (!name || name === SLOT_MACHINE) continue;
+      if (!name || name === SLOT_MACHINE || this.broken.has(p.placementId)) continue;
       const def = this.furniture.def(p.furnitureId);
       const radius = ROOM_RULES.furniture.get(name)?.interactionRadius;
       if (!def || radius === undefined) continue;
@@ -492,6 +521,7 @@ export class RoomLoop {
    * 다른 가구는 그 자리에 선 채로 — 서는 위치 · 방향은 앵커(#7)에서
    */
   private visitFurniture(h: CharacterHandle, placementId: number): void {
+    if (this.broken.has(placementId)) return; // 부서져 사라지는 중
     this.engine.visitFurniture(h.id, placementId);
     if (!h.acting) return;
     h.path = [];
@@ -599,7 +629,11 @@ export class RoomLoop {
     if (step.kind === 'clip') {
       h.acting = true;
       const loop = step.loop && run.i === run.steps.length - 1;
-      this.renderer.play(h.id, [{ clip: this.motions.clipOf(step.name), loop }], () => this.nextStep(h, run));
+      const clip = this.motions.clipOf(step.name);
+      // 박살 모션은 끝나도 마지막 자세로 멈춰 기다린다 — 먼지가 가장 짙을 때 stepBreaks 가 끝낸다. 그 전에 온 끝 신호 = 파일 없음
+      const brk = this.startBreak(h, run, step.name, clip);
+      const finish = brk ? () => brk.missing() : () => this.nextStep(h, run);
+      this.renderer.play(h.id, [{ clip, loop, name: step.name, ...(brk ? { hold: true } : {}) }], finish);
       return;
     }
     h.acting = false;
@@ -833,7 +867,7 @@ export class RoomLoop {
     const under = screen ? this.renderer.pickFurniture(screen.x, screen.y) : null;
     for (const p of this.placements) {
       const def = this.furniture.def(p.furnitureId);
-      if (!def?.engineName) continue;
+      if (!def?.engineName || this.broken.has(p.placementId)) continue;
       if (p.placementId === under) {
         offer({ kind: 'furniture', placementId: p.placementId }, 0);
         continue;
@@ -1020,6 +1054,76 @@ export class RoomLoop {
       break;
     }
     this.onFieldEnter(a, b);
+  }
+
+  /* ── 가구 박살(G-2) ─────────────────────────────────────── */
+
+  /**
+   * 박살 모션(BREAK_FX)이면 박살을 건다 — 내 방(saveLayout)에서 가구에 온 명령일 때만. 아니면 null(지금처럼 모션만).
+   * 파일이 없는 모션(motions.json clip 이 비었음)은 시작 0.3초 뒤에 터진다
+   */
+  private startBreak(h: CharacterHandle, run: ActRun, motion: string, clip: string | null): BreakRun | null {
+    const placementId = run.furnitureId;
+    if (!BREAK_FX[motion] || !this.saveLayout || placementId === undefined) return null;
+    if (!this.placements.some((p) => p.placementId === placementId) || this.broken.has(placementId)) return null;
+    const fx = new BreakRun(motion, clip === null);
+    this.breaks.add({ charId: h.id, fx, run, placementId });
+    return fx;
+  }
+
+  /**
+   * 박살 시계 — 들썩 · 먼지 · 가장 짙음을 렌더러 · 엔진에 낸다. 터지기 전에 캐릭터가 다른 일을 하게 되면(들기 · 다른 명령 · 감정 변화) 박살은 없던 일.
+   * 터진 뒤면 가구는 그대로 사라진다(먼지가 이미 나왔다) — 모션 끝 알림만 보내지 않는다(엔진은 이미 끝낸 상호작용)
+   */
+  private stepBreaks(dt: number): void {
+    for (const b of [...this.breaks]) {
+      const h = this.handles.get(b.charId);
+      const live = !!h && h.run === b.run;
+      if (!live && !b.fx.burst) {
+        this.breaks.delete(b);
+        continue;
+      }
+      const clock = live ? (this.renderer.motionClock?.(b.charId) ?? null) : null;
+      for (const ev of b.fx.step(dt, clock)) {
+        if (ev === 'bump') this.renderer.bumpFurniture?.(b.placementId);
+        else if (ev === 'burst') this.renderer.burstDust?.(b.placementId);
+        else this.breakPeak(b, live ? h : undefined);
+      }
+      if (b.fx.peaked) this.breaks.delete(b);
+    }
+  }
+
+  /**
+   * 먼지가 가장 짙다 — 가구를 숨기고, 박살 모션을 그 자리에서 끝내고(모션 끝 알림 · 쿨다운이 지금부터 — 바닥으로 내리는 처리 없음),
+   * 배치를 해제한다(보관함으로)
+   */
+  private breakPeak(b: BreakEntry, h: CharacterHandle | undefined): void {
+    this.renderer.setFurnitureHidden?.(b.placementId, true);
+    if (h) {
+      this.renderer.cancel(h.id); // 붙잡고 있던 마지막 자세를 내려놓는다 — 다음 모션은 엔진이 정한다
+      this.nextStep(h, b.run);
+    }
+    this.releaseBroken(b.placementId);
+  }
+
+  /**
+   * 배치 해제 — 그 가구를 뺀 방 전체를 저장한다(배치 모드 「보관함으로 → 저장」과 같은 API · 같은 상태 갱신).
+   * 실패하면 가구를 다시 보이고 다시 시도하지 않는다
+   */
+  private releaseBroken(placementId: number): void {
+    this.broken.add(placementId);
+    this.releaseChain = this.releaseChain.then(async () => {
+      const save = this.saveLayout;
+      const keep = this.placements.filter((p) => p.placementId !== placementId);
+      const saved = save && keep.length < this.placements.length && !this.stopped ? await save(keep).catch(() => null) : null;
+      this.broken.delete(placementId);
+      if (this.stopped) return;
+      if (!saved) {
+        this.renderer.setFurnitureHidden?.(placementId, false);
+        return;
+      }
+      this.setPlacements(saved); // 씬에서 지우고 엔진에도 알린다(tellEngine) · 걷는 칸도 다시
+    });
   }
 
   /** 앉기를 푼다 — 모션이 끝났거나 멈췄거나 다시 들었다 */

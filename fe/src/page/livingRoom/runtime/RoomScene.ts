@@ -22,6 +22,8 @@ import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
 import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
+import { BUMP, bumpAt, faceTargetOf, type MotionClock } from './motionFx';
+import { DustBursts } from './dustFx';
 
 /**
  * **3D 렌더러** — three.js 로 아트보드 H안을 그대로 세운다. RoomRenderer 의 두 번째 구현.
@@ -254,6 +256,10 @@ interface FurnNode {
   rim: { width: { value: number }; mat: THREE.MeshBasicMaterial } | null;
   /** 슬롯머신 한 판이 도는 중(pullLever) */
   anim: SlotRun | null;
+  /** 박살로 숨겼다(G-2) — 클릭 · 드롭 대상에서도 빠진다 */
+  hidden: boolean;
+  /** 들썩(G-2 — 책상을 주먹으로 내려침) 시작 뒤 지난 초 — 안 들썩이면 null */
+  bumpT: number | null;
 }
 
 interface CharNode {
@@ -389,6 +395,8 @@ export class RoomScene implements RoomRenderer {
   private readonly owned: { dispose(): void }[] = [];
   /** 화면 가로(오른쪽) — 바닥과 나란하다. 대롱대롱이 마디 끝을 미는 쪽 */
   private readonly screenRight = new THREE.Vector3(Math.cos(VIEW.TH), 0, -Math.sin(VIEW.TH));
+  /** 가구 박살 흙먼지(G-2) — 처음 터질 때 만든다 */
+  private dust: DustBursts | null = null;
 
   constructor(canvas: HTMLCanvasElement, furniture: FurnitureCatalog) {
     this.canvas = canvas;
@@ -454,10 +462,16 @@ export class RoomScene implements RoomRenderer {
       live = true;
     }
     for (const f of this.furn.values()) {
-      if (!f.anim) continue;
-      this.animateSlot(f, dt);
-      live = true;
+      if (f.anim) {
+        this.animateSlot(f, dt);
+        live = true;
+      }
+      if (f.bumpT !== null) {
+        this.animateBump(f, dt);
+        live = true;
+      }
     }
+    if (this.dust?.update(dt)) live = true;
     if (this.perfDraw.length) {
       // 막 세운 모델이 처음 그려지는 프레임 — 셰이더 준비 · 텍스처 올리기가 이 render 안에서 일어난다
       const s = performance.now();
@@ -632,7 +646,7 @@ export class RoomScene implements RoomRenderer {
     if (!def) return;
     let f = this.furn.get(placementId);
     if (!f) {
-      f = { furnitureId, pos, rotation, group: new THREE.Group(), meshes: [], hull: null, build: 0, model: null, rim: null, anim: null };
+      f = { furnitureId, pos, rotation, group: new THREE.Group(), meshes: [], hull: null, build: 0, model: null, rim: null, anim: null, hidden: false, bumpT: null };
       this.furnLayer.add(f.group);
       this.furn.set(placementId, f);
     }
@@ -664,6 +678,7 @@ export class RoomScene implements RoomRenderer {
     f.hull = null;
     f.model = null;
     f.anim = null; // 다시 지으면 새 복제본이라 돌던 노드가 없어진다
+    f.bumpT = null;
     const build = ++f.build;
     const isRug = def.kind === 'rug';
     const parts = shapeOf(def, f.pos, f.rotation);
@@ -855,6 +870,47 @@ export class RoomScene implements RoomRenderer {
     }
   }
 
+  /* ── 가구 박살(G-2) — 언제 할지는 RoomLoop(motionFx.BreakRun) ── */
+
+  setFurnitureHidden(placementId: number, hidden: boolean): void {
+    const f = this.furn.get(placementId);
+    if (!f) return;
+    f.hidden = hidden;
+    f.group.visible = !hidden;
+    this.invalidate();
+  }
+
+  burstDust(placementId: number): void {
+    const f = this.furn.get(placementId);
+    const def = f && this.furniture.def(f.furnitureId);
+    if (!f || !def) return;
+    const area = footprint(def, f.pos, f.rotation);
+    this.dust ??= new DustBursts(this.scene, H_STRETCH);
+    // 방 그룹(root)은 높이를 H_STRETCH 배 늘린다 — 먼지는 장면에 바로 두고(스프라이트가 찌그러지지 않게) 높이만 곱한다
+    this.dust.burst(v3((area.x0 + area.x1) / 2, (area.y0 + area.y1) / 2), -(f.rotation * Math.PI) / 180, def.w, def.d, def.h);
+    this.invalidate();
+  }
+
+  bumpFurniture(placementId: number): void {
+    const f = this.furn.get(placementId);
+    if (!f?.model) return; // 상자(모델 없음)는 들썩이지 않는다
+    f.bumpT = 0;
+    this.invalidate();
+  }
+
+  /** 들썩 — 모델 자리(rig)만 위로 튀고 앞뒤로 살짝 기운다(모델 +X 축). 슬롯머신 덜컹과 같은 자리지만 책상 · 소파에만 온다 */
+  private animateBump(f: FurnNode, dt: number): void {
+    const rig = f.model?.rig;
+    f.bumpT = (f.bumpT ?? 0) + dt;
+    const done = f.bumpT >= BUMP.dur;
+    const b = bumpAt(done ? BUMP.dur : f.bumpT);
+    if (rig) {
+      rig.position.y = b.hop;
+      rig.rotation.x = b.tilt;
+    }
+    if (done) f.bumpT = null;
+  }
+
   private environment(): THREE.Texture {
     if (!this.envMap) {
       const pm = new THREE.PMREMGenerator(this.renderer);
@@ -891,7 +947,7 @@ export class RoomScene implements RoomRenderer {
   }
 
   pickFurniture(x: number, y: number): number | null {
-    const hits = this.rayHits(x, y, [...this.furn.values()].flatMap((f) => f.meshes));
+    const hits = this.rayHits(x, y, [...this.furn.values()].flatMap((f) => (f.hidden ? [] : f.meshes)));
     // 앞에 보이는 것부터 — 러그는 다른 가구가 없을 때만
     const solid = hits.find((h) => !h.object.userData.rug);
     const hit = solid ?? hits[0];
@@ -1435,10 +1491,17 @@ export class RoomScene implements RoomRenderer {
     if (c) c.faceTarget = CHIBI_FACE[emotion as EmotionName] ?? {};
   }
 
+  /** 지금 실제로 트는 엔진 모션 이름 — 파일을 받는 중이거나 없으면 null */
+  private playingMotion(c: CharNode): string | null {
+    const run = c.engine;
+    return run?.action ? (run.steps[run.actionStep]?.name ?? null) : null;
+  }
+
+  /** 표정 — 트는 모션에 덮어쓸 표정(MOTION_FACE, 자는 동안 눈 감음)이 있으면 그것, 아니면 감정 표정(G-2 7) */
   private applyFace(c: CharNode, dt: number): void {
     const em = c.vrm?.expressionManager;
     if (!em) return;
-    stepFaceLevels(c.faceLevels, c.faceTarget, dt);
+    stepFaceLevels(c.faceLevels, faceTargetOf(this.playingMotion(c), c.faceTarget), dt);
     for (const [name, level] of c.faceLevels) em.setValue(name, level);
   }
 
@@ -1447,6 +1510,12 @@ export class RoomScene implements RoomRenderer {
   }
 
   /** 실제 파일은 (클립 길이 − 재생한 시간) ÷ 재생 속도, 파일 없는 단계는 대기 자세를 채우는 끝 시각까지 */
+  motionClock(charId: string): MotionClock | null {
+    const run = this.chars.get(charId)?.engine;
+    if (!run || run.i < 0 || !run.action || run.actionStep !== run.i) return null;
+    return { time: run.action.time, duration: run.action.getClip().duration };
+  }
+
   motionTimeLeft(charId: string): number | 'loop' | null {
     const run = this.chars.get(charId)?.engine;
     if (!run || run.i < 0) return null;
@@ -1509,7 +1578,8 @@ export class RoomScene implements RoomRenderer {
   /** 한 번 틀고 끝나는 동작이 끝났다 — 지금 엔진 단계의 것이면 다음 단계로 */
   private onActionFinished(c: CharNode, action: THREE.AnimationAction): void {
     const run = c.engine;
-    if (run && run.action === action) void this.engineStep(c, run.token, run.i + 1);
+    // hold 단계(박살)는 마지막 자세로 멈춘 채 기다린다 — RoomLoop 이 cancel 로 끝낸다
+    if (run && run.action === action && !run.steps[run.i]?.hold) void this.engineStep(c, run.token, run.i + 1);
   }
 
   /**
@@ -1929,6 +1999,7 @@ export class RoomScene implements RoomRenderer {
       });
     }
     for (const f of this.furn.values()) f.rim?.mat.dispose();
+    this.dust?.dispose();
     for (const { mat } of this.labels.values()) {
       mat.map?.dispose();
       mat.dispose();

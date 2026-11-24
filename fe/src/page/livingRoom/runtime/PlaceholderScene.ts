@@ -3,6 +3,7 @@ import { lookColor } from '../catalog';
 import type { Look } from './outfitState';
 import type { FurnitureCatalog } from './catalogs';
 import type { DropTarget, MotionStep, RoomRenderer } from './RoomRenderer';
+import type { MotionClock } from './motionFx';
 import { CHAR } from './characterSize';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
 import { AREA_COLOR, shapeOf, type Footprint, type Part } from './furnitureShape';
@@ -39,6 +40,8 @@ interface CharNode {
   clip: string;
   /** 지금 엔진 단계가 끝나는 시각(performance.now ms, 반복이면 Infinity, 없으면 null) — 개발 모드 남은 시간 표시용 */
   stepEnd: number | null;
+  /** 지금 엔진 단계의 길이(ms) — 박살 시계(motionClock)용 */
+  stepMs: number;
 }
 
 interface FurnNode {
@@ -50,6 +53,8 @@ interface FurnNode {
   /** 클릭 판정용 화면 다각형 */
   polys: Pt[][];
   depth: number;
+  /** 박살로 숨겼다(G-2) — 클릭 대상에서도 빠진다 */
+  hidden?: boolean;
 }
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -255,8 +260,16 @@ export class PlaceholderScene implements RoomRenderer {
     const pt = { x, y };
     // 앞에 그려진 것부터 — 러그는 맨 마지막
     const list = [...this.furn.entries()].sort((a, b) => Number(a[1].isRug) - Number(b[1].isRug) || b[1].depth - a[1].depth);
-    for (const [id, f] of list) if (f.polys.some((poly) => inside(pt, poly))) return id;
+    for (const [id, f] of list) if (!f.hidden && f.polys.some((poly) => inside(pt, poly))) return id;
     return null;
+  }
+
+  /** 박살(G-2) — 평면 더미는 먼지 없이 가구만 사라진다 */
+  setFurnitureHidden(placementId: number, hidden: boolean): void {
+    const f = this.furn.get(placementId);
+    if (!f) return;
+    f.hidden = hidden;
+    f.g.style.display = hidden ? 'none' : '';
   }
 
   highlightFurniture(placementId: number | null): void {
@@ -328,7 +341,7 @@ export class PlaceholderScene implements RoomRenderer {
     figure.append(body, head);
     g.append(shadow, figure, title);
     this.objects.append(g);
-    const c: CharNode = { def, pos, g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false, engineTimer: 0, clip: '', stepEnd: null };
+    const c: CharNode = { def, pos, g, figure, head, body, shadow, title, selected: false, lifted: false, hidden: false, engineTimer: 0, clip: '', stepEnd: null, stepMs: 0 };
     this.chars.set(charId, c);
     this.drawChar(c);
     this.orderDirty = true;
@@ -379,6 +392,8 @@ export class PlaceholderScene implements RoomRenderer {
       }
       const ms = this.holdMs ?? ENGINE_STEP_MS;
       c.stepEnd = performance.now() + ms;
+      c.stepMs = ms;
+      if (steps[i].hold) return; // 박살 — 시간이 다 돼도 그대로 기다린다(RoomLoop 이 cancel 로 끝낸다)
       c.engineTimer = window.setTimeout(() => run(i + 1), ms);
     };
     c.engineTimer = window.setTimeout(() => run(0), 0); // onFinish 는 늘 비동기로
@@ -400,6 +415,14 @@ export class PlaceholderScene implements RoomRenderer {
 
   holdMissingClips(ms: number | null): void {
     this.holdMs = ms;
+  }
+
+  /** 평면 더미는 파일이 없다 — 단계 길이(ENGINE_STEP_MS)를 모션 길이로 본다 */
+  motionClock(charId: string): MotionClock | null {
+    const c = this.chars.get(charId);
+    if (!c || c.stepEnd === null || c.stepEnd === Infinity) return null;
+    const start = c.stepEnd - c.stepMs;
+    return { time: Math.min(c.stepMs, performance.now() - start) / 1000, duration: c.stepMs / 1000 };
   }
 
   motionTimeLeft(charId: string): number | 'loop' | null {

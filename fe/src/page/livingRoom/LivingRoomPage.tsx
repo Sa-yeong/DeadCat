@@ -204,6 +204,8 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
         furniture,
         motions: ROOM_MOTIONS,
         demo: roomDemo,
+        // 박살로 부서진 가구를 보관함으로(G-2) — 배치 저장 API 는 내 방 것이라 내 거실에서만
+        saveLayout: snap.mode === 'OWNER' ? (p) => api.savePlacements(p) : undefined,
         events: {
           onPicked: (id, screen) => hud.current?.onSelect(id, screen),
           onEmptyPick: () => hud.current?.onEmptyPick(),
