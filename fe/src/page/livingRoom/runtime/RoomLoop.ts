@@ -25,16 +25,12 @@ import type { RoomDemo } from './roomDemo';
  */
 const SLOT_STAND = { front: 1.327, side: -0.103 };
 /**
- * 소파 좌석 — 소파 모델에서 잰 값(모델 좌표 = 칸, 모델 가운데 기준). 2026-11-14
+ * 소파 좌석 — 노말 소파(2) 모델에서 잰 값(모델 좌표 = 칸, 모델 가운데 기준). 2026-11-14
  *   y     좌석 윗면 높이
  *   back  등받이 앞면(좌석이 시작되는 곳) — 뒤쪽이 −
- * 모델이 없는 소파(14 · 20, 지금은 상자)는 노말 소파 값으로 둔다 — 모델이 생기면 재서 넣을 것
+ * 소파류(2 · 8 · 14 · 20)는 모델 기준 수치를 통일해서(furniture_v1 README 「기준 수치 통일」, 2026-11-23) 모든 소파가 이 한 값을 쓴다(가구 마무리 G-1)
  */
-const SOFA_SEATS: Record<number, { y: number; back: number }> = {
-  2: { y: 0.47, back: -0.47 },
-  8: { y: 0.39, back: -0.375 },
-};
-const SOFA_SEAT_DEFAULT = SOFA_SEATS[2];
+const SOFA_SEAT = { y: 0.47, back: -0.47 };
 /**
  * play_sofa.vrma 앉은 자세(캐릭터 발 원점 기준, 칸) — char_chibi_2 에 걸어 잰 값. 모션을 바꾸면 다시 잴 것
  *   buttY     엉덩이 아랫면 높이
@@ -928,7 +924,7 @@ export class RoomLoop {
     const p = this.placements.find((q) => q.placementId === placementId);
     const def = p && this.furniture.def(p.furnitureId);
     if (!p || !def) return;
-    const seat = SOFA_SEATS[p.furnitureId] ?? SOFA_SEAT_DEFAULT;
+    const seat = SOFA_SEAT;
     const f = footprint(def, { x: p.positionX, y: p.positionY }, p.rotation);
     const r = (p.rotation * Math.PI) / 180;
     const front = { x: -Math.sin(r), y: Math.cos(r) };
