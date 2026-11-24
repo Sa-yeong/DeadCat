@@ -22,7 +22,7 @@ import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
 import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
-import { BUMP, bumpAt, faceTargetOf, type MotionClock } from './motionFx';
+import { BUMP, bumpAt, faceTargetOf, LOOP_RANGE, loopRangeFix, type MotionClock } from './motionFx';
 import { DustBursts } from './dustFx';
 
 /**
@@ -107,6 +107,8 @@ interface EngineRun {
   /** 개발 모드 — 파일 없는 지금 단계를 대기 자세로 채우는 끝 시각(performance.now ms, 반복이면 Infinity). 남은 시간 표시용 */
   holdEnd: number | null;
   onFinish: () => void;
+  /** 구간 반복(LOOP_RANGE) — 지난 프레임의 재생 시간(고친 뒤). 단계가 바뀌면 지운다 */
+  lastT?: number;
 }
 /** 마지막으로 움직인 뒤 이만큼 지나면 멈춘 것으로 본다(ms) — 걷는 동안 매 프레임 move 가 온다 */
 const STILL_MS = 150;
@@ -1571,6 +1573,7 @@ export class RoomScene implements RoomRenderer {
     }
     run.action = action;
     run.actionStep = i;
+    run.lastT = undefined;
     this.fadeOthers(c, action, POSE_FADE_S);
     action.reset().setEffectiveWeight(1).fadeIn(POSE_FADE_S).play(); // 쉬고 있던 쪽이라 0 부터 올려도 튀지 않는다
     c.pose = 'engine';
@@ -1649,6 +1652,7 @@ export class RoomScene implements RoomRenderer {
       const want = this.wantPose(c, performance.now());
       if (want !== c.pose) this.setPose(c, want);
       c.mixer.update(dt);
+      this.applyLoopRange(c);
     }
     // 대롱대롱 → 골반 맞추기 → 흔들림(spring bone) 순서 — 골반을 먼저 맞춰야 머리카락이 매 프레임 튀지 않는다
     // 몸 높이 — 소파 앉기(seatLift, 엔진 모션 중에만) + 바닥 붙이기(GROUND_CLIPS — 엔진 모션 또는 평소 자세로 트는 중).
@@ -1680,6 +1684,25 @@ export class RoomScene implements RoomRenderer {
     // 대롱대롱으로 더한 뼈 각을 원래대로 — 이번 프레임 모양은 이미 실제 뼈에 옮겨졌다(vrm.update).
     // 믹서는 값이 안 바뀌면(끝나서 멈춘 pickup) 뼈를 다시 쓰지 않아서, 안 되돌리면 더한 각이 프레임마다 쌓여 꺾인 채 남는다
     for (const [n, q] of swung) n.quaternion.copy(q);
+  }
+
+  /**
+   * 구간 반복(거실모션 H-4) — 반복 모션이 구간 끝을 넘거나 클립 끝에서 처음으로 감기면 구간 시작으로 보낸다.
+   * 재생기를 돌린 직후 · 그리기 전에 고쳐 update(0) 로 다시 입혀서, 한 프레임도 1프레임 자세가 보이지 않는다
+   */
+  private applyLoopRange(c: CharNode): void {
+    const run = c.engine;
+    const a = run?.action;
+    if (!run || !a || run.actionStep !== run.i || a.loop !== THREE.LoopRepeat) return;
+    const name = run.steps[run.i]?.name;
+    const range = name ? LOOP_RANGE[name] : undefined;
+    if (!range) return;
+    const fixed = loopRangeFix(range, run.lastT, a.time, a.getClip().duration);
+    if (fixed !== null) {
+      a.time = fixed;
+      c.mixer!.update(0);
+    }
+    run.lastT = a.time;
   }
 
   /** VRM 테두리 두께 — px 를 모델 좌표로 */

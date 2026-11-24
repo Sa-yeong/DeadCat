@@ -167,3 +167,23 @@ export function spotOf(center: { x: number; y: number }, rotationDeg: number, s:
     face: turnDir(front, s.turn),
   };
 }
+
+/* ── 구간 반복(거실모션 H-4) ─────────────────────────────────── */
+
+// 반복 모션: 처음엔 1프레임부터 끝까지 한 번, 그다음은 [시작, 끝] 프레임만 반복(30fps, 1부터 셈)
+export const LOOP_RANGE: Record<string, [number, number]> = { console: [100, 160], cheer_up: [80, 160] };
+
+/**
+ * 구간 반복 시간 고치기 — 재생기를 dt 만큼 돌린 직후(그리기 전에) 부른다. 고칠 게 없으면 null.
+ *   끝(en)을 넘었으면 → 시작(st) + 넘은 만큼 / 클립 끝에서 처음으로 감겼으면(t 가 줄었음) → 시작 + 감긴 뒤 시간
+ * prevT 는 지난 프레임에 이 함수를 지난 뒤의 시간(처음이면 undefined)
+ */
+export function loopRangeFix(range: readonly [number, number], prevT: number | undefined, t: number, duration: number): number | null {
+  const st = (range[0] - 1) / FPS;
+  const en = Math.min(range[1] / FPS, duration);
+  if (en <= st) return null;
+  const wrapped = prevT !== undefined && t < prevT - 1e-4 && prevT >= st;
+  if (wrapped) return Math.min(st + t, en);
+  if (t >= en - 1e-4) return st + ((t - en) % (en - st));
+  return null;
+}
