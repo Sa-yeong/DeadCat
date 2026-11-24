@@ -198,39 +198,6 @@ export class HomeRoomsService {
         return result;
     }
 
-    /*private async calculateDailyProfitRate(holdings: any[]): Promise<number> {
-        if (!holdings || holdings.length === 0) return 0;
-
-        const stockCodes = holdings.map((h) => h.stocks.code);
-        const priceMap = await this.priceService.readPrices(stockCodes);
-
-        let totalPurchase = 0;
-        let weightedDailyRate = 0;
-
-        for (const h of holdings) {
-            const quantity = Number(h.quantity);
-            const meanPrice = Number(h.mean_price_krw);
-            const purchaseAmount = meanPrice * quantity;
-
-            const cached = priceMap.get(h.stocks.code);
-
-            // 기존 시세 데이터의 당일 등락률 사용
-            if (!cached || !Number.isFinite(Number(cached.change_rate))) {
-                continue;
-            }
-
-            const dailyRate = Number(cached.change_rate);
-
-            // 매입금액을 가중치로 적용
-            weightedDailyRate += dailyRate * purchaseAmount;
-            totalPurchase += purchaseAmount;
-        }
-
-        if (totalPurchase === 0) return 0;
-
-        return Number((weightedDailyRate / totalPurchase).toFixed(2));
-    }*/
-
     // 10.1 필터용 시스템 태그 목록 조회
     async getTags(): Promise<GetTagsResponseDto> {
         const tags = await this.repository.findAllTags();
@@ -299,7 +266,9 @@ export class HomeRoomsService {
     async searchRooms(
         query: SearchRoomsQueryDto,
     ): Promise<SearchRoomsResponseDto> {
-        const { tags, keyword, sort = 'DEFAULT', page = 1, limit = 10 } = query;
+        //const { tags, keyword, sort = 'DEFAULT', page = 1, limit = 10 } = query;
+        // page, limit은 더 이상 사용하지 않음
+        const { tags, keyword, sort = 'DEFAULT' } = query;
         const users = await this.repository.findPublicUsersWithDetails();
 
         let roomCards: RoomCardDto[] = await Promise.all(
@@ -355,7 +324,16 @@ export class HomeRoomsService {
         }
 
         // 4. 페이징 계산
+        // 4. 전체 거실 개수 계산
         const totalCount = roomCards.length;
+
+        // 페이징 없이 전체 거실 반환
+        const cleanRooms = roomCards.map(
+            // 내부 검색용 holdings 데이터는 응답에서 제외
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            ({ holdings, ...rest }: any) => rest,
+        );
+        /*const totalCount = roomCards.length;
         const totalPages = Math.ceil(totalCount / limit) || 1;
         const startIndex = (page - 1) * limit;
         const paginatedRooms = roomCards.slice(startIndex, startIndex + limit);
@@ -364,9 +342,21 @@ export class HomeRoomsService {
         const cleanRooms = paginatedRooms.map(
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return
             ({ holdings, ...rest }: any) => rest,
-        );
+        ); */
 
         return {
+            is_success: true,
+            code: 'COMMON200',
+            message: '성공입니다.',
+            data: {
+                total_count: totalCount,
+                current_page: 1, // 전체 조회이므로 1페이지로 처리
+                total_pages: 1, // 전체 결과를 한 번에 반환
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                rooms: cleanRooms, // 필터링된 전체 거실 반환
+            },
+        };
+        /*return {
             is_success: true,
             code: 'COMMON200',
             message: '성공입니다.',
@@ -377,7 +367,7 @@ export class HomeRoomsService {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 rooms: cleanRooms,
             },
-        };
+        };*/
     }
 
     /**
