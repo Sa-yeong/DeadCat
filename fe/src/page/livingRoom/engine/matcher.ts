@@ -75,19 +75,27 @@ export function matchCharacter(a: CharView, b: CharView, ctx: MatchContext): Dec
     }
 }
 
-export function matchFurniture(char: CharView, furnitureId: string, category: string, ctx: MatchContext): Decision_F | null {
+export function matchFurniture(char: CharView, furnitureId: string, category: string, ctx: MatchContext, freeSlots: number): Decision_F | null {
     const cand = firstAvailable(ctx.rules.furnitureIndex.get(`${char.emotion}|${category}`), char.id, furnitureId, ctx)
-    if (!cand) return null
+    if (!cand) return null;
+
+    const availableEffects = cand.rule.occupy ?
+        cand.rule.effect.filter((e) => (e.placed ?? 1) <= freeSlots) :
+        cand.rule.effect;
+
+    if (availableEffects.length === 0)
+        return null;
+
     return {
         rule: cand.rule,
         self: cand.self,
         furniture: cand.other,
-        effect: weightedPick(cand.rule.effect, ctx.random),
+        effect: weightedPick(availableEffects, ctx.random),
     }
 }
 
 function firstAvailable<R extends {id: string; priority: number}>(rules: R[]|undefined, a: string, b: string, ctx: MatchContext): Candidate<R> | null{
-    if(!rules) return null; // 해당하는 규칙이 없는 경우
+    if(!rules) return null; // 해당.0하는 규칙이 없는 경우
     for(const rule of rules){
         if(!ctx.isOnCooldown(rule.id, a, b)) return {rule, self: a, other: b};
     }

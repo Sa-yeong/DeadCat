@@ -39,7 +39,7 @@ export type EmotionFeed = {
 
 export type EngineCommand =
   // 순차 재생, 마지막이 반복이면 cancel 전까지 유지
-  | { type: 'play'; characterId: string; steps: MotionStep[]; furnitureId?: number; anchorId?: string }
+  | { type: 'play'; characterId: string; steps: MotionStep[]; furnitureId?: number; anchorId?: string[] }
   | { type: 'cancel'; characterId: string }
   // 감정이 정해지거나 바뀔 때. idle·walk = 이 감정의 기본 자세(motions.json의 모션 이름, poses.json에서 정함)
   | { type: 'emotion'; characterId: string; emotion: Emotion; idle: string; walk: string }

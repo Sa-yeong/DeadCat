@@ -7,7 +7,7 @@ export type Emotion = typeof EMOTIONS[number]
 export type MarketEventType = typeof MARKET_EVENTS[number]
 
 export type Effect = { weight: number; self: string[]; other: string[]; otherEmotionTo: Emotion[]}
-export type FurEffect = {weight: number; self: string[]}
+export type FurEffect = {weight: number; self: string[]; placed?: number;}
 export type CharacterRule = { 
     id: string
     when: {self: Emotion[], other: Emotion[]}
@@ -38,7 +38,7 @@ export type PoseDef = {idle: string; walk: string}
 export type CharState =
     | {kind: 'wandering'}
     | {kind: 'reacting'; ruleId: string}
-    | {kind: 'interactingFurniture'; furnitureId: number; anchorId:string; ruleId: string}
+    | {kind: 'interactingFurniture'; furnitureId: number; anchorId:string[]; ruleId: string}
     | {kind: 'interactingGroup'; groupId: number}
     | {kind: 'dragging'}
 
@@ -64,7 +64,7 @@ export type rawFurnitureRule = {
     id: string
     when: {self: string | string[]; furniture: string | string[]}
     priority: number
-    effect: {weight?: number; self: string | string[]}[]
+    effect: FurEffect[]
     occupy: boolean
     cooldownMs: number
     interruptible: boolean

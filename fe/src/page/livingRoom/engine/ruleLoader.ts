@@ -100,7 +100,12 @@ export function loadRules(raw: RawData): RuleSet {
                     error.push(`[${rule.id}] effect.weight: 0 초과 ${WEIGHT_MAX} 이하의 숫자여야 함 (현재 ${w})`);
                 }
 
-                normalizedEffects.push({weight: w, self: effSelf});
+                const placed = eff.placed ?? 1;
+                if (typeof placed !== 'number' || !Number.isInteger(placed) || placed < 1) {
+                    error.push(`[${rule.id}] effect.placed: 1 이상의 정수여야 함 (현재 ${placed})`);
+                }
+
+                normalizedEffects.push({weight: w, self: effSelf, placed: placed});
             }
         }
 

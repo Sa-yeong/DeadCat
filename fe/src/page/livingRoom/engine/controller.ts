@@ -216,16 +216,18 @@ export class LivingRoomController {
             this.log(`${pair}: 캐릭터가 상호작용 중`)
             return
         }
-        if (!this.state.hasFreeAnchor(furnitureId)) {
+
+        const freeAnchors = this.state.getFreeAnchors(furnitureId);
+        if (freeAnchors.length === 0) {
             this.log(`${pair}: 자리 없음`)    // 가구가 없는 것처럼 취급
             return
-        }
+        }        
 
-        const anchor = this.state.getFreeAnchor(furnitureId);
-
-        const d = matchFurniture({ id: charId, emotion }, model, furniture.category, this.ctx)
-        if (d) this.startFurniture(d, furnitureId, anchor)
-        else this.log(`${pair}: ${this.whyNoMatch([
+        const d = matchFurniture({ id: charId, emotion }, model, furniture.category, this.ctx, freeAnchors.length)
+        if (d){ 
+            const targetAnchors = d.rule.occupy ? freeAnchors.slice(0, d.effect.placed ?? 1) : [];
+            this.startFurniture(d, furnitureId, targetAnchors);
+        } else this.log(`${pair}: ${this.whyNoMatch([
             [this.rules.furnitureIndex.get(`${emotion}|${furniture.category}`), charId, model],
         ], `${emotion} × ${furniture.category}`)}`)
     }
@@ -305,7 +307,7 @@ export class LivingRoomController {
         if (effect.other.length === 0) applyEmotion()    // 모션이 없으면 감정만 바로 바꾼다
     }
 
-    private startFurniture(d: Decision_F, placementId: number, anchor?: string): void {
+    private startFurniture(d: Decision_F, placementId: number, anchor?: string[]): void {
         const { rule, self: charId, effect } = d
         const pair = `${this.label(charId)} × ${this.furnitureLabel(placementId)} - ${anchor}`
         if (effect.self.length === 0) {
@@ -315,8 +317,9 @@ export class LivingRoomController {
         const model = this.models.get(placementId);
         if(!model) return;
 
-        if (rule.occupy) {
-            if (!this.state.occupy(placementId, charId, rule.id)) return
+        if (rule.occupy && anchor !== undefined) {
+            if(!anchor || anchor.length === 0) return;
+            this.state.occupy(placementId, charId, rule.id, anchor);
         }else{
             this.state.setState(charId, {kind: 'reacting', ruleId: rule.id})
         }
@@ -419,7 +422,7 @@ export type PlayRequest = {
     characterId: string;
     motions: string[];
     furnitureId?: number;
-    anchorId?: string;
+    anchorId?: string[];
 }
 
 export type Dispatcher = {
