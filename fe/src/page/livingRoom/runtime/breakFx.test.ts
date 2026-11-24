@@ -117,10 +117,14 @@ function fakes(clock: { v: MotionClock | null }) {
 const ch = (stockId: number): RoomCharacterDto => ({
   stockId, stockCode: `C${stockId}`, stockName: `종목${stockId}`, affinityLevel: 0, affinityScore: 0, affinityProgress: 0, ownedClothesId: null, receivedReactionCount: 0, receivedReactions: {},
 });
+/** 모션 파일이 없을 때(H-1 전 · 파일 없는 박살) — 박살 두 모션의 clip 을 비운 모션표 */
+const NO_FILE = new MotionTable(
+  new Map([...ROOM_RULES.motions, ['breaking_desk', { kind: 'clip', clip: null }], ['breaking_sofa', { kind: 'clip', clip: null }]]),
+);
 const DESK: PlacementDto = { placementId: 50, furnitureId: 1, positionX: 4, positionY: 4, rotation: 0 };
 const SOFA: PlacementDto = { placementId: 60, furnitureId: 2, positionX: 20, positionY: 4, rotation: 0 };
 
-function setup(save: SaveLayout | undefined, clock: { v: MotionClock | null } = { v: null }, motions = ROOM_MOTIONS) {
+function setup(save: SaveLayout | undefined, clock: { v: MotionClock | null } = { v: null }, motions = NO_FILE) {
   const f = fakes(clock);
   const characters = new CharacterCatalog();
   characters.load([ch(1), ch(2)].map((c) => characterDef(c)));
@@ -148,7 +152,7 @@ function setup(save: SaveLayout | undefined, clock: { v: MotionClock | null } = 
 }
 
 describe('RoomLoop — 가구 박살 흐름 (G-2)', () => {
-  it('파일 없는 박살(지금) — 0.3초에 먼지, 0.6초에 가구 숨김 · 모션 끝 알림 한 번 · 배치 해제 한 번(그 가구만 뺀 방)', async () => {
+  it('파일 없는 박살 — 0.3초에 먼지, 0.6초에 가구 숨김 · 모션 끝 알림 한 번 · 배치 해제 한 번(그 가구만 뺀 방)', async () => {
     const saves: PlacementDto[][] = [];
     const t = setup(async (p) => {
       saves.push([...p]);
@@ -178,9 +182,7 @@ describe('RoomLoop — 가구 박살 흐름 (G-2)', () => {
 
   it('파일 있는 박살 — 41프레임 들썩 한 번 · 183프레임 먼지 · 끝 알림은 가장 짙을 때', () => {
     const clock = { v: null as MotionClock | null };
-    // 모션 파일이 연결된 뒤(H-1)와 같게 — breaking_desk 에 파일 이름
-    const withFile = new MotionTable(new Map([...ROOM_RULES.motions, ['breaking_desk', { kind: 'clip', clip: 'breaking_desk' }]]));
-    const t = setup(async (p) => [...p], clock, withFile);
+    const t = setup(async (p) => [...p], clock, ROOM_MOTIONS); // 파일이 연결된 실제 모션표(H-1)
     t.breakDesk();
     let time = 0;
     for (let i = 0; i < 200; i++) {

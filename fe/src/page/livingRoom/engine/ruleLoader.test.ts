@@ -32,8 +32,9 @@ describe('실제 데이터', () => {
     ])('%s: 감정마다 %s 규칙 → %s, 반복 clip', (model, category, motion) => {
         const rules = loadRules(realData())
         expect(rules.furniture.get(model)?.category).toBe(category)
-        // 슬롯머신은 2026-11-14 모션 파일이 붙어 한 번만 튼다(play_slot.vrma) — 나머지는 아직 파일 없이 반복
-        expect(rules.motions.get(motion)).toEqual(motion === 'play_slot' ? { kind: 'clip', clip: 'play_slot' } : { kind: 'clip', clip: null, loop: true })
+        // 슬롯머신은 2026-11-14 모션 파일이 붙어 한 번만 튼다(play_slot.vrma) — 스피커는 아직 파일 없이 반복, 나머지는 11-24 파일이 붙어 반복(거실모션 H-1)
+        const clip = motion === 'listen_music' ? null : motion
+        expect(rules.motions.get(motion)).toEqual(motion === 'play_slot' ? { kind: 'clip', clip: 'play_slot' } : { kind: 'clip', clip, loop: true })
         for (const emotion of EMOTIONS) {
             const found = rules.furnitureIndex.get(`${emotion}|${category}`)
             if (emotion === 'sleepy') {
