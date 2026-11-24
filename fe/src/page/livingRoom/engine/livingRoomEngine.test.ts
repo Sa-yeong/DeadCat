@@ -305,19 +305,20 @@ describe('특수 모션 가구 5종', () => {
     const PIANO = 7
 
     it.each([
-        ['desk_reading', 'read_book'],
-        ['speaker', 'listen_music'],
-        ['desk_computer', 'use_computer'],
-        ['piano', 'play_piano'],
-        ['slot_machine', 'play_slot'],
-    ])('%s에 내려놓으면 %s 반복 play', (model, motion) => {
+        ['desk_reading', 'read_book', 'chair'],
+        ['speaker', 'listen_music', 'front'],
+        ['desk_computer', 'use_computer', 'chair'],
+        ['piano', 'play_piano', 'bench'],
+        ['slot_machine', 'play_slot', 'front'],
+    ])('%s에 내려놓으면 %s 반복 play', (model, motion, anchorId) => {
         const s = setup({ rules: real })
         s.engine.addFurniture(PIANO, model)
         s.engine.addCharacter('1')
         s.snapshot([['1', 'panic']])
         s.engine.visitFurniture('1', PIANO)
         // 슬롯머신은 한 번만(2026-11-14 play_slot.vrma) — 나머지는 반복
-        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: motion !== 'play_slot' }] }])
+        // 가구 모션 명령엔 가구 · 잡은 자리가 실려 간다(89afa2a)
+        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: motion !== 'play_slot' }], furnitureId: PIANO, anchorId }])
     })
 
     it('반복 모션이라 30초에 끝나고, 쓰는 동안은 자리가 없고, 끝나면 20초 쿨다운', () => {

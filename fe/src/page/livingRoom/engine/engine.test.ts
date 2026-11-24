@@ -347,7 +347,8 @@ describe('캐릭터와 가구', () => {
         s.c.addFurniture(SOFA, SOFA_MODEL)
         s.add('c1', 'tired')
         s.c.visitFurniture('c1', SOFA)
-        expect(s.plays).toEqual([{ characterId: 'c1', motions: ['lie_down'] }])
+        // 가구 모션 명령엔 가구 · 잡은 자리가 실려 간다(89afa2a — 렌더러가 앵커 자리에 앉힌다)
+        expect(s.plays).toEqual([{ characterId: 'c1', motions: ['lie_down'], furnitureId: SOFA, anchorId: 'seat_l' }])
         expect(s.c.state.getState('c1')).toMatchObject({ kind: 'interactingFurniture', furnitureId: SOFA, ruleId: 'tired_sofa' })
     })
 
