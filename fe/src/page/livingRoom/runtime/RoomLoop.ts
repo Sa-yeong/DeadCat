@@ -1157,6 +1157,14 @@ export class RoomLoop {
       this.renderer.cancel(h.id); // 붙잡고 있던 마지막 자세를 내려놓는다 — 다음 모션은 엔진이 정한다
       this.nextStep(h, b.run);
     }
+    // 같은 가구를 쓰던 다른 캐릭터(예: 점유하지 않는 숨기로 책상 밑에 있던 캐릭터)도 그 순간 끝낸다 — 모션 끝과 같게(거실모션 H-3)
+    for (const o of this.handles.values()) {
+      const run = o.run;
+      if (o === h || !run || run.furnitureId !== b.placementId) continue;
+      this.renderer.cancel(o.id);
+      run.i = run.steps.length - 1; // 남은 단계 없이 끝 — 마지막 단계 이름으로 끝 알림
+      this.nextStep(o, run);
+    }
     this.releaseBroken(b.placementId);
   }
 

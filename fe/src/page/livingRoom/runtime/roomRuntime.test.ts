@@ -950,14 +950,54 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       expect(t.inside('1', piano)).toBe(true);
     });
 
-    it('소파는 앵커가 둘이라 두 명까지 — 셋째는 자리 없음', () => {
-      const t = room([pl(11, SOFA)], ['tired', 'tired', 'tired']);
+    it('소파는 앵커가 둘이라 앉기(sit_sofa)는 두 명까지 — 셋째는 자리 없음', () => {
+      const t = room([pl(11, SOFA)], ['happy', 'happy', 'happy']);
       t.drop('1', { x: 15, y: 15 });
       t.drop('2', { x: 15.2, y: 15 });
       t.drop('3', { x: 15.4, y: 15 });
-      expect(t.playsOf('1')).toEqual([['lie_down']]);
-      expect(t.playsOf('2')).toEqual([['lie_down']]);
+      expect(t.playsOf('1')).toEqual([['sit_sofa']]);
+      expect(t.playsOf('2')).toEqual([['sit_sofa']]);
       expect(t.playsOf('3')).toEqual([]);
+    });
+
+    describe('소파 통째 점유 (거실모션 H-3)', () => {
+      it('드러눕는(통째) 동안엔 다른 캐릭터가 앉지도 드러눕지도 못한다', () => {
+        const t = room([pl(11, SOFA)], ['tired', 'happy', 'tired']);
+        t.drop('1', { x: 15, y: 15 });
+        t.drop('2', { x: 15.2, y: 15 });
+        t.drop('3', { x: 15.4, y: 15 });
+        expect(t.playsOf('1')).toEqual([['lie_down']]);
+        expect(t.playsOf('2')).toEqual([]);
+        expect(t.playsOf('3')).toEqual([]);
+        expect(t.logs.some((l) => l.includes('자리 없음'))).toBe(true);
+      });
+
+      it('한 자리에 누가 앉아 있으면 통째 규칙(드러눕기)은 시작하지 않는다', () => {
+        const t = room([pl(11, SOFA)], ['happy', 'tired']);
+        t.drop('1', { x: 15, y: 15 });
+        t.drop('2', { x: 15.2, y: 15 });
+        expect(t.playsOf('1')).toEqual([['sit_sofa']]);
+        expect(t.playsOf('2')).toEqual([]);
+        expect(t.logs.at(-1)).toMatch(/통째로 써야 함/);
+      });
+
+      it('통째로 쓰던 캐릭터가 끝나면 두 자리가 다 빈다', () => {
+        const t = room([pl(11, SOFA)], ['tired', 'happy', 'happy']);
+        t.drop('1', { x: 15, y: 15 });
+        expect(t.playsOf('1')).toEqual([['lie_down']]);
+        t.clock.t = 30000; // 반복 모션 30초 제한
+        t.loop.tick(0.1);
+        expect(t.commands.at(-1)).toEqual({ type: 'cancel', characterId: '1' });
+        t.drop('2', { x: 15.2, y: 15 });
+        t.drop('3', { x: 15.4, y: 15 });
+        expect(t.playsOf('2')).toEqual([['sit_sofa']]);
+        expect(t.playsOf('3')).toEqual([['sit_sofa']]);
+      });
+
+      it('통째 표시는 basic_sofa 말고 소파 규칙 전부', () => {
+        const all = [...ROOM_RULES.rulesById.values()].filter((r) => 'occupyAll' in r && r.occupyAll).map((r) => r.id).sort();
+        expect(all).toEqual(['anxious_sofa', 'depress_sofa', 'euphoria_sofa', 'panic_sofa', 'tired_sofa']);
+      });
     });
 
     it('쓰는 동안 돌아다니는 캐릭터는 그 가구의 설치 영역을 밟지 않는다 — 목적지로도, 지나가는 길로도', () => {

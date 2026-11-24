@@ -23,6 +23,8 @@ export type FurnitureRule = {
     priority: number
     effect: FurEffect[]
     occupy: boolean
+    // 가구의 자리(앵커)를 전부 차지한다 — 자리가 다 비어 있을 때만 시작(거실모션 H-3, 소파를 통째로 쓰는 모션)
+    occupyAll?: boolean
     cooldownMs: number
     interruptible: boolean
 }
@@ -38,7 +40,7 @@ export type PoseDef = {idle: string; walk: string}
 export type CharState =
     | {kind: 'wandering'}
     | {kind: 'reacting'; ruleId: string}
-    | {kind: 'interactingFurniture'; furnitureId: number; anchorId:string; ruleId: string}
+    | {kind: 'interactingFurniture'; furnitureId: number; anchorId:string; ruleId: string; all?: boolean}
     | {kind: 'interactingGroup'; groupId: number}
     | {kind: 'dragging'}
 
@@ -66,6 +68,7 @@ export type rawFurnitureRule = {
     priority: number
     effect: {weight?: number; self: string | string[]}[]
     occupy: boolean
+    occupyAll?: boolean
     cooldownMs: number
     interruptible: boolean
 }

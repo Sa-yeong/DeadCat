@@ -92,6 +92,16 @@ export class InteractionState {
         return free;
     }
 
+    // 자리(앵커)를 전부 차지한다 — 전부 비어 있을 때만(거실모션 H-3). 끝나면 상태가 wandering 으로 돌아가며 전부 빈다
+    occupyAll(furnitureId: number, charId: string, ruleId: string): string | null{
+        const anchors = this.furnitureAnchors.get(furnitureId);
+
+        if(!anchors || anchors.length === 0) return null
+        if(this.anchorOccupants(furnitureId).size > 0) return null
+        this.setState(charId, {kind: 'interactingFurniture', furnitureId, anchorId: anchors[0], ruleId, all: true})
+        return anchors[0];
+    }
+
     // 새 상호작용을 시작할 수 있는 상태인가
     // TODO: 끼어들기(interruptible + priority 비교)는 디스패처, 점유 기능 이후에 추가
     canInteract(id: string): boolean {
@@ -143,7 +153,8 @@ export class InteractionState {
 
         for(const [charId, s] of this.states){
             if(s.kind === "interactingFurniture" && s.furnitureId === furnitureId){
-                result.set(s.anchorId, charId);
+                if(s.all) for(const a of this.furnitureAnchors.get(furnitureId) ?? []) result.set(a, charId);    // 통째로 쓰는 중
+                else result.set(s.anchorId, charId);
             }
         }
         return result;

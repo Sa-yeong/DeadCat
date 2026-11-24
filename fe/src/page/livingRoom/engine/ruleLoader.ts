@@ -111,6 +111,8 @@ export function loadRules(raw: RawData): RuleSet {
         if(typeof rule.cooldownMs !== 'number' || rule.cooldownMs < 0) error.push(`[${rule.id}] cooldownMs: 음수 거나 숫자가 아님`);
         if (typeof rule.interruptible !== 'boolean') error.push(`[${rule.id}] interruptible: true/false여야 함`)
         if (typeof rule.occupy !== 'boolean') error.push(`[${rule.id}] occupy: true/false여야 함`)
+        if (rule.occupyAll !== undefined && typeof rule.occupyAll !== 'boolean') error.push(`[${rule.id}] occupyAll: true/false여야 함`)
+        if (rule.occupyAll && !rule.occupy) error.push(`[${rule.id}] occupyAll: occupy가 true일 때만`)
 
         normalizedFurRules.push({...rule, when: {self, furniture}, effect: normalizedEffects})
     }

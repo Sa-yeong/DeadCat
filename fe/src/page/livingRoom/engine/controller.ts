@@ -315,7 +315,13 @@ export class LivingRoomController {
         const model = this.models.get(placementId);
         if(!model) return;
 
-        if (rule.occupy) {
+        if (rule.occupyAll) {
+            // 통째 점유 — 자리가 하나라도 차 있으면 시작하지 않는다(거실모션 H-3)
+            if (!this.state.occupyAll(placementId, charId, rule.id)) {
+                this.log(`${pair}: 자리 없음(통째로 써야 함 — ${rule.id})`)
+                return
+            }
+        }else if (rule.occupy) {
             if (!this.state.occupy(placementId, charId, rule.id)) return
         }else{
             this.state.setState(charId, {kind: 'reacting', ruleId: rule.id})
@@ -326,7 +332,7 @@ export class LivingRoomController {
         const endsWithLoop = lastDef?.kind === 'clip' && lastDef.loop === true
         const endAt = endsWithLoop ? this.now() + this.furnitureDurationMs : null
 
-        this.log(`${pair}: 시작 → ${rule.id} (${effect.self.join('>')})${rule.occupy ? ' 점유' : ''}${endsWithLoop ? ` ${this.furnitureDurationMs / 1000}초 제한` : ''}`)
+        this.log(`${pair}: 시작 → ${rule.id} (${effect.self.join('>')})${rule.occupyAll ? ' 통째 점유' : rule.occupy ? ' 점유' : ''}${endsWithLoop ? ` ${this.furnitureDurationMs / 1000}초 제한` : ''}`)
 
         const interactionId = this.begin(rule.id, rule.cooldownMs, charId, model, [charId], placementId, null, endAt);
         

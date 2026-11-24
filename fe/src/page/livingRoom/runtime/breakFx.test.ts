@@ -232,6 +232,17 @@ describe('RoomLoop — 가구 박살 흐름 (G-2)', () => {
     expect(t.calls.some((c) => c.startsWith('dust') || c.startsWith('hide'))).toBe(false);
   });
 
+  it('박살 때 같은 가구를 쓰던 다른 캐릭터(점유 없는 숨기)도 그 순간 끝난다 — 끝 알림 한 번(거실모션 H-3)', () => {
+    const t = setup(async (p) => [...p]);
+    t.send({ type: 'play', characterId: '2', steps: [{ name: 'hiding', kind: 'clip', loop: true }], furnitureId: DESK.placementId, anchorId: 'chair' });
+    t.breakDesk('1');
+    t.tick(0.5);
+    expect(t.finished).toEqual([]);
+    t.tick(0.2);
+    expect(t.finished.sort()).toEqual(['1:breaking_desk', '2:hiding']);
+    expect(t.calls).toContain('cancel 2');
+  });
+
   it('두 캐릭터가 동시에 부숴도 해제 저장은 차례로 — 둘 다 빠진다', async () => {
     const saves: number[][] = [];
     const t = setup(async (p) => {
