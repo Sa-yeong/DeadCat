@@ -1,5 +1,5 @@
 import { StockScene, type Framing } from './StockScene';
-import { CROSSFADE_S, IDLE_FACE, type Emotion, type MotionName, type MotionSet } from './motionTable';
+import { CROSSFADE_S, IDLE_FACE, type Emotion, type EmotionName, type MotionName, type MotionSet } from './motionTable';
 import { SPAM_TAPS, TAP_WINDOW_MS, clickReaction, spamReaction } from './reactions';
 import { StageReturn, type ReturnMode } from './StageReturn';
 import { StageZoom } from './StageZoom';
@@ -22,6 +22,20 @@ const FACE_ONCE_S = 2;
 
 /** 표정을 감정 이름으로 얹는 모션 — 나머지 모션은 표정이 모션에 붙어 있다(모션 표의 face) */
 const FACE_BY_EMOTION: MotionName[] = ['idle', 'madness'];
+
+/**
+ * 엔진 weight 와 상관없이 항상 최대 세기로 얹는 표정. 엔진 weight 는 감정끼리 고르는 우선순위라
+ * happy 유지가 0.6(euphoria 0.8)으로 와서 Joy 가 60%만 켜져 반쯤 웃는 얼굴이 됐다 — 웃음은 활짝(2026-11-26 도휘)
+ */
+const FULL_FACE: ReadonlySet<string> = new Set(['happy', 'relaxed']);
+
+/**
+ * 유지 감정(applyHold)에만 IDLE_FACE 대신 쓰는 표정. 엔진이 보유 중 웃음으로 보내는 happy(0.6)는
+ * Joy(^^ 활짝) 대신 Fun(VRM 이름 relaxed, 눈 뜬 잔잔한 미소) 100% — 2026-11-26 도휘.
+ * 잠깐 웃는 반응(happy 1.0 단발)과 euphoria 는 그대로 Joy
+ */
+const HOLD_FACE: Partial<Record<EmotionName, string>> = { happy: 'relaxed' };
+const faceWeight = (expr: string, weight: number): number => (FULL_FACE.has(expr) ? 1 : weight);
 
 /** 첫 화면 전에 모델과 같이 준비해 둘 모션 — 첫 등장(walk · greeting) · 장외에 들어오면 바로 잠(sleep) */
 const FIRST_MOTIONS: MotionName[] = ['walk', 'greeting', 'sleep'];
@@ -383,7 +397,7 @@ export class StockStageLoop {
     const playing = this.scene.playing;
     if (playing && !this.motions[playing]?.loop) void this.applyHold(true);
     this.note('once', e.emotion, this.scene.playing ?? 'idle');
-    this.scene.flashFace(expr, e.weight, FACE_ONCE_S);
+    this.scene.flashFace(expr, faceWeight(expr, e.weight), FACE_ONCE_S);
     this.faceTimer = window.setTimeout(() => this.once && this.next(), FACE_ONCE_S * 1000);
   }
 
@@ -495,8 +509,8 @@ export class StockStageLoop {
   /** 유지 감정을 튼다 — 모션이 붙을 때까지 기다릴 수 있게 Promise */
   private applyHold(force = false): Promise<void> {
     const h = this.current;
-    const face = FACE_BY_EMOTION.includes(h.motion) ? IDLE_FACE[h.emotion] : undefined;
-    this.scene.setBase(face && h.weight > 0 ? { expr: face, weight: h.weight } : null);
+    const face = FACE_BY_EMOTION.includes(h.motion) ? (HOLD_FACE[h.emotion] ?? IDLE_FACE[h.emotion]) : undefined;
+    this.scene.setBase(face && h.weight > 0 ? { expr: face, weight: faceWeight(face, h.weight) } : null);
     this.note('hold', h.emotion, h.motion);
     if (force || this.scene.playing !== h.motion) {
       // 파일이 없는 모션(예: 아직 없는 madness)이면 idle 로 — 앞 단발의 마지막 자세에 멈춰 있지 않게

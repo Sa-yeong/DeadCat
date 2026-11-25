@@ -5,7 +5,6 @@ import { api } from '../../api/axios';
 import { ListTab } from '../../common/ListTab';
 import { IndicesCarouselLayout } from '../../layout/IndicesCarouselLayout';
 import { Carousel } from 'antd';
-import { useDemoMode } from '../../common/demo/demoMode';
 
 interface IndicesGraph{
     write_date: string;
@@ -25,11 +24,11 @@ interface IndicesItem{
 }
 
 export function StockListView(){
-    const [activeImg, setActiveImg] = useState<string|null>("");
-    // 데모 계정(졸프 데모 영상) — 오른쪽 썸네일 칸(캐릭터 · 카테고리)을 빼고 리스트가 그 자리까지 차지한다
-    const { demo } = useDemoMode();
+    // 오른쪽 썸네일 칸(캐릭터 · 카테고리)은 뺀다 — 리스트가 그 자리까지 차지한다(2026-11-26 도휘: 데모 전용이던 것을 모두에게).
+    // 하위 리스트가 아직 setActiveImg 를 부르므로 setter 만 남겨 둔다(카테고리 모달 썸네일은 그대로)
+    const [, setActiveImg] = useState<string|null>("");
 
-    return <div className={demo ? 'stockListView no-thumb' : 'stockListView'}>
+    return <div className='stockListView no-thumb'>
         <div className='index-carousel'>
             <IndicesCarousel />
         </div>
@@ -40,15 +39,6 @@ export function StockListView(){
             </div>
             <Outlet context={{setActiveImg}} />
         </span>
-        {!demo && <span className='thumbNail'>
-            {
-                activeImg? (
-                    <img src={activeImg} alt='캐릭터 썸네일' / >
-                ) : (
-                    "첫번째 종목의 이미지"
-                )
-            }
-        </span>}
     </div>;
 }
 
