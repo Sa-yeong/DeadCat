@@ -22,8 +22,8 @@ import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
 import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
-import { BUMP, bumpAt, faceTargetOf, furnitureAxes, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, surfaceHeight, type MotionClock } from './motionFx';
-import { hairColorOf, Jitter, MoodAssets, RainCloud } from './moodFx';
+import { BUMP, bumpAt, faceTargetOf, furnitureAxes, fxWantOf, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, MoodFxSlots, surfaceHeight, type MotionClock } from './motionFx';
+import { Aura, CheerLines, hairColorOf, Jitter, MoodAssets, RainCloud, SleepyZzz, Sparkle, type FxBasis } from './moodFx';
 import { DustBursts } from './dustFx';
 
 /**
@@ -158,14 +158,14 @@ function rimMaterial(color: string, width: { value: number }, key: string): THRE
 const v3 = (x: number, y: number, z = 0) => new THREE.Vector3(x, z, y);
 
 /** 직교 카메라의 방향 — 카메라 뒤쪽 축과 회전. 이름 글자도 같은 회전을 받아 화면을 똑바로 본다 */
-function cameraBasis(): { back: THREE.Vector3; facing: THREE.Quaternion } {
+function cameraBasis(): { right: THREE.Vector3; up: THREE.Vector3; back: THREE.Vector3; facing: THREE.Quaternion } {
   const { TH, K } = VIEW;
   const c = Math.cos(TH);
   const s = Math.sin(TH);
   const right = new THREE.Vector3(c, 0, -s);
   const up = new THREE.Vector3(-K * s, Math.sqrt(1 - K * K), -K * c);
   const back = new THREE.Vector3().crossVectors(right, up);
-  return { back, facing: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, back)) };
+  return { right, up, back, facing: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, back)) };
 }
 
 /** CSS 색 문자열 → three 색 + 불투명도 ('rgba(…)' 의 알파를 살린다) */
@@ -336,6 +336,8 @@ interface CharNode {
   /** 우울 먹구름 · 불안 저릿저릿(H-6) — 감정이 바뀌거나 치우면 버린다 */
   cloud: RainCloud | null;
   jitter: Jitter | null;
+  /** 슬픔 · 급락 광기 오오라 · 기쁨 · 유포리아 반짝이 · 응원 선 · zzz(감정 이펙트 FX-3) */
+  fx: MoodFxSlots<Aura, Sparkle, CheerLines, SleepyZzz>;
   /** trembling 동안 감정과 상관없이 저릿저릿(setJitterForce) */
   jitterForce: boolean;
   /** 이펙트를 잰 모델 — 갈아 끼우면 머리 높이 · 머리색을 다시 잰다 */
@@ -421,6 +423,14 @@ export class RoomScene implements RoomRenderer {
   private zoom = 1;
   /** 빗줄기 판을 카메라 쪽으로 돌리는 회전 */
   private readonly rainFace = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), cameraBasis().back.setY(0).normalize());
+  /** 화면 축(오른쪽 · 위 · 뒤) — 오오라 판 · 응원 선 · zzz(FX-3) */
+  private readonly fxBasis: FxBasis = cameraBasis();
+  private readonly fxMakers = {
+    aura: (v: ConstructorParameters<typeof Aura>[2]) => new Aura(this.scene, this.moodAssets, v, H_STRETCH),
+    sparkle: (v: ConstructorParameters<typeof Sparkle>[2]) => new Sparkle(this.scene, this.moodAssets, v, H_STRETCH),
+    cheer: () => new CheerLines(this.scene),
+    zzz: () => new SleepyZzz(this.scene),
+  };
 
   constructor(canvas: HTMLCanvasElement, furniture: FurnitureCatalog) {
     this.canvas = canvas;
@@ -1115,7 +1125,7 @@ export class RoomScene implements RoomRenderer {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0, groundForce: false,
-      emotion: null, cloud: null, jitter: null, jitterForce: false, fxVrm: null, headUp: 0, hair: null,
+      emotion: null, cloud: null, jitter: null, fx: new MoodFxSlots(this.fxMakers), jitterForce: false, fxVrm: null, headUp: 0, hair: null,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1552,6 +1562,7 @@ export class RoomScene implements RoomRenderer {
       c.jitter.dispose();
       c.jitter = null;
     }
+    c.fx.sync(this.fxWant(c));
     this.invalidate();
   }
 
@@ -1560,13 +1571,21 @@ export class RoomScene implements RoomRenderer {
     c.jitter?.dispose();
     c.cloud = null;
     c.jitter = null;
+    c.fx.clear();
+  }
+
+  /** 이번 프레임에 원하는 오오라 · 반짝이 · 응원 선 · zzz — 응원 선 · zzz 는 지금 실제로 트는 엔진 모션(과 그 재생 시간)을 본다 */
+  private fxWant(c: CharNode): ReturnType<typeof fxWantOf> {
+    return fxWantOf(c.emotion, this.playingMotion(c), c.engine?.action?.time ?? null);
   }
 
   /** 매 프레임(vrm.update 뒤) — 먹구름은 머리 위로 늦게 따라가고, 비 · 저릿저릿은 엔진 모션을 실제로 트는 동안만 */
   private updateMood(c: CharNode, dt: number): void {
     const vrm = c.vrm;
     const want = moodFxOf(c.emotion);
-    if (!vrm || (!want.cloud && !want.jitter && !c.jitterForce)) return;
+    const fxWant = this.fxWant(c);
+    const more = !!(fxWant.aura || fxWant.sparkle || fxWant.cheer || fxWant.zzz) || c.fx.any;
+    if (!vrm || (!want.cloud && !want.jitter && !c.jitterForce && !more)) return;
     if (c.fxVrm !== vrm) {
       // 처음 · 모델을 갈아 끼웠다 — 머리 뼈 → 정수리(칸)와 머리색을 다시 잰다
       c.fxVrm = vrm;
@@ -1588,6 +1607,46 @@ export class RoomScene implements RoomRenderer {
     if (want.jitter || c.jitterForce) {
       c.jitter ??= new Jitter(this.hud, this.moodAssets, c.hair ?? JITTER_FALLBACK_COLOR);
       c.jitter.update(dt, jitterOn(c.emotion, playing, c.jitterForce) && !c.hidden && !c.lifted, vrm, this.camera, this.size.w, this.size.h, this.zoom);
+    }
+    if (more) this.updateFx(c, vrm, fxWant, dt);
+  }
+
+  /**
+   * 오오라 · 반짝이(발밑 기준, 감정 내내) · 응원 선(머리 뼈 바로 위) · zzz(머리가 향한 위쪽 정수리) — 감정 이펙트 FX-3.
+   * 정수리 = 머리 뼈 + 머리 뼈 → 정수리(headUp) × 0.9(랩 headTop 과 같게). 숨겨진 캐릭터(배치 모드)는 그리지 않는다
+   */
+  private updateFx(c: CharNode, vrm: VRM, want: ReturnType<typeof fxWantOf>, dt: number): void {
+    const fx = c.fx;
+    fx.step(want);
+    const parts = [fx.aura, fx.sparkle, fx.cheer, fx.zzz];
+    if (c.hidden) {
+      for (const p of parts) p?.setVisible(false);
+      return;
+    }
+    for (const p of parts) p?.setVisible(true);
+    const hs = H_STRETCH;
+    const cam = this.fxBasis;
+    const feet = c.figure.getWorldPosition(new THREE.Vector3());
+    fx.aura?.update(dt, true, feet, cam);
+    fx.sparkle?.update(dt, true, feet);
+    if (!fx.cheer && !fx.zzz) return;
+    const head = vrm.humanoid.getRawBoneNode('head');
+    if (!head) return;
+    const hp = head.getWorldPosition(new THREE.Vector3());
+    const k = c.headUp * 0.9;
+    fx.cheer?.update(dt, want.cheer, hp.clone().setY(hp.y + k * hs), cam);
+    if (fx.zzz) {
+      // 머리 위쪽 축(normalized head 의 월드 회전 × (0,1,0)) — 방 그룹이 높이만 hs 배라 방 좌표로 되돌려 방향을 잡고 높이만 다시 곱한다
+      const headN = vrm.humanoid.getNormalizedBoneNode('head');
+      const up = new THREE.Vector3(0, 1, 0);
+      if (headN) {
+        headN.updateWorldMatrix(true, false);
+        const e = headN.matrixWorld.elements;
+        up.set(e[4], e[5] / hs, e[6]);
+        if (up.lengthSq() < 1e-12) up.set(0, 1, 0);
+        up.normalize();
+      }
+      fx.zzz.update(dt, want.zzz, hp.clone().add(new THREE.Vector3(up.x * k, up.y * k * hs, up.z * k)), cam);
     }
   }
 

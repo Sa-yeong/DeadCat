@@ -340,3 +340,96 @@ export function convexHull(points: readonly [number, number][]): [number, number
   }
   return lo.slice(0, -1).concat(up.slice(0, -1));
 }
+
+/** 이번 프레임에 원하는 감정 이펙트(FX-3) — motionName · motionTime = 지금 실제로 트는 엔진 모션 · 그 재생 시간 */
+export interface FxWant {
+  aura: AuraValues | null;
+  sparkle: SparkleValues | null;
+  cheer: boolean;
+  zzz: boolean;
+}
+export function fxWantOf(emotion: string | null | undefined, motionName: string | null | undefined, motionTime: number | null | undefined): FxWant {
+  const m = moodFxOf(emotion);
+  return { aura: m.aura, sparkle: m.sparkle, cheer: cheerLinesOn(motionName, motionTime), zzz: zzzOn(emotion, motionName) };
+}
+
+interface FxThing {
+  dispose(): void;
+}
+interface FadingFx extends FxThing {
+  /** 다 꺼졌나 — 서서히 꺼진 뒤 버려도 되는지 */
+  readonly faded: boolean;
+}
+export interface FxMakers<A, S, C, Z> {
+  aura(v: AuraValues): A;
+  sparkle(v: SparkleValues): S;
+  cheer(): C;
+  zzz(): Z;
+}
+
+/**
+ * 캐릭터 하나의 오오라 · 반짝이 · 응원 선 · zzz — 언제 만들고 버리는지만(그리기는 moodFx 클래스, 이 칸은 three 를 모른다).
+ *   sync(감정이 바뀔 때) — 필요 없어진 건 서서히 끄지 않고 바로 버림(먹구름과 같게). 오오라 · 반짝이는 값이 달라지면(sad ↔ panic) 버리고 새로
+ *   step(매 프레임) — 필요한 걸 만든다. 응원 선(모션 끝) · sleep 모션으로 켠 zzz(sleep 끝)는 서서히 꺼진 뒤 버림
+ */
+export class MoodFxSlots<A extends FxThing & { readonly values: AuraValues }, S extends FxThing & { readonly values: SparkleValues }, C extends FadingFx, Z extends FadingFx> {
+  aura: A | null = null;
+  sparkle: S | null = null;
+  cheer: C | null = null;
+  zzz: Z | null = null;
+  private readonly make: FxMakers<A, S, C, Z>;
+
+  constructor(make: FxMakers<A, S, C, Z>) {
+    this.make = make;
+  }
+
+  sync(want: FxWant): void {
+    if (this.aura && this.aura.values !== want.aura) {
+      this.aura.dispose();
+      this.aura = null;
+    }
+    if (this.sparkle && this.sparkle.values !== want.sparkle) {
+      this.sparkle.dispose();
+      this.sparkle = null;
+    }
+    if (this.zzz && !want.zzz) {
+      this.zzz.dispose();
+      this.zzz = null;
+    }
+  }
+
+  step(want: FxWant): void {
+    if (this.aura && this.aura.values !== want.aura) {
+      this.aura.dispose();
+      this.aura = null;
+    }
+    if (this.sparkle && this.sparkle.values !== want.sparkle) {
+      this.sparkle.dispose();
+      this.sparkle = null;
+    }
+    if (want.aura) this.aura ??= this.make.aura(want.aura);
+    if (want.sparkle) this.sparkle ??= this.make.sparkle(want.sparkle);
+    if (want.cheer) this.cheer ??= this.make.cheer();
+    else if (this.cheer?.faded) {
+      this.cheer.dispose();
+      this.cheer = null;
+    }
+    if (want.zzz) this.zzz ??= this.make.zzz();
+    else if (this.zzz?.faded) {
+      this.zzz.dispose();
+      this.zzz = null;
+    }
+  }
+
+  /** 하나라도 있나 */
+  get any(): boolean {
+    return !!(this.aura || this.sparkle || this.cheer || this.zzz);
+  }
+
+  clear(): void {
+    for (const f of [this.aura, this.sparkle, this.cheer, this.zzz]) f?.dispose();
+    this.aura = this.sparkle = null;
+    this.cheer = null;
+    this.zzz = null;
+  }
+}
