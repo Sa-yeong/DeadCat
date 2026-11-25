@@ -93,7 +93,8 @@ export const MOTIONS: Partial<Record<MotionName, MotionDef>> = {
     loop: false,
     face: [{ expr: 'angry', value: 1 }, { expr: 'blink', keys: [[f(31), 0], [f(35), 1]] }],
   },
-  annoying: { file: 'annoying.vrma', loop: false, face: [{ expr: 'angry', value: 1 }] },
+  // 연타 반응 — 2026-11-26 도휘가 hi.vrma(1.3초)로 교체(파일 이름은 annoying.vrma 그대로). 표정 relaxed(Fun) 1, 끝나고 유지 모션으로 0.65초에 섞여 돌아감
+  annoying: { file: 'annoying.vrma', loop: false, face: [{ expr: 'relaxed', value: 1 }], fadeOut: 0.65 },
   walk: { file: 'walk.vrma', loop: true, face: [] },
   run: { file: 'run.vrma', loop: true, face: [] },
   // 숨 고르기 — 달리기에서 들어오는 시간(fadeIn), 끝나고 유지 모션으로 돌아가는 시간(fadeOut), 배속(speed)
