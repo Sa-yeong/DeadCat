@@ -39,6 +39,7 @@ export class NullEngine implements CharacterEngine {
   visitFurniture(): void {}
   motionFinished(): void {}
   interrupt(): void {}
+  wakeByUser(): void {}
   tick(): void {}
   start(): void {}
   dispose(): void {}

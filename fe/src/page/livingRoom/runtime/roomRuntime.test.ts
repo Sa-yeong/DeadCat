@@ -200,6 +200,7 @@ function fakeEngine() {
     addCharacter: () => {},
     deleteCharacter: () => {},
     interrupt: () => {},
+    wakeByUser: () => {},
     tick: () => {},
     start: () => {},
     dispose: () => {},
@@ -488,7 +489,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       slotDone.n = slotStart.mock.calls.length;
     };
     const slotDone = { n: 0 };
-    return { loop, engine, add, del, visit, slotDrop, slotStart, arrive, drop, clock, commands, logs, playsOf, inside, ...r };
+    return { loop, engine, add, del, visit, slotDrop, slotStart, arrive, drop, clock, emit: (e: FeedEvent) => emit(e), commands, logs, playsOf, inside, ...r };
   }
 
   /** 가구 모션 자리(거실모션 H-2) — 설치 영역 가운데 + MOTION_SPOTS 보정 */
@@ -575,15 +576,15 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       expect(t.inside('1', piano)).toBe(false);
     });
 
-    it('규칙이 없으면(sleepy) play 없이 — 잠깐 있다 걸어 나온다', () => {
+    // sleepy 작업 5 이전엔 「규칙이 없으면(sleepy) play 없이」였다 — 이제 sleepy는 집는 순간 깨므로 들어서 놓으면 깬 감정의 규칙을 탄다.
+    // (피아노는 sleepy 말고 모든 감정에 규칙이 있어 「규칙 없음」을 내려놓기로 만들 길이 없다)
+    it('sleepy를 집어 가구에 놓으면 깨어(happy/sad) 그 감정의 가구 규칙을 탄다', () => {
       const piano = pl(14, PIANO);
       const t = room([piano], ['sleepy']);
       t.drop('1', { x: 15.2, y: 15.3 });
+      expect(t.engine!.emotionOf('1')).toBe('happy'); // random 0 → happy
       expect(t.visit).toHaveBeenCalledTimes(1);
-      expect(t.playsOf('1')).toEqual([]);
-      expect(t.at.get('1')).toEqual({ x: 15.2, y: 15.3 });
-      walkOut(t, '1', piano);
-      expect(t.inside('1', piano)).toBe(false);
+      expect(t.playsOf('1')).toEqual([['play_piano']]);
     });
 
     it('장식 가구 위는 상대가 아니다 — 알리지 않고 내려온다', () => {
@@ -808,6 +809,92 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       const enc = vi.spyOn(t.engine!, 'encounter');
       for (let i = 0; i < 20; i++) t.loop.tick(0.1);
       expect(enc).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('장외(sleepy) — 제자리 졸기 · 집으면 깨기 (sleepy 작업 4 · 5)', () => {
+    type Inner = { handles: Map<string, CharacterHandle> };
+    const handleOf = (t: ReturnType<typeof room>, id: string) => (t.loop as unknown as Inner).handles.get(id)!;
+    /** 들지 않고 그 자리에 세운다 — 들면 sleepy가 깨므로 drop 을 쓰지 않는다 */
+    const putAt = (t: ReturnType<typeof room>, id: string, pos: Pt) => {
+      Object.assign(handleOf(t, id), { position: pos, path: [], rest: 999, pause: 0, walkLeft: 999 });
+      t.at.set(id, pos);
+    };
+    const ticks = (t: ReturnType<typeof room>, n: number) => {
+      for (let i = 0; i < n; i++) t.loop.tick(0.1);
+    };
+
+    it('sleepy면 기본 자세가 standing_sleep 이고, 오래 두어도 돌아다니지 않는다 (happy는 돌아다닌다)', () => {
+      const t = room([], ['sleepy']);
+      expect(t.calls).toContain('pose 1 standing_sleep/null'); // walk 는 기본 파일(clip null)
+      const start = { ...handleOf(t, '1').position };
+      ticks(t, 600);
+      expect(handleOf(t, '1').position).toEqual(start);
+      expect(handleOf(t, '1').path).toEqual([]);
+
+      const awake = room([], ['happy']);
+      const from = { ...handleOf(awake, '1').position };
+      ticks(awake, 600);
+      expect(handleOf(awake, '1').position).not.toEqual(from);
+    });
+
+    it('걷던 중에 sleepy가 되면 그 자리에 멈춘다', () => {
+      const t = room([], ['happy']);
+      putAt(t, '1', { x: 5, y: 5 });
+      Object.assign(handleOf(t, '1'), { path: [{ x: 15, y: 5 }] });
+      ticks(t, 5);
+      const h = handleOf(t, '1');
+      expect(h.position.x).toBeGreaterThan(5);
+      t.emit({ type: 'emotion', characterId: '1', emotion: 'sleepy' });
+      expect(h.path).toEqual([]);
+      const stopped = { ...h.position };
+      expect(t.at.get('1')).toEqual(stopped);
+      ticks(t, 300);
+      expect(h.position).toEqual(stopped);
+    });
+
+    it('서 있어도 다른 캐릭터가 다가오면 마주침이 돌아 깨워진다 — 깨워진 쪽 surprise', () => {
+      const t = room([], ['happy', 'sleepy']);
+      putAt(t, '1', { x: 3, y: 5 });
+      putAt(t, '2', { x: 10, y: 5 });
+      Object.assign(handleOf(t, '1'), { path: [{ x: 9.6, y: 5 }] });
+      ticks(t, 200);
+      expect(t.playsOf('2')).toEqual([['surprise', 'idle']]);
+      expect(t.plays.find((p) => p.id === '2')?.steps[0].clip).toBe('surprise'); // 파일이 생겨 실제로 재생된다
+    });
+
+    it('anxious에게 놀라 비켜 걷기(avoid)는 sleepy인 채로도 끝까지 걷고 명령을 마친다 — 그 뒤 제자리', () => {
+      const t = room([], ['anxious', 'sleepy']);
+      putAt(t, '1', { x: 3, y: 5 });
+      putAt(t, '2', { x: 10, y: 5 });
+      Object.assign(handleOf(t, '1'), { path: [{ x: 9.6, y: 5 }] });
+      ticks(t, 200);
+      expect(t.playsOf('2')).toEqual([['trembling', 'surprise', 'avoid']]);
+      // trembling(효과만) → surprise(파일) 를 끝낸다
+      ticks(t, 40);
+      for (const p of t.plays.filter((q) => q.id === '2')) p.finish();
+      const h = handleOf(t, '2');
+      expect(h.away).toBe(true);
+      const before = { ...h.position };
+      ticks(t, 200);
+      expect(h.away).toBe(false);
+      expect(h.position).not.toEqual(before);
+      expect(h.run).toBeNull();
+      expect(t.engine!.emotionOf('2')).toBe('sleepy');
+      const rest = { ...h.position };
+      ticks(t, 300);
+      expect(h.position).toEqual(rest);
+    });
+
+    it('집어 들면 깨서(눈 뜬 표정 · 기본 자세 idle) 내려놓은 뒤 돌아다닌다', () => {
+      const t = room([], ['sleepy']);
+      t.drop('1', { x: 5, y: 5 });
+      expect(t.engine!.emotionOf('1')).toBe('happy');
+      expect(t.calls).toContain('face 1 happy');
+      expect(t.calls).toContain('pose 1 null/null');
+      const from = { ...handleOf(t, '1').position };
+      ticks(t, 600);
+      expect(handleOf(t, '1').position).not.toEqual(from);
     });
   });
 

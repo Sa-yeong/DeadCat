@@ -11,6 +11,7 @@
   "lean_forward":         { "kind": "clip", "clip": "lean_forward", "loop": true },
   "lie_down":             { "kind": "clip", "clip": "lie_down", "loop": true },
   "sleep":                { "kind": "clip", "clip": "sleep", "loop": true },
+  "standing_sleep":       { "kind": "clip", "clip": "standing_sleep", "loop": true },
   "hiding":               { "kind": "clip", "clip": "hiding", "loop": true },
   "crouch":               { "kind": "clip", "clip": "crouch", "loop": true },
   "anxious":              { "kind": "clip", "clip": null, "loop": true },
@@ -24,7 +25,7 @@
   "desk_crying":          { "kind": "clip", "clip": "desk_crying", "loop": true },
 
   "wake_up":              { "kind": "clip", "clip": null },
-  "surprise":             { "kind": "clip", "clip": null },
+  "surprise":             { "kind": "clip", "clip": "surprise" },
   "fall_down":            { "kind": "clip", "clip": null },
   "jumping":              { "kind": "clip", "clip": "jumping" },
   "breaking_desk":        { "kind": "clip", "clip": "breaking_desk" },

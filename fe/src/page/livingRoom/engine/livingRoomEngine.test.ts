@@ -179,10 +179,51 @@ describe('emotion 명령 (1-1 · 1-8)', () => {
         expect(s.engine.emotionOf('2')).toBe('happy')
     })
 
-    it('기본 자세는 poses.json의 감정 묶음에서 온다', () => {
-        for (const e of ['happy', 'sad', 'tired', 'depress', 'euphoria', 'panic', 'anxious', 'sleepy'] as Emotion[]) {
+    it('기본 자세는 poses.json의 감정 묶음에서 온다 — sleepy만 서서 졸기', () => {
+        for (const e of ['happy', 'sad', 'tired', 'depress', 'euphoria', 'panic', 'anxious'] as Emotion[]) {
             expect(rules.poses[e]).toEqual({ idle: 'idle', walk: 'walk' })
         }
+        expect(rules.poses.sleepy).toEqual({ idle: 'standing_sleep', walk: 'walk' })
+    })
+})
+
+// ---------- sleepy: 집어 들면 깨기 ----------
+describe('wakeByUser (sleepy 작업 5)', () => {
+    it('sleepy 캐릭터를 집으면 happy/sad 중 하나로 깨고 emotion 명령(기본 자세 포함)이 나간다', () => {
+        for (const [r, want] of [[0, 'happy'], [0.99, 'sad']] as [number, Emotion][]) {
+            const s = setup({ random: () => r })
+            s.engine.addCharacter('1')
+            s.snapshot([['1', 'sleepy']])
+            expect(s.of('emotion')).toEqual([{ type: 'emotion', characterId: '1', emotion: 'sleepy', idle: 'standing_sleep', walk: 'walk' }])
+
+            s.engine.interrupt('1')
+            s.engine.wakeByUser('1')
+            expect(s.engine.emotionOf('1')).toBe(want)
+            expect(s.of('emotion').at(-1)).toEqual(emotionCmd('1', want))
+            expect(s.logs.at(-1)).toContain(`감정 sleepy → ${want} (사용자가 집음)`)
+        }
+    })
+
+    it('sleepy가 아니면 아무 일도 없다 (감정 대기 · 모르는 캐릭터 포함)', () => {
+        const s = setup()
+        s.engine.addCharacter('1'); s.engine.addCharacter('2')
+        s.snapshot([['1', 'happy']])
+        const before = s.commands.length
+        s.engine.wakeByUser('1')
+        s.engine.wakeByUser('2') // 감정 대기
+        s.engine.wakeByUser('nobody')
+        expect(s.commands.length).toBe(before)
+        expect(s.engine.emotionOf('1')).toBe('happy')
+    })
+
+    it('깬 뒤 백엔드가 sleepy를 다시 보내면 다시 sleepy로 돌아간다 (작업 6)', () => {
+        const s = setup()
+        s.engine.addCharacter('1')
+        s.snapshot([['1', 'sleepy']])
+        s.engine.wakeByUser('1')
+        s.snapshot([['1', 'sleepy']])
+        expect(s.engine.emotionOf('1')).toBe('sleepy')
+        expect(s.of('emotion').at(-1)).toEqual({ type: 'emotion', characterId: '1', emotion: 'sleepy', idle: 'standing_sleep', walk: 'walk' })
     })
 })
 

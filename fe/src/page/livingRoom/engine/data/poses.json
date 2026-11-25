@@ -1,6 +1,7 @@
 {
   "groups": {
-    "basic": { "idle": "idle", "walk": "walk" }
+    "basic":  { "idle": "idle", "walk": "walk" },
+    "sleepy": { "idle": "standing_sleep", "walk": "walk" }
   },
   "emotions": {
     "happy":    "basic",
@@ -10,6 +11,6 @@
     "euphoria": "basic",
     "panic":    "basic",
     "anxious":  "basic",
-    "sleepy":   "basic"
+    "sleepy":   "sleepy"
   }
 }

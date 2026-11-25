@@ -69,6 +69,7 @@ export interface CharacterEngine {
 
   motionFinished(characterId: string, motion: string): void; //coolDown을 세기위해 모션이 끝나는 시간 받는 함수
   interrupt(id: string): void; // 사용자가 캐릭터를 들었을때 하던 interaction 중지
+  wakeByUser(id: string): void; // 사용자가 집어 들었다 — sleepy면 깨운다(happy/sad 중 하나)
   tick(): void; // 런타임이 매 프레임 호출. 시간 제한이 지난 상호작용을 끝냄
 
   start(): void; // 거실 진입시, be에 구독 시작 후 웹소켓으로 지속적으로 기저 감정 데이터 받기
@@ -80,6 +81,7 @@ export class LivingRoomEngine implements CharacterEngine{
   private readonly onCommand: (cmd: EngineCommand) => void; // 출력 통로
   private readonly rules: RuleSet;
   private readonly log: (line: string) => void;
+  private readonly random: () => number;
   private readonly finishCallbacks = new Map<string, () => void>();
   private unsubscribe: (() => void) | null = null;
   private emotions = new Map<string, Emotion>(); // 알고 있는 감정 (snapshot·emotion 이벤트·규칙). 거실에 없는 캐릭터 것도 기억
@@ -93,6 +95,7 @@ export class LivingRoomEngine implements CharacterEngine{
     this.onCommand = opts.onCommand;
     this.rules = opts.rules;
     this.log = opts.log ?? (() => undefined);
+    this.random = opts.random ?? Math.random;
 
     const engineDispatcher: Dispatcher = {
       play: (req, onFinish) => {
@@ -125,7 +128,7 @@ export class LivingRoomEngine implements CharacterEngine{
       rules: opts.rules,
       dispatcher: engineDispatcher,
       now: opts.now ?? (() => performance.now()),
-      random: opts.random,
+      random: this.random,
       forceMeet: opts.forceMeet,
       log: this.log,
       labelOf: opts.labelOf,
@@ -224,6 +227,20 @@ export class LivingRoomEngine implements CharacterEngine{
 
   interrupt(id: string): void {
     this.controller.interrupt(id)
+  }
+
+  /**
+   * 사용자가 집어 들었다 — sleepy면 깨운다. 깨는 감정은 기존 깨우기 규칙(*_meet_sleepy 의 otherEmotionTo)과 같게 happy/sad 중 하나.
+   * 규칙이 감정을 바꿀 때(onEmotionChanged)와 같은 경로라 표정 · 기본 자세가 같이 바뀐다. 백엔드는 모르는 변화
+   */
+  wakeByUser(id: string): void {
+    if(this.controller.getEmotion(id) !== 'sleepy') return;
+    const to: Emotion[] = ['happy', 'sad'];
+    const emotion = to[Math.floor(this.random() * to.length)];
+    this.emotions.set(id, emotion);
+    this.controller.setEmotion(id, emotion);
+    this.log(`${this.controller.label(id)}: 감정 sleepy → ${emotion} (사용자가 집음)`);
+    this.sendEmotion(id, emotion);
   }
 
   tick(): void {

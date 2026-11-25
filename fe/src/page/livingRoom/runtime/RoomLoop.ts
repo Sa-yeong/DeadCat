@@ -458,6 +458,9 @@ export class RoomLoop {
         this.walkAway(h, dt);
         continue;
       }
+      // 장외(sleepy) — 돌아다니지 않고 제자리에서 졸기(기본 자세 standing_sleep). 다른 캐릭터가 다가와 마주치는 건 그대로(applyStill 과 같게).
+      // 비켜 걷기(away) 뒤에 둔다 — anxious_meet_sleepy 는 sleepy 인 채로 trembling → surprise → avoid 를 하므로, 앞에 두면 비켜 걷기가 멈춰 명령이 끝나지 않는다
+      if (this.engine.emotionOf(h.id) === 'sleepy') continue;
       if (h.path.length === 0) {
         h.rest -= dt;
         if (h.rest <= 0) {
@@ -648,6 +651,12 @@ export class RoomLoop {
         this.renderer.setExpression(h.id, cmd.emotion);
         this.basePoses.set(h.id, { idle: cmd.idle, walk: cmd.walk });
         this.setPose(h.id); // 데모 제자리 모션이 걸려 있으면 그 모션이 idle 로 남는다
+        // 장외로 바뀌면 걷던 자리에 멈춰 선다. 비켜 걷는 중이면 끝까지 걷게 둔다 — 닿으면 길이 비어 그대로 제자리 졸기
+        if (cmd.emotion === 'sleepy' && !h.away && h.path.length) {
+          h.path = [];
+          h.pause = 0;
+          this.renderer.move(h.id, h.position); // 걷다 멈춘 자리에서 서게
+        }
         return;
       case 'play': {
         if (h.lifted) return;
@@ -909,6 +918,7 @@ export class RoomLoop {
     h.away = false;
     this.renderer.setCharacterState(charId, { lifted: true, selected: false });
     this.engine.interrupt(charId);
+    this.engine.wakeByUser(charId); // 장외(sleepy)면 깬다 — 깨는 모션은 없고 들기 모션 그대로, 표정 · 기본 자세만 바뀐다
     this.events.onLifted(charId);
   }
 
