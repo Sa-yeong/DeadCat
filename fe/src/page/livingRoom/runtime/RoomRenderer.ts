@@ -143,6 +143,10 @@ export interface RoomRenderer {
    * 엔진 모션을 트는 동안 바닥에 붙인다(GROUND_CLIPS 와 같은 처리, 3D 만) — 가구 모션 자리의 ground(거실모션 H-2). false 면 풀기
    */
   setGrounded?(charId: string, on: boolean): void;
+  /** 「이펙트만」 단계(trembling, 거실모션 H-6) 동안 감정과 상관없이 저릿저릿을 켠다(3D 만) */
+  setJitterForce?(charId: string, on: boolean): void;
+  /** 지금 줌(1 = 방 전체 구도) — 화면 px 로 정한 이펙트 크기(저릿저릿)를 줌에 비례시키는 데(3D 만, H-6) */
+  setZoom?(z: number): void;
   /**
    * 지금 트는 엔진 모션 단계의 시간(초) · 길이 — 박살 프레임을 재는 데(G-2). 파일을 받는 중 · 없는 파일 · 엔진 모션이 없으면 null
    */

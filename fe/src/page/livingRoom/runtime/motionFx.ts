@@ -220,3 +220,70 @@ export function pairSpotOf(base: { x: number; y: number }, partner: { x: number;
     face: turnDir(f, s.turn),
   };
 }
+
+/* ── 이펙트: 먹구름 · 저릿저릿 · trembling(거실모션 H-6) ─────────────── */
+
+export const RAIN_CLOUD = {
+  color: { top: '#8B7BB3', mid: '#6A5A93', bottom: '#46396A' }, // 보라 먹구름
+  size: 1, height: 0.35, opacity: 0.94, puffs: 11, seed: 797,
+  wobble: 1, bob: 0.06, lag: 0.09, shade: 0.18,
+  rain: { amount: 0.35, speed: 0.5, length: 0.65, thickness: 0.75, width: 0.85, color: '#CFC6F5', splash: true, darkenCloud: true, fade: 0.6 },
+  // 기준: 빗방울 140개 × amount · 6.5칸/초 × speed · 길이 0.32칸 × length · 굵기 0.022칸 × thickness
+};
+export const JITTER = { edge: '#000000', count: 3, size: 40, aspect: 0.32, peaks: 2, mix: true, line: 15, edgeLine: 32, edgeAlpha: 1, offset: 7, rate: 0.05, amp: 1.5, spin: 0, flicker: 0, fade: 0.15, skipDown: -0.15 };
+// 안쪽 색 = 캐릭터 머리카락 색(도휘 11-24 — 캐릭터마다 따로 정하지 않음): 머리 재질(이름에 Hair, Outline 제외)이 쓰는 UV 자리만 텍스처에서 집어
+//   밝기 60~90% 구간 평균 × 재질 색. 못 읽으면 JITTER_FALLBACK_COLOR
+export const JITTER_FALLBACK_COLOR = '#9afe86';
+
+/**
+ * 모션 파일 없이 「평소 대기 자세 + 저릿저릿」으로 대신하는 단계 → 길이(초) — 결정 6. 감정과 상관없이 그 단계 동안 저릿저릿
+ */
+export const EFFECT_ONLY_STEPS: Record<string, number> = { trembling: 2 };
+
+/** 감정별 이펙트 — 우울 = 먹구름(늘, 비는 모션 중) · 불안 = 저릿저릿(모션 중만). tired 등 그 밖은 없음 */
+export function moodFxOf(emotion: string | null | undefined): { cloud: boolean; jitter: boolean } {
+  return { cloud: emotion === 'depress', jitter: emotion === 'anxious' };
+}
+
+/** 지금 저릿저릿을 그리나 — 불안이고 엔진 모션 재생 중, 또는 trembling 같은 「이펙트만」 단계 중(감정 무관) */
+export function jitterOn(emotion: string | null | undefined, playing: boolean, forced: boolean): boolean {
+  return forced || (moodFxOf(emotion).jitter && playing);
+}
+
+/**
+ * 먹구름이 떠 있을 높이(칸, 바닥 위) — 머리 뼈 + 정수리까지 + height. 하한선: 서 있을 때 머리 높이(발 + 키) + height 아래로는 안 내려감
+ */
+export function cloudHeight(headTop: number, foot: number, charHeight: number): number {
+  return Math.max(headTop, foot + charHeight) + RAIN_CLOUD.height;
+}
+
+/**
+ * 빗방울이 닿는 가구 윗면(칸) — 가구 설치 영역 안의 자리(가구 축: lx = 옆, lz = 정면 쪽 +, 가운데 기준).
+ * 소파 = 좌석 0.47 · 팔걸이(옆 끝 0.3칸) 0.65 · 등받이(뒤 0.45칸) 1.0, 책상 = 상판 0.68, 그 밖 = 키 h. 영역 밖이면 null
+ */
+export function surfaceHeight(kind: { category: string | null; w: number; d: number; h: number }, lx: number, lz: number): number | null {
+  const { w, d, h } = kind;
+  if (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2) return null;
+  if (kind.category === 'sofa') return Math.abs(lx) > w / 2 - 0.3 ? 0.65 : lz < -d / 2 + 0.45 ? 1.0 : 0.47;
+  if (kind.category === 'desk') return 0.68;
+  return h;
+}
+
+/** 볼록 껍질(단조 사슬) — [x, y] 화면 px(아래가 +y) */
+export function convexHull(points: readonly [number, number][]): [number, number][] {
+  const p = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cr = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo: [number, number][] = [];
+  const up: [number, number][] = [];
+  for (const q of p) {
+    while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop();
+    lo.push(q);
+  }
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i];
+    while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+    up.push(q);
+  }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}

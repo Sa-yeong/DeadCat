@@ -15,7 +15,7 @@ import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import { ROOM_RULES, type MotionTable } from './roomEngine';
 import { Perception, type Obstacle } from '../engine/perception';
 import type { RoomDemo } from './roomDemo';
-import { BREAK_FX, BreakRun, furnitureAxes, MOTION_SPOTS, NO_SPOT, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf } from './motionFx';
+import { BREAK_FX, BreakRun, EFFECT_ONLY_STEPS, furnitureAxes, MOTION_SPOTS, NO_SPOT, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf } from './motionFx';
 
 /**
  * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
@@ -191,6 +191,8 @@ export class RoomLoop {
   private readonly pairs = new Map<string, { with: string; base: Pt; first: string; moved: boolean }>();
   /** 두 캐릭터 보정으로 높이(lift)를 건 캐릭터 — 끝나면 0 으로 */
   private readonly pairLifted = new Set<string>();
+  /** 「이펙트만」 단계(trembling, H-6) — 캐릭터 → 그 명령 · 남은 초. 그동안 평소 대기 자세 + 저릿저릿 */
+  private readonly effectSteps = new Map<string, { run: ActRun; left: number }>();
   /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
   private readonly slotWaits = new Map<string, SlotWait>();
   /** 진행 중인 박살(G-2) — 터진 뒤엔 캐릭터가 다른 일을 해도 가구는 사라진다 */
@@ -440,6 +442,7 @@ export class RoomLoop {
     this.engine.tick(); // 시간 제한이 지난 상호작용을 엔진이 끝낸다(지시서 1-6) — 배치 모드에도 시계는 간다
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     this.stepBreaks(dt);
+    this.stepEffects(dt);
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
       const sw = this.slotWaits.get(h.id);
@@ -688,6 +691,14 @@ export class RoomLoop {
       h.acting = true;
       const loop = step.loop && run.i === run.steps.length - 1;
       const clip = this.motions.clipOf(step.name);
+      // 모션 파일 없이 「평소 대기 자세 + 저릿저릿」으로 대신하는 단계(trembling, 결정 6) — 정해진 초 뒤 stepEffects 가 다음 단계로
+      const effectS = EFFECT_ONLY_STEPS[step.name];
+      if (effectS !== undefined && clip === null) {
+        this.renderer.cancel(h.id); // 앞 단계 모션을 내려놓고 평소 대기 자세로
+        this.renderer.setJitterForce?.(h.id, true);
+        this.effectSteps.set(h.id, { run, left: effectS });
+        return;
+      }
       // 박살 모션은 끝나도 마지막 자세로 멈춰 기다린다 — 먼지가 가장 짙을 때 stepBreaks 가 끝낸다. 그 전에 온 끝 신호 = 파일 없음
       const brk = this.startBreak(h, run, step.name, clip);
       const finish = brk ? () => brk.missing() : () => this.nextStep(h, run);
@@ -1144,6 +1155,25 @@ export class RoomLoop {
       break;
     }
     this.onFieldEnter(a, b);
+  }
+
+  /**
+   * 「이펙트만」 단계 시계(H-6) — 시간이 다 되면 저릿저릿을 끄고 다음 단계로. 그 전에 다른 명령 · 들기 · 멈춤이 오면 저릿저릿만 끈다
+   */
+  private stepEffects(dt: number): void {
+    for (const [id, e] of [...this.effectSteps]) {
+      const h = this.handles.get(id);
+      if (!h || h.run !== e.run) {
+        this.effectSteps.delete(id);
+        this.renderer.setJitterForce?.(id, false);
+        continue;
+      }
+      e.left -= dt;
+      if (e.left > 0) continue;
+      this.effectSteps.delete(id);
+      this.renderer.setJitterForce?.(id, false);
+      this.nextStep(h, e.run);
+    }
   }
 
   /* ── 가구 박살(G-2) ─────────────────────────────────────── */

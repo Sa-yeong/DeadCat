@@ -300,9 +300,10 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
   useLayoutEffect(() => {
     if (!rt) return;
     rt.renderer.resize(P.scale, P.ox, P.oy, L.width, L.stageHeight);
+    rt.renderer.setZoom?.(fitted.z); // 저릿저릿 크기(화면 px)를 줌에 비례(거실모션 H-6)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 바깥(씬) 시점을 바꾼 뒤 HUD 가 새 자리를 읽도록 한 번 더 그린다
     setSceneVersion((v) => v + 1);
-  }, [rt, P.scale, P.ox, P.oy, L.width, L.stageHeight]);
+  }, [rt, P.scale, P.ox, P.oy, L.width, L.stageHeight, fitted.z]);
 
   /** 줌인했을 때 빈 바닥을 끌어 둘러보기 — 일반 모드는 여기서, 배치 모드는 편집기가 부른다 */
   const pan: PanControl = {

@@ -22,7 +22,8 @@ import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
 import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
-import { BUMP, bumpAt, faceTargetOf, LOOP_RANGE, loopRangeFix, type MotionClock } from './motionFx';
+import { BUMP, bumpAt, faceTargetOf, furnitureAxes, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, surfaceHeight, type MotionClock } from './motionFx';
+import { hairColorOf, Jitter, MoodAssets, RainCloud } from './moodFx';
 import { DustBursts } from './dustFx';
 
 /**
@@ -330,6 +331,18 @@ interface CharNode {
   groundWant: number;
   /** 가구 모션 자리의 바닥 붙이기(setGrounded, H-2) — 엔진 모션 중에만 */
   groundForce: boolean;
+  /** 지금 감정(setExpression) — 이펙트(H-6)를 고른다 */
+  emotion: string | null;
+  /** 우울 먹구름 · 불안 저릿저릿(H-6) — 감정이 바뀌거나 치우면 버린다 */
+  cloud: RainCloud | null;
+  jitter: Jitter | null;
+  /** trembling 동안 감정과 상관없이 저릿저릿(setJitterForce) */
+  jitterForce: boolean;
+  /** 이펙트를 잰 모델 — 갈아 끼우면 머리 높이 · 머리색을 다시 잰다 */
+  fxVrm: VRM | null;
+  /** 머리 뼈 → 정수리(칸) · 머리카락 색(저릿저릿 안쪽 색) */
+  headUp: number;
+  hair: string | null;
   /** 앉기 높이가 1초에 움직이는 양 — 들어갈 때 · 나올 때 둘 다 섞이는 시간(POSE_FADE_S) 안에 닿게 */
   seatRate: number;
   /** 배치 모드 — 그림자까지 통째로 숨긴다 */
@@ -401,6 +414,13 @@ export class RoomScene implements RoomRenderer {
   private readonly screenRight = new THREE.Vector3(Math.cos(VIEW.TH), 0, -Math.sin(VIEW.TH));
   /** 가구 박살 흙먼지(G-2) — 처음 터질 때 만든다 */
   private dust: DustBursts | null = null;
+  /** 감정 이펙트(H-6) — 텍스처 한 벌 · 저릿저릿을 맨 앞에 그리는 화면 좌표 장면(px, 위가 0) · 지금 줌 */
+  private readonly moodAssets = new MoodAssets();
+  private readonly hud = new THREE.Scene();
+  private readonly hudCam = new THREE.OrthographicCamera(0, 1, 0, -1, -10, 10);
+  private zoom = 1;
+  /** 빗줄기 판을 카메라 쪽으로 돌리는 회전 */
+  private readonly rainFace = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), cameraBasis().back.setY(0).normalize());
 
   constructor(canvas: HTMLCanvasElement, furniture: FurnitureCatalog) {
     this.canvas = canvas;
@@ -431,6 +451,9 @@ export class RoomScene implements RoomRenderer {
     this.proj = new Projection(scale, ox, oy);
     if (this.size.w !== width || this.size.h !== height) this.renderer.setSize(width, height); // 줌·끌기 때는 캔버스를 다시 만들지 않는다
     this.size = { w: width, h: height };
+    this.hudCam.right = width;
+    this.hudCam.bottom = -height;
+    this.hudCam.updateProjectionMatrix();
     const { back, facing } = cameraBasis();
     const cam = this.camera;
     cam.quaternion.copy(facing);
@@ -500,6 +523,11 @@ export class RoomScene implements RoomRenderer {
     r.clearDepth();
     cam.layers.set(0);
     r.render(this.scene, cam);
+    // 저릿저릿(H-6) — 다른 것에 안 가리게 화면 좌표 장면을 맨 마지막에
+    if ([...this.chars.values()].some((c) => c.jitter?.visible)) {
+      r.clearDepth();
+      r.render(this.hud, this.hudCam);
+    }
   }
 
   /* ── 재질 ──────────────────────────────────────────────── */
@@ -1087,6 +1115,7 @@ export class RoomScene implements RoomRenderer {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0, groundForce: false,
+      emotion: null, cloud: null, jitter: null, jitterForce: false, fxVrm: null, headUp: 0, hair: null,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1109,6 +1138,7 @@ export class RoomScene implements RoomRenderer {
     this.dropEngine(c); // 치우면 엔진 요청도 버린다(onFinish 없음)
     c.setReady(false); // 모델을 기다리던 요청도 풀어 준다
     c.mixer?.stopAllAction();
+    this.dropMood(c);
     for (const r of c.rims) r.removeFromParent();
     if (c.vrm) VRMUtils.deepDispose(c.vrm.scene);
     c.vrm = null; // 동작 파일이 늦게 와도 붙이지 않게(attachMotions)
@@ -1492,7 +1522,90 @@ export class RoomScene implements RoomRenderer {
   /** 표정 — 목표만 바꿔 두고, 세기는 매 프레임 animate 가 옮긴다. 모델을 받기 전에 와도 받은 뒤 올라온다 */
   setExpression(charId: string, emotion: string): void {
     const c = this.chars.get(charId);
-    if (c) c.faceTarget = CHIBI_FACE[emotion as EmotionName] ?? {};
+    if (!c) return;
+    c.faceTarget = CHIBI_FACE[emotion as EmotionName] ?? {};
+    c.emotion = emotion;
+    this.syncMood(c);
+  }
+
+  setJitterForce(charId: string, on: boolean): void {
+    const c = this.chars.get(charId);
+    if (!c) return;
+    c.jitterForce = on;
+    this.syncMood(c);
+  }
+
+  setZoom(z: number): void {
+    this.zoom = z;
+  }
+
+  /* ── 감정 이펙트(거실모션 H-6) — 우울 = 먹구름(비는 모션 중) · 불안 = 저릿저릿(모션 중) · trembling = 저릿저릿 ── */
+
+  /** 감정 · trembling 에 맞춰 필요 없어진 이펙트를 버린다. 만드는 건 모델이 선 뒤 updateMood 가 */
+  private syncMood(c: CharNode): void {
+    const want = moodFxOf(c.emotion);
+    if (!want.cloud && c.cloud) {
+      c.cloud.dispose();
+      c.cloud = null;
+    }
+    if (!want.jitter && !c.jitterForce && c.jitter) {
+      c.jitter.dispose();
+      c.jitter = null;
+    }
+    this.invalidate();
+  }
+
+  private dropMood(c: CharNode): void {
+    c.cloud?.dispose();
+    c.jitter?.dispose();
+    c.cloud = null;
+    c.jitter = null;
+  }
+
+  /** 매 프레임(vrm.update 뒤) — 먹구름은 머리 위로 늦게 따라가고, 비 · 저릿저릿은 엔진 모션을 실제로 트는 동안만 */
+  private updateMood(c: CharNode, dt: number): void {
+    const vrm = c.vrm;
+    const want = moodFxOf(c.emotion);
+    if (!vrm || (!want.cloud && !want.jitter && !c.jitterForce)) return;
+    if (c.fxVrm !== vrm) {
+      // 처음 · 모델을 갈아 끼웠다 — 머리 뼈 → 정수리(칸)와 머리색을 다시 잰다
+      c.fxVrm = vrm;
+      const head = vrm.humanoid.getRawBoneNode('head');
+      vrm.scene.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(vrm.scene);
+      c.headUp = head ? (box.max.y - head.getWorldPosition(new THREE.Vector3()).y) / H_STRETCH : 0;
+      c.hair = hairColorOf(vrm);
+      c.jitter?.dispose();
+      c.jitter = null;
+    }
+    const playing = !!c.engine?.action;
+    if (want.cloud) {
+      c.cloud ??= new RainCloud(this.scene, this.moodAssets, H_STRETCH, VIEW.TH, this.rainFace);
+      c.cloud.setVisible(!c.hidden);
+      const head = vrm.humanoid.getRawBoneNode('head');
+      if (head) c.cloud.update(dt, playing && !c.hidden, head.getWorldPosition(new THREE.Vector3()), c.headUp, CHAR.height, (x, z) => this.surfaceAt(x, z));
+    }
+    if (want.jitter || c.jitterForce) {
+      c.jitter ??= new Jitter(this.hud, this.moodAssets, c.hair ?? JITTER_FALLBACK_COLOR);
+      c.jitter.update(dt, jitterOn(c.emotion, playing, c.jitterForce) && !c.hidden && !c.lifted, vrm, this.camera, this.size.w, this.size.h, this.zoom);
+    }
+  }
+
+  /** 빗방울이 닿는 높이(칸) — 그 자리 가구의 윗면(소파 · 책상 기준 수치, 그 밖 키), 가구 밖이면 바닥 0 */
+  private surfaceAt(x: number, z: number): number {
+    let top = 0;
+    for (const f of this.furn.values()) {
+      if (f.hidden) continue;
+      const def = this.furniture.def(f.furnitureId);
+      if (!def) continue;
+      const area = footprint(def, f.pos, f.rotation);
+      const { front, side } = furnitureAxes(f.rotation);
+      const dx = x - (area.x0 + area.x1) / 2;
+      const dz = z - (area.y0 + area.y1) / 2;
+      const h = surfaceHeight({ category: def.engine?.category ?? null, w: def.w, d: def.d, h: def.h }, dx * side.x + dz * side.y, dx * front.x + dz * front.y);
+      if (h !== null && h > top) top = h;
+    }
+    return top;
   }
 
   /** 지금 실제로 트는 엔진 모션 이름 — 파일을 받는 중이거나 없으면 null */
@@ -1674,6 +1787,7 @@ export class RoomScene implements RoomRenderer {
     if (c.lifted) this.pinGrab(c);
     this.applyFace(c, dt); // vrm.update 가 표정 값을 모델에 옮긴다 — 그 전에
     c.vrm!.update(dt);
+    this.updateMood(c, dt);
     // 바닥 붙이기 — 이번 프레임 모양(vrm.update 로 실제 뼈에 옮겨진 뒤)의 가장 낮은 곳을 몸 자리(figure) 좌표로 재서 다음 프레임에 내린다.
     // 몸 자리 안에서 재므로 지금 내린 높이(figure.position)와 무관하다. 파일을 받는 중(평소 idle 이 돌고 있음)이면 거의 0 이 나온다
     if (grounding) {
@@ -2032,6 +2146,8 @@ export class RoomScene implements RoomRenderer {
     }
     for (const f of this.furn.values()) f.rim?.mat.dispose();
     this.dust?.dispose();
+    for (const c of this.chars.values()) this.dropMood(c);
+    this.moodAssets.dispose();
     for (const { mat } of this.labels.values()) {
       mat.map?.dispose();
       mat.dispose();

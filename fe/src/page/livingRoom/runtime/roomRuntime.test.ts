@@ -300,9 +300,11 @@ describe('개발 모드 머리 위 글자 (RoomLoop.debugLabels · motionText)',
     ] });
     expect(label(t, '1')?.motion).toEqual({ name: 'trembling', step: 1, of: 3, left: 1.68 });
     expect(motionText(label(t, '1')!.motion!)).toBe('덜덜 떨기 1/3 · 1.7s');
+    // 덜덜 떨기는 파일 없이 「대기 자세 + 저릿저릿 2초」(거실모션 H-6) — 렌더러 play 없이 시간이 지나면 다음 단계
+    expect(t.plays).toHaveLength(0);
+    for (let i = 0; i < 21; i++) t.loop.tick(0.1);
+    expect(t.plays).toHaveLength(1);
     t.plays[0].finish();
-    await flush();
-    t.plays[1].finish();
     await flush();
     expect(label(t, '1')?.motion).toMatchObject({ name: 'avoid', step: 3, left: 'moving' });
     expect(motionText(label(t, '1')!.motion!)).toBe('비켜 가기 3/3 · 이동 중');
