@@ -412,6 +412,7 @@ export class PlaceholderScene implements RoomRenderer {
   /** 평면 더미는 동작을 그리지 않는다 — 자세 · 표정은 받기만 한다 */
   setBasePose(): void {}
   setExpression(): void {}
+  setMild(): void {}
 
   holdMissingClips(ms: number | null): void {
     this.holdMs = ms;

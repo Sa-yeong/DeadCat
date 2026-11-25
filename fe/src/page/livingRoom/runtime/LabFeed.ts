@@ -10,9 +10,12 @@ export class LabFeed implements EmotionFeed {
   private readonly inner: EmotionFeed | null;
   private handler: ((e: FeedEvent) => void) | null = null;
   private readonly forced = new Map<string, Emotion>();
+  private readonly onForce: (characterId: string) => void;
 
-  constructor(inner: EmotionFeed | null) {
+  /** onForce — 감정을 덮어쓴 순간(이펙트를 늘 보이게 수익률 약함을 끄는 데 씀) */
+  constructor(inner: EmotionFeed | null, onForce?: (characterId: string) => void) {
     this.inner = inner;
+    this.onForce = onForce ?? (() => undefined);
   }
 
   subscribe(handler: (e: FeedEvent) => void): () => void {
@@ -31,6 +34,7 @@ export class LabFeed implements EmotionFeed {
   /** 이 캐릭터의 감정을 고른 값으로 — 바로 엔진에 알린다 */
   force(characterId: string, emotion: Emotion): void {
     this.forced.set(characterId, emotion);
+    this.onForce(characterId);
     this.handler?.({ type: 'emotion', characterId, emotion });
   }
 

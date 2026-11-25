@@ -338,13 +338,17 @@ export interface MoodFx {
   zzz: boolean;
 }
 
-/** 감정별 이펙트 — tired 등 그 밖은 없음 */
-export function moodFxOf(emotion: string | null | undefined): MoodFx {
+/**
+ * 감정별 이펙트 — tired 등 그 밖은 없음.
+ * mild = 수익률이 약함 구간(±8% 안, 백엔드가 감정과 같이 보냄 — 도휘 11-26) → happy 반짝이 · sad 오오라만 끈다.
+ * panic · euphoria 는 당일 등락률 기준이라 mild 와 상관없이 그대로
+ */
+export function moodFxOf(emotion: string | null | undefined, mild = false): MoodFx {
   return {
     cloud: emotion === 'depress',
     jitter: emotion === 'anxious',
-    aura: emotion === 'sad' ? SAD_AURA : emotion === 'panic' ? PANIC_AURA : null,
-    sparkle: emotion === 'happy' ? HAPPY_SPARKLE : emotion === 'euphoria' ? EUPHORIA_SPARKLE : null,
+    aura: emotion === 'sad' ? (mild ? null : SAD_AURA) : emotion === 'panic' ? PANIC_AURA : null,
+    sparkle: emotion === 'happy' ? (mild ? null : HAPPY_SPARKLE) : emotion === 'euphoria' ? EUPHORIA_SPARKLE : null,
     zzz: emotion === 'sleepy',
   };
 }
@@ -412,8 +416,8 @@ export interface FxWant {
   cheer: boolean;
   zzz: boolean;
 }
-export function fxWantOf(emotion: string | null | undefined, motionName: string | null | undefined, motionTime: number | null | undefined): FxWant {
-  const m = moodFxOf(emotion);
+export function fxWantOf(emotion: string | null | undefined, motionName: string | null | undefined, motionTime: number | null | undefined, mild = false): FxWant {
+  const m = moodFxOf(emotion, mild);
   return { aura: m.aura, sparkle: m.sparkle, cheer: cheerLinesOn(motionName, motionTime), zzz: zzzOn(emotion, motionName) };
 }
 

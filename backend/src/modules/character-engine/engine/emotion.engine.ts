@@ -6,6 +6,23 @@ import {
     UserInteraction,
 } from '../types/emotion.types';
 
+/**
+ * 사용자 수익률 구간(%) — 도휘 11-26.
+ *   +8 이상 happy · 0 ~ +8 happy(약함) · -8 ~ 0 sad(약함) · -15 ~ -8 sad · -15 미만 depress
+ * 약함(MILD) = 감정 · 표정 · 행동은 그대로, 거실의 오오라 · 반짝이만 끈다(primaryEmotion 의 mild).
+ * panic · euphoria 는 당일 등락률 기준이라 따로(BIG_MOVE 7.5%)
+ */
+export const PROFIT_MILD_RANGE = 8;
+export const PROFIT_DEPRESS_BELOW = -15;
+
+/** 수익률이 약함 구간(-8 < r < +8)인가 — 보유하지 않으면(null) false */
+export function isMildProfit(userProfitRate: number | null): boolean {
+    return (
+        userProfitRate !== null &&
+        Math.abs(userProfitRate) < PROFIT_MILD_RANGE
+    );
+}
+
 export class EmotionEngine {
     updateMarketEmotion(input: EmotionInput): EmotionOutput[] {
         const {
@@ -42,7 +59,7 @@ export class EmotionEngine {
         // 사용자 수익률을 단계로 나누기
 
         // 수익 중
-        // 0 이상 -> happy
+        // 0 이상 -> happy (+8% 미만은 약함 — 반짝이 없음, isMildProfit)
         if (userProfitRate !== null && userProfitRate >= 0) {
             marketEmotions.push(
                 this.createOutput('happy', 'idle', 0.6, null, true),
@@ -50,10 +67,10 @@ export class EmotionEngine {
         }
 
         // 손실 중
-        // -10% 초과 -> depress
-        // -10% 이하 -> sad
+        // -15% 이상 -> sad (-8% 초과는 약함 — 오오라 없음, isMildProfit)
+        // -15% 미만 -> depress
         if (userProfitRate !== null && userProfitRate < 0) {
-            if (userProfitRate >= -10)
+            if (userProfitRate >= PROFIT_DEPRESS_BELOW)
                 marketEmotions.push(
                     this.createOutput('sad', 'idle', 0.6, null, true),
                 );

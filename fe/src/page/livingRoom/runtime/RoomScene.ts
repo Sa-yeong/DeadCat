@@ -452,6 +452,8 @@ export class RoomScene implements RoomRenderer {
   private dust: DustBursts | null = null;
   /** 감정 이펙트(H-6) — 텍스처 한 벌 · 저릿저릿을 맨 앞에 그리는 화면 좌표 장면(px, 위가 0) · 지금 줌 */
   private readonly moodAssets = new MoodAssets();
+  /** 캐릭터 id → 수익률 약함(setMild) */
+  private readonly mild = new Map<string, boolean>();
   private readonly hud = new THREE.Scene();
   private readonly hudCam = new THREE.OrthographicCamera(0, 1, 0, -1, -10, 10);
   private zoom = 1;
@@ -1695,6 +1697,17 @@ export class RoomScene implements RoomRenderer {
     this.syncMood(c);
   }
 
+  /**
+   * 수익률 약함(±8% 안) — 켜지면 happy 반짝이 · sad 오오라를 안 띄운다. 캐릭터가 서기 전에 와도(스트림 snapshot 이 먼저) 기억해 둔다 — 캐릭터 칸이 아니라 id 표.
+   * 감정 · 표정 · 행동은 그대로(setExpression)
+   */
+  setMild(charId: string, mild: boolean): void {
+    if ((this.mild.get(charId) ?? false) === mild) return;
+    this.mild.set(charId, mild);
+    const c = this.chars.get(charId);
+    if (c) this.syncMood(c);
+  }
+
   setJitterForce(charId: string, on: boolean): void {
     const c = this.chars.get(charId);
     if (!c) return;
@@ -1734,7 +1747,7 @@ export class RoomScene implements RoomRenderer {
 
   /** 이번 프레임에 원하는 오오라 · 반짝이 · 응원 선 · zzz — 응원 선 · zzz 는 지금 실제로 트는 엔진 모션(과 그 재생 시간)을 본다 */
   private fxWant(c: CharNode): ReturnType<typeof fxWantOf> {
-    return fxWantOf(c.emotion, this.playingMotion(c), c.engine?.action?.time ?? null);
+    return fxWantOf(c.emotion, this.playingMotion(c), c.engine?.action?.time ?? null, this.mild.get(c.id) ?? false);
   }
 
   /** 매 프레임(vrm.update 뒤) — 먹구름은 머리 위로 늦게 따라가고, 비 · 저릿저릿은 엔진 모션을 실제로 트는 동안만 */

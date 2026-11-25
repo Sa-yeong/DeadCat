@@ -12,12 +12,17 @@ import { MARKET_EVENTS, type MarketEventType } from '../engine/type/type';
 export class RoomFeed implements EmotionFeed {
   private readonly ownerId: api.OwnerId;
   private readonly onStopped: (status: number) => void;
+  private readonly onMild: (characterId: string, mild: boolean) => void;
   private stream: api.RoomStream | null = null;
 
-  /** ownerId 가 undefined 면 내 거실. onStopped — 다시 잇지 않고 멈췄다(401 로그인 풀림 · 403 비공개 · 404 없는 거실) */
-  constructor(ownerId: api.OwnerId, onStopped: (status: number) => void) {
+  /**
+   * ownerId 가 undefined 면 내 거실. onStopped — 다시 잇지 않고 멈췄다(401 로그인 풀림 · 403 비공개 · 404 없는 거실).
+   * onMild — 감정과 같이 온 수익률 약함(±8% 안, 도휘 11-26). 엔진은 모르는 값이라 엔진에 넘기기 전에 여기서 렌더러로 따로 보낸다(감정 처리보다 먼저)
+   */
+  constructor(ownerId: api.OwnerId, onStopped: (status: number) => void, onMild?: (characterId: string, mild: boolean) => void) {
     this.ownerId = ownerId;
     this.onStopped = onStopped;
+    this.onMild = onMild ?? (() => undefined);
   }
 
   subscribe(handler: (e: FeedEvent) => void): () => void {
@@ -26,7 +31,9 @@ export class RoomFeed implements EmotionFeed {
       this.ownerId,
       (data) => {
         const e = toFeedEvent(data);
-        if (e) handler(e);
+        if (!e) return;
+        for (const [id, mild] of mildOf(data)) this.onMild(id, mild);
+        handler(e);
       },
       this.onStopped,
     );
@@ -45,6 +52,15 @@ export class RoomFeed implements EmotionFeed {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isMarketEvent = (v: unknown): v is MarketEventType => typeof v === 'string' && (MARKET_EVENTS as readonly string[]).includes(v);
+
+/** 메시지 속 캐릭터별 mild — snapshot 은 캐릭터마다, emotion 은 하나. 빠졌으면(옛 서버) false = 이펙트 보임 */
+function mildOf(v: unknown): [string, boolean][] {
+  if (!isObj(v)) return [];
+  const one = (c: unknown): [string, boolean][] => (isObj(c) && typeof c.characterId === 'string' ? [[c.characterId, c.mild === true]] : []);
+  if (v.type === 'emotion') return one(v);
+  if (v.type === 'snapshot' && isObj(v.data) && Array.isArray(v.data.characters)) return v.data.characters.flatMap(one);
+  return [];
+}
 
 function toFeedEvent(v: unknown): FeedEvent | null {
   if (!isObj(v)) return null;

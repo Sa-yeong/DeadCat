@@ -69,6 +69,18 @@ describe('감정 이펙트 켜짐(FX-1)', () => {
     expect(moodFxOf('happy')).toMatchObject({ aura: null, zzz: false });
   });
 
+  it('수익률 약함(mild, ±8% 안) — happy 반짝이 · sad 오오라만 꺼짐 · 당일 등락률 기준 panic / euphoria · 그 밖은 그대로(도휘 11-26)', () => {
+    expect(moodFxOf('happy', true).sparkle).toBeNull();
+    expect(moodFxOf('sad', true).aura).toBeNull();
+    expect(moodFxOf('panic', true).aura).toBe(PANIC_AURA);
+    expect(moodFxOf('euphoria', true).sparkle).toBe(EUPHORIA_SPARKLE);
+    expect(moodFxOf('depress', true).cloud).toBe(true);
+    expect(moodFxOf('anxious', true).jitter).toBe(true);
+    expect(moodFxOf('sleepy', true).zzz).toBe(true);
+    expect(fxWantOf('happy', null, null, true)).toMatchObject({ aura: null, sparkle: null });
+    expect(fxWantOf('happy', null, null).sparkle).toBe(HAPPY_SPARKLE);
+  });
+
   it('sleepy = zzz · 그 밖 감정은 새 이펙트 없음 · 우울 / 불안은 그대로', () => {
     expect(moodFxOf('sleepy')).toEqual({ cloud: false, jitter: false, aura: null, sparkle: null, zzz: true });
     for (const e of ['tired', 'depress', 'anxious', 'none', null, undefined]) expect(moodFxOf(e)).toMatchObject({ aura: null, sparkle: null, zzz: false });
@@ -113,6 +125,15 @@ function slots() {
 }
 
 describe('감정 이펙트 칸(FX-3)', () => {
+  it('수익률 약함(mild)이 켜지면 떠 있던 반짝이를 바로 버리고 · 꺼지면 다시 만든다', () => {
+    const { fx, log } = slots();
+    fx.step(fxWantOf('happy', null, null));
+    fx.sync(fxWantOf('happy', null, null, true));
+    fx.step(fxWantOf('happy', null, null, true));
+    fx.step(fxWantOf('happy', null, null, false));
+    expect(log).toEqual([`만듦 반짝이 ${HAPPY_SPARKLE.color}`, `버림 반짝이 ${HAPPY_SPARKLE.color}`, `만듦 반짝이 ${HAPPY_SPARKLE.color}`]);
+  });
+
   it('감정이 바뀌면 이전 이펙트를 바로 버린다 — sad → panic 은 값이 달라 새로, happy → 기본은 버림만', () => {
     const { fx, log } = slots();
     fx.step(fxWantOf('sad', null, null));

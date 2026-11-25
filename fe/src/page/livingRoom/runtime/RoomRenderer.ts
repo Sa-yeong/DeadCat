@@ -78,6 +78,8 @@ export interface RoomRenderer {
   setBasePose(charId: string, pose: { idle: string | null; walk: string | null }): void;
   /** 얼굴 표정 — 엔진 emotion 명령의 감정을 표정으로 보인다(짝 표는 motionTable CHIBI_FACE). 평면 더미는 그리지 않는다 */
   setExpression(charId: string, emotion: string): void;
+  /** 수익률 약함(±8% 안, 스트림의 mild) — happy 반짝이 · sad 오오라를 끈다. 감정 · 표정은 그대로. 평면 더미는 그리지 않는다 (도휘 11-26) */
+  setMild(charId: string, mild: boolean): void;
   /**
    * 개발 모드(지시서 1-3) — 파일 없는 클립 단계를 ms 동안 대기 자세로 채운다(반복 마지막 단계는 cancel 까지).
    * null 이면 끈다(파일 없는 단계는 건너뜀). 실제 서비스엔 켜지 않는다

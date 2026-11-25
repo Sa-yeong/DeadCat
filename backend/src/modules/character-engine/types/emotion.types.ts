@@ -90,6 +90,8 @@ export interface EmotionOutput {
 export interface CharacterData {
     characterId: string; // String(stock_id)
     emotion: Emotion;
+    /** 수익률이 약함 구간(±8% 안) — 거실이 오오라 · 반짝이를 끈다(감정 · 표정은 그대로) */
+    mild: boolean;
 }
 
 // FE 전달용 SSE 이벤트 타입
@@ -104,6 +106,7 @@ export type FeedEvent =
           type: 'emotion';
           characterId: string;
           emotion: Emotion;
+          mild: boolean;
       }
     | {
           type: 'marketEvent';

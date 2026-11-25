@@ -178,14 +178,21 @@ function RoomView({ userId, use3d, debug, lab }: { userId: string | undefined; u
       renderer = Scene3D ? new Scene3D(canvasRef.current!, furniture) : new PlaceholderScene(svgRef.current!, furniture);
       renderer.holdMissingClips(debug ? DEBUG_HOLD_MS : null);
       // 엔진 — 내 거실 · 남의 거실 모두 감정 스트림으로(남의 거실은 방 주인 기준, 2-7). 비공개 거실은 스트림을 열지 않고 빈 엔진
+      const scene = renderer;
+      // 수익률 약함(±8% 안)이면 happy 반짝이 · sad 오오라를 끈다(도휘 11-26). 모션 실험에서 감정을 덮어쓴 캐릭터는 늘 보이게
+      let labFeed: LabFeed | null = null;
       const feed = isPrivateRoom
         ? null
-        : new RoomFeed(userId, (status) => {
-            if (!alive) return;
-            if (status === 401) setNeedLogin(true); // 내 거실 — 로그인이 풀렸다
-            else console.warn(`[거실 스트림] ${status} — 다시 잇지 않습니다`); // 남의 거실 — 그 사이 비공개로 바뀌었거나 없어졌다
-          });
-      const labFeed = lab ? new LabFeed(feed) : null;
+        : new RoomFeed(
+            userId,
+            (status) => {
+              if (!alive) return;
+              if (status === 401) setNeedLogin(true); // 내 거실 — 로그인이 풀렸다
+              else console.warn(`[거실 스트림] ${status} — 다시 잇지 않습니다`); // 남의 거실 — 그 사이 비공개로 바뀌었거나 없어졌다
+            },
+            (id, mild) => scene.setMild(id, mild && !labFeed?.forcedOf(id)),
+          );
+      labFeed = lab ? new LabFeed(feed, (id) => scene.setMild(id, false)) : null;
       const engineFeed = labFeed ?? feed;
       const createEngine: EngineFactory = engineFeed
         ? (onCommand) =>

@@ -11,7 +11,7 @@ import { HoldingRepository } from '../../holding/holding.repository';
 import { StocksRepository } from '../../stocks/stocks.repository';
 import { TendencyService } from './tendency.service';
 import { MarketTimeService } from './market-time.service';
-import { EmotionEngine } from '../engine/emotion.engine';
+import { EmotionEngine, isMildProfit } from '../engine/emotion.engine';
 import {
     Emotion,
     EmotionOutput,
@@ -68,8 +68,8 @@ export class EmotionService {
     //  거실별 열린 연결 수 — 그 방을 보는 마지막 연결이 닫힐 때 정리
     private connectionCounts = new Map<string, number>();
 
-    //  거실별 이전 감정 상태 저장소 (감정이 '실제로 변했을 때만' SSE 전송). 안쪽 키 = String(stock_id)
-    private previousEmotions = new Map<string, Map<string, Emotion>>();
+    //  거실별 이전 감정 상태 저장소 (감정 · mild 가 '실제로 변했을 때만' SSE 전송). 안쪽 키 = String(stock_id), 값 = `감정|mild`
+    private previousEmotions = new Map<string, Map<string, string>>();
 
     private isPushing = false;
 
@@ -92,6 +92,8 @@ export class EmotionService {
     ): Promise<{
         isHolding: boolean;
         emotions: EmotionOutput[];
+        /** 사용자 수익률(%) — 보유하지 않으면 null. 거실 mild 판정용(API 응답엔 안 나감) */
+        profitRate: number | null;
     }> {
         // 거실 주기 계산(요청 밖)도 방 주인이 데모 계정이면 데모 요청으로 — 시세가 화면과 같은 가짜 값이 된다
         if (!this.demo) return this.calculate(userId, stockCode, interaction);
@@ -107,6 +109,8 @@ export class EmotionService {
     ): Promise<{
         isHolding: boolean;
         emotions: EmotionOutput[];
+        /** 사용자 수익률(%) — 보유하지 않으면 null. 거실 mild 판정용(API 응답엔 안 나감) */
+        profitRate: number | null;
     }> {
         // 1. 종목 조회
         const stock = await this.stocksRepository.findStockByCode(stockCode);
@@ -205,6 +209,7 @@ export class EmotionService {
         return {
             isHolding,
             emotions,
+            profitRate: userProfitRate,
         };
     }
 
@@ -272,7 +277,7 @@ export class EmotionService {
                 });
                 for (const holding of placedHoldings) {
                     try {
-                        const emotion = await this.primaryEmotion(
+                        const { emotion, mild } = await this.primaryEmotion(
                             userId,
                             holding.stocks.code,
                         );
@@ -280,6 +285,7 @@ export class EmotionService {
                             userId,
                             String(holding.stock_id),
                             emotion,
+                            mild,
                         );
                         characterCount++;
                     } catch (e) {
@@ -301,16 +307,19 @@ export class EmotionService {
         }
     }
 
-    // 감정 계산 결과 중 가장 센 감정 하나 (없으면 happy)
+    // 감정 계산 결과 중 가장 센 감정 하나 (없으면 happy) + 수익률이 약함 구간(±8%)인지(mild — 거실이 오오라 · 반짝이를 끈다)
     private async primaryEmotion(
         userId: string,
         stockCode: string,
-    ): Promise<Emotion> {
-        // 데모 계정 거실 — 정해 둔 감정(예: 네이버 tired)으로 고정. 거실 감정은 여기만 지난다
+    ): Promise<{ emotion: Emotion; mild: boolean }> {
+        // 데모 계정 거실 — 정해 둔 감정(예: 네이버 tired)으로 고정, 이펙트도 늘 보인다. 거실 감정은 여기만 지난다
         const forced = this.demo?.roomEmotionOf(userId, stockCode);
-        if (forced) return forced;
+        if (forced) return { emotion: forced, mild: false };
         const res = await this.calculateEmotion(userId, stockCode);
-        return res.emotions[0]?.emotion ?? 'happy';
+        return {
+            emotion: res.emotions[0]?.emotion ?? 'happy',
+            mild: isMildProfit(res.profitRate),
+        };
     }
 
     // 초기 Snapshot 생성 (거실에 배치된 캐릭터들의 초기 감정)
@@ -329,7 +338,7 @@ export class EmotionService {
         for (const holding of placedHoldings) {
             try {
                 const characterId = String(holding.stock_id);
-                const emotion = await this.primaryEmotion(
+                const { emotion, mild } = await this.primaryEmotion(
                     userId,
                     holding.stocks.code,
                 );
@@ -337,9 +346,9 @@ export class EmotionService {
                 // 보낸 감정을 직전 감정으로 기록 — 다음 주기에 같은 감정을 다시 보내지 않게.
                 // 이 연결은 아직 구독 전이라 이벤트를 받지 않는다(snapshot으로 받음).
                 // 이미 열린 다른 탭이 있고 감정이 바뀌었으면 그 탭엔 emotion 이벤트로 간다
-                this.notifyEmotionChange(userId, characterId, emotion);
+                this.notifyEmotionChange(userId, characterId, emotion, mild);
 
-                characterDataList.push({ characterId, emotion });
+                characterDataList.push({ characterId, emotion, mild });
             } catch (e) {
                 this.logger.warn(
                     `초기 snapshot 감정 계산 실패 [${holding.stocks.code}]: ${e}`,
@@ -362,6 +371,7 @@ export class EmotionService {
         userId: string,
         characterId: string,
         newEmotion: Emotion,
+        mild: boolean,
     ) {
         const userSubject = this.roomStreams.get(userId);
         if (!userSubject) return;
@@ -370,11 +380,12 @@ export class EmotionService {
             this.previousEmotions.set(userId, new Map());
         }
         const userEmotions = this.previousEmotions.get(userId)!;
-        const prevEmotion = userEmotions.get(characterId);
+        const prev = userEmotions.get(characterId);
+        const next = `${newEmotion}|${mild}`;
 
-        // 감정이 '실제로 변했을 때만' 이벤트 발송
-        if (prevEmotion !== newEmotion) {
-            userEmotions.set(characterId, newEmotion);
+        // 감정이나 mild 가 '실제로 변했을 때만' 이벤트 발송 (예: happy 그대로 +7% → +9% 면 반짝이가 켜져야 함)
+        if (prev !== next) {
+            userEmotions.set(characterId, next);
 
             // snapshot 기록 때는 보통 받을 연결이 없다(새 연결은 아직 구독 전) — 실제로 나갈 때만 로그
             if (!userSubject.observed) return;
@@ -382,9 +393,10 @@ export class EmotionService {
                 type: 'emotion',
                 characterId,
                 emotion: newEmotion,
+                mild,
             });
             this.logger.log(
-                `[SSE Emit] 유저 ${userId} - ${characterId} 감정 변경: ${newEmotion}`,
+                `[SSE Emit] 유저 ${userId} - ${characterId} 감정 변경: ${newEmotion}${mild ? ' (약함)' : ''}`,
             );
         }
     }
