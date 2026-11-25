@@ -22,7 +22,7 @@ import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
 import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
-import { BUMP, bumpAt, faceTargetOf, furnitureAxes, FX_FOLLOW_LAG, fxFollowLift, fxWantOf, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, MoodFxSlots, surfaceHeight, type MotionClock } from './motionFx';
+import { BUMP, bumpAt, ENTRANCE, entranceHeight, entranceTimeline, faceTargetOf, furnitureAxes, FX_FOLLOW_LAG, fxFollowLift, fxWantOf, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, MoodFxSlots, surfaceHeight, type MotionClock } from './motionFx';
 import { Aura, CheerLines, hairColorOf, Jitter, MoodAssets, RainCloud, SleepyZzz, Sparkle, type FxBasis } from './moodFx';
 import { DustBursts } from './dustFx';
 
@@ -73,7 +73,7 @@ const TURN_RATE = 10;
  * 동작 파일을 받기 전이면 기본 자세(REST_POSE, 'rest').
  * 엔진 모션(play)은 같은 재생기로 튼다(2026-10-18 — 재생기는 캐릭터마다 하나). 순서: 들림 > 엔진 모션 > 걷기·대기
  */
-type Pose = 'rest' | 'idle' | 'walk' | 'pickup' | 'engine'; // 'engine' = 엔진이 맡긴 모션을 트는 중 — wantPose 가 idle·walk 로 바꾸지 않는다
+type Pose = 'rest' | 'idle' | 'walk' | 'pickup' | 'engine' | 'entrance'; // 'engine' = 엔진이 맡긴 모션을 트는 중 — wantPose 가 idle·walk 로 바꾸지 않는다 · 'entrance' = 거실 등장 낙하(pickup40 반복)
 /**
  * 엔진 모션 파일 자리. 클립 이름 = 파일 이름(확장자 빼고). 없는 파일은 건너뛴다.
  * 미리보기 한 장(vite.preview-room.config.ts)은 아직 이 폴더를 넣지 않는다 — 모션 파일이 생기면 그쪽도 넣을 것
@@ -117,6 +117,26 @@ interface EngineRun {
   onFinish: () => void;
   /** 구간 반복(LOOP_RANGE) — 지난 프레임의 재생 시간(고친 뒤). 단계가 바뀌면 지운다 */
   lastT?: number;
+}
+/**
+ * 거실 등장(2026-11-26) — 캐릭터 하나의 하늘에서 떨어지기. 시간표 · 값은 motionFx ENTRANCE · entranceTimeline.
+ *   wait  모델 · 동작을 받는 중 — 도형 · 그림자는 숨기고, 모델이 장면에 붙으면 화면 위 밖(top)에서 기다린다
+ *   fall  떨어지는 중 — pickup40 반복, 착지 DUST.rise 초 전에 먼지
+ *   land  착지함 — 평소 자세 · 그림자 · 바닥 붙이기는 평소대로, 먼지가 걷히면(ready) 끝
+ */
+interface Entrance {
+  phase: 'wait' | 'fall' | 'land';
+  /** 떨어지기 시작한 뒤 지난 초 */
+  t: number;
+  /** 시작 높이(칸, 발 기준) — 화면 위 가장자리 밖. wait 동안은 매 프레임, fall 시작 때 한 번 더 잰다 */
+  top: number;
+  /** 지금 자세의 가장 낮은 곳(몸 자리 좌표, 칸) — 발보다 아래로 늘어진 만큼 더 올린다. 모르면 0 */
+  low: number;
+  dusted: boolean;
+  /** 먼지가 걷혀 움직여도 될 때 — RoomLoop 에 알림 */
+  onReady: () => void;
+  /** 끝났거나 치워졌을 때 — whenSettled 가 기다린다 */
+  settle: () => void;
 }
 /** 마지막으로 움직인 뒤 이만큼 지나면 멈춘 것으로 본다(ms) — 걷는 동안 매 프레임 move 가 온다 */
 const STILL_MS = 150;
@@ -360,6 +380,10 @@ interface CharNode {
   /** 배치 모드 — 그림자까지 통째로 숨긴다 */
   hidden: boolean;
   outlined: boolean;
+  /** 거실 등장 중(enter) — 아니면 null */
+  entrance: Entrance | null;
+  /** 등장이 끝났을 때(등장이 없으면 처음부터 끝남) — whenSettled 가 기다린다 */
+  entered: Promise<void>;
 }
 
 export class RoomScene implements RoomRenderer {
@@ -1136,6 +1160,7 @@ export class RoomScene implements RoomRenderer {
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0, groundForce: false,
       emotion: null, cloud: null, jitter: null, fx: new MoodFxSlots(this.fxMakers), fxAt: null, hipsRest: null, jitterForce: false, fxVrm: null, headUp: 0, hair: null,
+      entrance: null, entered: Promise.resolve(),
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1143,7 +1168,106 @@ export class RoomScene implements RoomRenderer {
     this.attachModel(charId, c).catch((e: unknown) => {
       console.warn('[RoomScene] 캐릭터 모델을 못 불러와 도형으로 둡니다', e);
       c.setReady(false);
+      this.skipEntrance(c); // 모델이 끝내 없으면 안 보이게 되니 — 도형을 켜고 떨어지기 없이 바로 세운다
     });
+  }
+
+  /* ── 거실 등장(하늘에서 떨어지기, 2026-11-26) — 약속은 RoomRenderer.enter 주석 ── */
+
+  enter(charId: string, onReady: () => void): boolean {
+    const c = this.chars.get(charId);
+    if (!c || c.vrm || c.entrance) return false;
+    let settle: () => void = () => {};
+    c.entered = new Promise<void>((ok) => (settle = ok));
+    c.entrance = { phase: 'wait', t: 0, top: 0, low: 0, dusted: false, onReady, settle };
+    // 대역 도형은 처음부터 안 보이게 — 그림자 · 선택 테 · 드롭 테두리도 drawChar 가 등장 중엔 끈다
+    c.body.visible = false;
+    c.head.visible = false;
+    this.drawChar(c);
+    this.invalidate();
+    return true;
+  }
+
+  /** 모델을 끝내 못 받았다 — 등장 없이 도형을 켜고 바로 평소 상태로 */
+  private skipEntrance(c: CharNode): void {
+    const e = c.entrance;
+    if (!e || this.chars.get(c.id) !== c) return;
+    c.entrance = null;
+    if (!c.vrm) {
+      c.body.visible = true;
+      c.head.visible = true;
+    }
+    this.drawChar(c);
+    this.invalidate();
+    e.settle();
+    e.onReady();
+  }
+
+  /**
+   * 시작 높이(칸, 발 기준) — 지금 카메라(줌 · 끌기 반영)에서 캐릭터의 가장 낮은 곳이 화면 위 가장자리보다 키 × overTop 더 위에 오게.
+   * 높이 h 칸은 화면에서 h·Z·축척 px 위(grabFloor 와 같은 식). 화면 위 가장자리 = 화면 y 0.
+   * 가장 낮은 곳만 화면 밖이면 머리 · 머리카락 · 모자는 그보다 위라 다 밖이다
+   */
+  private entranceTop(c: CharNode, low: number): number {
+    const perUnit = VIEW.Z * this.proj.scale;
+    const feetY = this.proj.p(c.pos.x, c.pos.y).y;
+    return Math.max(0, feetY / perUnit + ENTRANCE.overTop * CHAR.height - Math.min(0, low));
+  }
+
+  /** 등장 중 몸 높이(칸) — 기다림 = 시작 높이, 떨어지는 중 = 가속하며 내려옴. 착지했거나 등장이 아니면 null(평소대로) */
+  private entranceY(c: CharNode): number | null {
+    const e = c.entrance;
+    if (!e || e.phase === 'land') return null;
+    return e.phase === 'wait' ? e.top : entranceHeight(e.top, e.t);
+  }
+
+  /** 모델 · 동작을 다 받았다(동작은 못 받았어도) — 떨어지기 시작. pickup40 을 틀고, 그 자세의 가장 낮은 곳을 재서 시작 높이를 다시 잡는다 */
+  private startFall(c: CharNode, vrm: VRM): void {
+    const e = c.entrance;
+    if (!e || e.phase !== 'wait' || c.vrm !== vrm || this.chars.get(c.id) !== c || this.disposed) return;
+    e.phase = 'fall';
+    e.t = 0;
+    if (c.mixer) {
+      if (c.pose !== 'entrance') this.setPose(c, 'entrance');
+      c.mixer.update(0);
+    }
+    vrm.humanoid.update(); // 이번 자세를 실제 뼈에 옮긴 뒤 잰다
+    c.groundSamples ??= pickGroundSamples(vrm.scene);
+    e.low = lowestY(c.groundSamples, c.figure) ?? 0;
+    e.top = this.entranceTop(c, e.low);
+    this.drawChar(c);
+    this.invalidate();
+  }
+
+  /** 매 프레임(animate 앞) — 시간표대로 먼지 · 착지 · 끝 */
+  private stepEntrance(c: CharNode, dt: number): void {
+    const e = c.entrance;
+    if (!e) return;
+    if (e.phase === 'wait') {
+      e.top = this.entranceTop(c, e.low); // 받는 동안 줌 · 끌기가 바뀌어도 화면 밖에
+      return;
+    }
+    e.t += dt;
+    const tl = entranceTimeline();
+    if (!e.dusted && e.t >= tl.burst) {
+      e.dusted = true;
+      // 캐릭터를 다 가릴 만큼 — 가로 · 깊이 = 그림자 지름(1칸), 키 = 캐릭터 키, 둘 다 ENTRANCE.dustScale 배. 가구용 DUST 값은 그대로
+      const k = ENTRANCE.dustScale;
+      if (!c.hidden) {
+        this.dust ??= new DustBursts(this.scene, H_STRETCH);
+        this.dust.burst(v3(c.pos.x, c.pos.y), 0, CHAR.shadowR * 2 * k, CHAR.shadowR * 2 * k, CHAR.height * k);
+      }
+    }
+    if (e.phase === 'fall' && e.t >= tl.land) {
+      e.phase = 'land'; // 이번 프레임 wantPose 가 pickup40 → 평소 자세로 섞지 않고 바로 바꾼다(먼지 속)
+      this.drawChar(c); // 그림자를 켠다
+    }
+    if (e.phase === 'land' && e.t >= tl.ready) {
+      c.entrance = null;
+      this.drawChar(c);
+      e.settle();
+      e.onReady();
+    }
   }
 
   /**
@@ -1157,6 +1281,8 @@ export class RoomScene implements RoomRenderer {
     if (this.dropTarget?.kind === 'character' && this.dropTarget.charId === charId) this.dropTarget = null;
     this.dropEngine(c); // 치우면 엔진 요청도 버린다(onFinish 없음)
     c.setReady(false); // 모델을 기다리던 요청도 풀어 준다
+    c.entrance?.settle(); // 등장 중이었으면 끝 신호(onReady) 없이 버린다
+    c.entrance = null;
     c.mixer?.stopAllAction();
     this.dropMood(c);
     for (const r of c.rims) r.removeFromParent();
@@ -1228,11 +1354,13 @@ export class RoomScene implements RoomRenderer {
     if (PERF_ON) this.perfDraw.push({ file: shortName(found.url), vrm, start: performance.now() });
     c.modelUrl = found.url;
     if (c.look !== look) c.swapNeeded = true;
-    // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다
-    this.attachMotions(c, vrm).catch((e: unknown) => {
-      console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e);
-      c.setReady(false);
-    });
+    // 동작은 모델이 선 뒤에 붙는다 — 못 받으면 기본 자세로 둔다. 등장 중이면 그다음 떨어지기 시작(동작을 못 받았어도)
+    this.attachMotions(c, vrm)
+      .catch((e: unknown) => {
+        console.warn('[RoomScene] 캐릭터 동작을 못 불러와 기본 자세로 둡니다', e);
+        c.setReady(false);
+      })
+      .finally(() => this.startFall(c, vrm));
   }
 
   /**
@@ -1345,6 +1473,8 @@ export class RoomScene implements RoomRenderer {
     c.groundSamples = null; // 모델이 바뀌었다 — 바닥 붙이기에 볼 꼭짓점을 다시 고른다
     c.body.visible = false;
     c.head.visible = false;
+    // 등장 중이면 붙는 순간부터 화면 위 밖 높이에 — drawChar 가 몸 자리를 entranceY 로 둔다(원래 자리에 한 프레임도 안 보이게)
+    if (c.entrance?.phase === 'wait') c.entrance.top = this.entranceTop(c, c.entrance.low);
     this.drawChar(c);
     this.invalidate();
   }
@@ -1387,11 +1517,14 @@ export class RoomScene implements RoomRenderer {
       pickup.setLoop(THREE.LoopOnce, 1);
       pickup.clampWhenFinished = true;
     }
+    // 거실 등장 낙하 — 모든 종목 pickup40 반복(들기 시험 PICKUP40_TEST 와 별개). 들기 동작과 따로 만든다(대롱대롱 · 골반 맞추기 없이 모션만)
+    const entrance = files.pickup40 && mixer.clipAction(createVRMAnimationClip(files.pickup40, vrm));
+    entrance?.setLoop(THREE.LoopRepeat, Infinity);
     // 한 번 틀고 끝나는 동작이 끝나면 재생기가 알려 준다 — 엔진 모션이면 다음 단계로
     mixer.addEventListener('finished', (e) => this.onActionFinished(c, e.action as THREE.AnimationAction));
     c.mixer = mixer;
     c.defaultActions = { idle: idle ?? undefined, walk: walk ?? undefined };
-    c.actions = { idle: idle ?? undefined, walk: walk ?? undefined, pickup: pickup ?? undefined };
+    c.actions = { idle: idle ?? undefined, walk: walk ?? undefined, pickup: pickup ?? undefined, entrance: entrance ?? undefined };
     c.pose = 'rest';
     c.setReady(true); // 이제 엔진 모션을 틀 수 있다
   }
@@ -1465,6 +1598,7 @@ export class RoomScene implements RoomRenderer {
 
   /** 지금 상태에 맞는 동작 — 들림 → pickup, 엔진 모션 → engine, 방금 걸었음 → walk, 그 밖 → idle */
   private wantPose(c: CharNode, now: number): Pose {
+    if (c.entrance && c.entrance.phase !== 'land') return 'entrance'; // 등장 — 받는 중 · 떨어지는 중
     if (c.lifted) return 'pickup'; // 엔진 요청은 들리는 순간 setCharacterState 가 버렸다
     if (c.engine?.action) return 'engine'; // 파일을 받는 동안은 하던 동작(idle·walk) 그대로
     return now - c.movedAt < STILL_MS ? 'walk' : 'idle';
@@ -1472,6 +1606,14 @@ export class RoomScene implements RoomRenderer {
 
   /** 동작을 바꾼다 — 이전 것은 빼고 새 것은 처음부터. 집어 들 때마다 들기 동작을 처음부터 다시 튼다 */
   private setPose(c: CharNode, pose: Pose): void {
+    if (pose === 'entrance' || c.pose === 'entrance') {
+      // 등장 낙하로 들어가고 나올 때는 섞지 않고 바로 — 화면 밖 · 착지 먼지가 가린다
+      const next = pose === 'rest' || pose === 'engine' ? undefined : c.actions[pose];
+      for (const act of [...Object.values(c.actions), ...[...c.engineActions.values()].flat()]) if (act && act !== next && act.isScheduled()) act.stop();
+      next?.reset().setEffectiveWeight(1).play();
+      c.pose = pose;
+      return;
+    }
     const fade = pose === 'pickup' ? PICKUP_FADE_S : POSE_FADE_S;
     // 'engine' 은 engineStep 이 직접 틀고 여기로 오지 않는다(wantPose 가 engine 을 내면 이미 c.pose === 'engine')
     const next = pose === 'rest' || pose === 'engine' ? undefined : c.actions[pose];
@@ -1598,6 +1740,8 @@ export class RoomScene implements RoomRenderer {
   /** 매 프레임(vrm.update 뒤) — 먹구름은 머리 위로 늦게 따라가고, 비 · 저릿저릿은 엔진 모션을 실제로 트는 동안만 */
   private updateMood(c: CharNode, dt: number): void {
     const vrm = c.vrm;
+    // 등장 중(받는 중 · 떨어지는 중)엔 감정 이펙트를 아직 안 띄운다 — 화면 위 밖에서 따라 내려오지 않게. 착지(먼지 속)부터 평소대로
+    if (c.entrance && c.entrance.phase !== 'land') return;
     const want = moodFxOf(c.emotion);
     const fxWant = this.fxWant(c);
     const more = !!(fxWant.aura || fxWant.sparkle || fxWant.cheer || fxWant.zzz) || c.fx.any;
@@ -1849,7 +1993,8 @@ export class RoomScene implements RoomRenderer {
    */
   private animate(c: CharNode, dt: number): void {
     // 모습이 바뀌었으면 모델을 다시 찾는다 — 엔진 모션 · 들림이 끝난 뒤에(swapModel)
-    if (c.swapNeeded && !c.swapping && !c.engine && !c.lifted) void this.swapModel(c);
+    if (c.swapNeeded && !c.swapping && !c.engine && !c.lifted && !c.entrance) void this.swapModel(c);
+    this.stepEntrance(c, dt);
     const target = c.lifted ? c.yaw : c.heading; // 들려 있으면 돌던 중이어도 그 자리에서 멈춘다
     const d = Math.atan2(Math.sin(target - c.yaw), Math.cos(target - c.yaw));
     c.yaw += d * Math.min(1, dt * TURN_RATE);
@@ -1875,7 +2020,7 @@ export class RoomScene implements RoomRenderer {
       const want = (c.seatLift !== 0 && run ? c.seatLift : 0) + ground;
       const step = c.seatRate * dt;
       c.seatNow = Math.abs(want - c.seatNow) <= step ? want : c.seatNow + Math.sign(want - c.seatNow) * step;
-      c.figure.position.y = c.seatNow;
+      c.figure.position.y = this.entranceY(c) ?? c.seatNow; // 등장 — 화면 위 밖에서 떨어지는 중
     }
     const swung = c.lifted ? this.applySwing(c, dt) : [];
     if (c.lifted) this.pinGrab(c);
@@ -2054,16 +2199,19 @@ export class RoomScene implements RoomRenderer {
     c.group.position.copy(v3(c.pos.x, c.pos.y));
     // 들린 VRM 은 매 프레임 골반을 맞춘다(pinGrab) — 여기서 되돌리면 머리카락이 출렁인다
     if (!(c.lifted && c.vrm)) {
-      c.figure.position.set(0, c.lifted ? CHAR.lift : c.seatNow, 0);
+      c.figure.position.set(0, c.lifted ? CHAR.lift : (this.entranceY(c) ?? c.seatNow), 0);
       c.figure.quaternion.identity(); // 대롱대롱 기울기도 내려놓으면 0
       c.swing.reset();
     }
     c.shadow.scale.setScalar(c.lifted ? CHAR.shadowLiftR : CHAR.shadowR);
+    // 등장 중 — 그림자는 착지할 때 켜고, 선택 테 · 드롭 테두리는 끝날 때까지 끈다
+    const entering = c.entrance !== null;
+    c.shadow.visible = !entering || c.entrance?.phase === 'land';
     const model = c.vrm !== null;
-    c.ring.visible = c.selected && !model;
-    c.hull.visible = c.outlined && !model;
+    c.ring.visible = c.selected && !model && !entering;
+    c.hull.visible = c.outlined && !model && !entering;
     for (const r of c.rims) {
-      r.visible = c.outlined || c.selected;
+      r.visible = (c.outlined || c.selected) && !entering;
       r.material = c.outlined ? this.rimWhite : this.rimAccent;
     }
     this.sizeHull(c);
@@ -2075,7 +2223,7 @@ export class RoomScene implements RoomRenderer {
     const k = this.proj.scale;
     const list = [...this.chars.entries()].sort((a, b) => Projection.depth(b[1].pos.x, b[1].pos.y) - Projection.depth(a[1].pos.x, a[1].pos.y));
     for (const [id, c] of list) {
-      if (c.hidden || id === except) continue;
+      if (c.hidden || c.entrance || id === except) continue; // 등장 중인 캐릭터는 클릭 · 드롭 대상이 아니다
       const f = this.proj.p(c.pos.x, c.pos.y);
       if (Math.abs(x - f.x) <= CHAR.pickHalfW * k && y >= f.y - CHAR.pickTop * k && y <= f.y + CHAR.pickBottom * k) return id;
     }
@@ -2120,7 +2268,7 @@ export class RoomScene implements RoomRenderer {
   /* ── 거실 썸네일 ─────────────────────────────────────────── */
 
   async whenSettled(): Promise<void> {
-    await Promise.all([...[...this.chars.values()].map((c) => c.whenReady), ...this.furnModels.values()]);
+    await Promise.all([...[...this.chars.values()].flatMap((c) => [c.whenReady, c.entered]), ...this.furnModels.values()]);
     // 모델이 붙은 뒤 믹서가 자세를 한 번 입히게 두 프레임 기다린다
     for (let i = 0; i < 2; i++) await new Promise((ok) => requestAnimationFrame(ok));
   }
@@ -2219,6 +2367,8 @@ export class RoomScene implements RoomRenderer {
       // 받던 엔진 모션 · 모델을 기다리던 요청을 버린다 — 거실을 나간 뒤 엔진에 끝 신호가 가지 않게
       this.dropEngine(c);
       c.setReady(false);
+      c.entrance?.settle(); // 등장 중이었으면 끝 신호(onReady) 없이 버린다 — 기다리던 자동 촬영도 풀어 준다
+      c.entrance = null;
       if (c.vrm) VRMUtils.deepDispose(c.vrm.scene);
     }
     this.scene.traverse((n) => {

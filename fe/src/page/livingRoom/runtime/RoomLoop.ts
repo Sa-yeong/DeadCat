@@ -205,6 +205,13 @@ export class RoomLoop {
   private releaseChain: Promise<void> = Promise.resolve();
   /** 내 방이면 배치 저장 — 없으면(남의 방) 박살은 화면에서만(가구를 이 화면의 배치에서만 빼고 서버는 안 건드림 — 새로고침하면 다시 있음) */
   private readonly saveLayout: SaveLayout | null;
+  /**
+   * 거실 등장 중(렌더러 enter, 2026-11-26) — 모델을 받는 중 · 떨어지는 중 · 먼지가 걷히기 전. 그동안은 돌아다니지 않고,
+   * 클릭 · 집기 · 드롭 대상 · 마주침 · 가구 근접에서 빠진다
+   */
+  private readonly entering = new Set<string>();
+  /** 등장 중에 온 엔진 play — 버리지 않고 등장이 끝나면 튼다(마지막 하나만 — 새 play 가 앞 것을 밀어내는 것과 같게) */
+  private readonly pendingPlay = new Map<string, EngineCommand>();
   private stopped = false;
 
   constructor(deps: {
@@ -233,7 +240,7 @@ export class RoomLoop {
     this.demo = deps.demo ?? (() => null);
     this.saveLayout = deps.saveLayout ?? null;
     this.gesture = new PressGesture({
-      hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.renderer.pick(x, y)),
+      hit: (x, y) => (this.mode === 'PLACEMENT' ? null : this.pickChar(x, y)),
       canLift: () => this.mode === 'NORMAL',
       tap: (id) => (id ? this.onPick(id) : this.events.onEmptyPick()),
       chargeStart: (id, ms) => this.setCharging(id, true, ms),
@@ -250,11 +257,14 @@ export class RoomLoop {
    */
   load(snapshot: RoomSnapshot): void {
     this.setPlacements(snapshot.placements);
-    this.spawnAll(snapshot.characters);
+    this.spawnAll(snapshot.characters, true); // 거실에 들어와 처음 세움 — 하늘에서 떨어진다(렌더러가 하면)
   }
 
-  /** 아직 안 선 캐릭터를 빈 칸에 세운다 — 이미 선 캐릭터와도 SPAWN_GAP 만큼 띄운다 */
-  private spawnAll(characters: RoomCharacterDto[]): void {
+  /**
+   * 아직 안 선 캐릭터를 빈 칸에 세운다 — 이미 선 캐릭터와도 SPAWN_GAP 만큼 띄운다.
+   * entrance 면 렌더러에 등장을 맡긴다(load 만 — setRoster 로 새로 세운 캐릭터는 등장 없이 바로, 2026-11-26 도휘)
+   */
+  private spawnAll(characters: RoomCharacterDto[], entrance = false): void {
     const taken: Pt[] = [...this.handles.values()].map((h) => h.position);
     for (const c of characters) {
       const id = charIdOf(c);
@@ -263,6 +273,9 @@ export class RoomLoop {
       const h = createHandle(id, this.spawnPoint(taken) ?? { x: ROOM / 2, y: ROOM / 2 });
       this.handles.set(id, h);
       this.renderer.spawn(id, def, h.position);
+      // 먼저 넣어 둔다 — 렌더러가 하지 않으면(false) 뺀다. 끝 신호가 오면 entered 가 뺀다
+      this.entering.add(id);
+      if (!(entrance && this.renderer.enter?.(id, () => this.entered(id)))) this.entering.delete(id);
       // 감정을 아직 몰라도 바로 알린다 — 엔진이 감정 대기로 받아 두었다가 감정이 오면 활동시킨다(지시서 1-5 A)
       this.engine.addCharacter(id);
       this.clothes.set(id, c.ownedClothesId);
@@ -270,6 +283,20 @@ export class RoomLoop {
       if (c.returnRate !== undefined) this.outfits.update(id, c.returnRate);
       this.applyLook(id);
     }
+  }
+
+  /** 등장이 끝났다(먼지가 걷힘) — 이제 평소처럼. 그사이 온 엔진 모션이 있으면 지금 튼다 */
+  private entered(id: string): void {
+    if (!this.entering.delete(id)) return;
+    const cmd = this.pendingPlay.get(id);
+    this.pendingPlay.delete(id);
+    if (cmd && this.handles.has(id) && !this.stopped) this.onCommand(cmd);
+  }
+
+  /** 클릭 지점의 캐릭터 — 등장 중인 캐릭터는 없는 것으로 */
+  private pickChar(x: number, y: number, except?: string): string | null {
+    const id = this.renderer.pick(x, y, except);
+    return id && !this.entering.has(id) ? id : null;
   }
 
   /**
@@ -288,6 +315,8 @@ export class RoomLoop {
       this.engine.deleteCharacter(id);
       this.renderer.despawn(id); // 틀던 엔진 모션도 같이 버린다
       this.handles.delete(id);
+      this.entering.delete(id);
+      this.pendingPlay.delete(id);
       this.outfits.forget(id); // 다시 세우면 여유 구간 없이 처음부터 판정
       this.clothes.delete(id);
     }
@@ -448,6 +477,7 @@ export class RoomLoop {
     this.stepEndHolds(dt);
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
+      if (this.entering.has(h.id)) continue; // 등장 중 — 제자리(떨어지는 중 · 먼지 속)
       const sw = this.slotWaits.get(h.id);
       if (sw) {
         this.waitAtSlot(h, sw, dt);
@@ -491,10 +521,11 @@ export class RoomLoop {
       this.fieldTimer = 0;
       // 들린 캐릭터는 판정에서 뺀다 — 놓은 자리에서 새로 마주친다
       // 슬롯머신 앞에서 뜸을 들이는 캐릭터도 뺀다 — 그사이 마주쳐 다른 모션으로 새지 않게
-      const list = [...this.handles.values()].filter((h) => !h.lifted && !this.slotWaits.has(h.id)).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
+      // 등장 중인 캐릭터도 뺀다 — 먼지가 걷힌 뒤 그 자리에서 새로 마주친다
+      const list = [...this.handles.values()].filter((h) => !h.lifted && !this.slotWaits.has(h.id) && !this.entering.has(h.id)).map((h) => ({ id: h.id, x: h.position.x, y: h.position.y }));
       for (const e of this.field.evaluate(list)) this.onFieldEnter(e.a, e.b);
-      // 가구 — 들린 캐릭터만 뺀다. 바쁜 캐릭터도 넘겨 위치를 따라간다(뺐다 넣으면 exit → enter 가 새로 나서 모션을 마치자마자 또 반응한다)
-      const bodies = [...this.handles.values()].filter((h) => !h.lifted).map((h) => ({ id: h.id, x: h.position.x, z: h.position.y, radius: 0 }));
+      // 가구 — 들린 · 등장 중인 캐릭터만 뺀다. 바쁜 캐릭터도 넘겨 위치를 따라간다(뺐다 넣으면 exit → enter 가 새로 나서 모션을 마치자마자 또 반응한다)
+      const bodies = [...this.handles.values()].filter((h) => !h.lifted && !this.entering.has(h.id)).map((h) => ({ id: h.id, x: h.position.x, z: h.position.y, radius: 0 }));
       for (const e of this.nearFurniture.update(bodies, this.furnitureObstacles())) {
         // char-char 는 버린다 — 캐릭터끼리는 위 field 가 알린다(두 번 알리지 않게)
         if (e.kind === 'char-furniture' && e.type === 'enter') this.onFurnitureEnter(e.char, Number(e.furniture));
@@ -526,7 +557,7 @@ export class RoomLoop {
    */
   private onFurnitureEnter(charId: string, placementId: number): void {
     const h = this.handles.get(charId);
-    if (!h || this.mode !== 'NORMAL' || !this.engineFurniture.has(placementId)) return;
+    if (!h || this.mode !== 'NORMAL' || !this.engineFurniture.has(placementId) || this.entering.has(charId)) return;
     if (h.held || h.lifted || h.charging || h.awaiting || h.acting || h.away) return;
     if (this.slotWaits.has(h.id) || this.stillOn.has(h.id)) return;
     this.visitFurniture(h, placementId);
@@ -631,6 +662,7 @@ export class RoomLoop {
     const a = this.handles.get(charId);
     const b = this.handles.get(otherId);
     if (!a || !b || a.held || b.held || a.lifted || b.lifted) return;
+    if (this.entering.has(charId) || this.entering.has(otherId)) return; // 등장 중 — 마주침 없음
     // 누구와 마주쳤는지 — move_away 가 그 반대쪽으로 비킨다(명령에 상대가 실려 오지 않아서)
     a.metWith = otherId;
     b.metWith = charId;
@@ -663,6 +695,11 @@ export class RoomLoop {
         return;
       case 'play': {
         if (h.lifted) return;
+        // 등장 중 — 버리지 않고 등장이 끝나면 튼다(entered). 그사이 cancel 이 오면 stopActing 이 지운다
+        if (this.entering.has(h.id)) {
+          this.pendingPlay.set(h.id, cmd);
+          return;
+        }
         this.dropSlotWait(h); // 뜸을 들이던 중 다른 명령이 오면 슬롯머신은 그만둔다
         this.unseat(h); // 앉아 있다 다른 명령이 오면 일어선다(새 명령이 앉기면 sitOnSofa 가 다시 앉힌다)
         const run: ActRun = { steps: cmd.steps, i: -1 };
@@ -806,6 +843,7 @@ export class RoomLoop {
   }
 
   private stopActing(h: CharacterHandle): void {
+    this.pendingPlay.delete(h.id); // 등장 중에 받아 둔 모션도 그만
     this.unseat(h);
     h.run = null;
     h.away = false;
@@ -952,7 +990,7 @@ export class RoomLoop {
     const found: { t: DropTarget; d: number }[] = [];
     const offer = (t: DropTarget, d: number) => found.push({ t, d });
     // 화면에서 겹쳐 보이는 것이 먼저 — 캐릭터는 가구보다 앞에 서 있으니 캐릭터가 이긴다
-    const charUnder = screen ? this.renderer.pick(screen.x, screen.y, h.id) : null;
+    const charUnder = screen ? this.pickChar(screen.x, screen.y, h.id) : null;
     if (charUnder && !this.handles.get(charUnder)?.lifted) offer({ kind: 'character', charId: charUnder }, -1);
     const under = screen ? this.renderer.pickFurniture(screen.x, screen.y) : null;
     for (const p of this.placements) {
@@ -969,7 +1007,7 @@ export class RoomLoop {
       if (d <= FURN_REACH) offer({ kind: 'furniture', placementId: p.placementId }, d);
     }
     for (const o of this.handles.values()) {
-      if (o === h || o.lifted) continue;
+      if (o === h || o.lifted || this.entering.has(o.id)) continue;
       const d = Math.hypot(o.position.x - h.position.x, o.position.y - h.position.y);
       if (d <= CHAR_REACH) offer({ kind: 'character', charId: o.id }, d);
     }
@@ -1352,9 +1390,9 @@ export class RoomLoop {
     this.gesture.cancel();
   }
 
-  /** 이 자리(방 기준 px)에 있는 캐릭터 — 아이템을 끌어다 놓을 때 페이지가 묻는다 */
+  /** 이 자리(방 기준 px)에 있는 캐릭터 — 아이템을 끌어다 놓을 때 페이지가 묻는다. 등장 중인 캐릭터는 없는 것으로 */
   charAt(x: number, y: number): string | null {
-    return this.renderer.pick(x, y);
+    return this.pickChar(x, y);
   }
 
   /** 지금 화면 좌표 */

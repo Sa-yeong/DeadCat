@@ -157,7 +157,15 @@ export interface RoomRenderer {
   burstDust?(placementId: number): void;
   /** 가구 모델을 살짝 들썩인다(3D 만, G-2 — 책상을 주먹으로 내려침) */
   bumpFurniture?(placementId: number): void;
-  /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤 — 자동 촬영이 기다린다 */
+  /**
+   * 거실 등장(3D 만, 2026-11-26) — 방금 spawn 한 캐릭터를 하늘에서 떨어뜨린다. 거실에 들어와 처음 세울 때만 RoomLoop 이 부른다
+   * (캐릭터 탭에서 새로 세움 · 배치 저장 뒤 다시 세움에는 부르지 않는다). 모델을 받는 동안은 도형 · 그림자도 숨기고,
+   * 받으면 화면 위 밖에서 떨어져 착지 먼지 속에서 평소 자세로 바뀐다.
+   * 등장을 하면 true — 먼지가 걷혀 움직여도 될 때 onReady 를 한 번 부른다(그 전에 despawn 되면 안 부름).
+   * false(평면 더미 · 이미 모델이 있음)면 onReady 를 부르지 않고 바로 평소 상태
+   */
+  enter?(charId: string, onReady: () => void): boolean;
+  /** 지금 세운 캐릭터 모델 · 동작과 가구 모델을 다 받고 자세가 잡힌 뒤(등장도 끝난 뒤) — 자동 촬영이 기다린다 */
   whenSettled?(): Promise<void>;
   dispose(): void;
 }

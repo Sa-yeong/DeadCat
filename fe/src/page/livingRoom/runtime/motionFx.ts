@@ -24,6 +24,34 @@ export const BUMP = { dur: 0.32, hop: 0.06, tilt: 0.025 };
 export const DUST = { dur: 1.5, rise: 0.3, size: 1, dens: 0.95, count: 28, spread: 0.6, colors: ['#C4A170', '#A98556', '#8E6C43'] as const };
 /** 모션 파일이 없으면 상호작용이 시작되고 이만큼(초) 뒤에 터뜨린다 — 모션 없이도 흐름 전체가 돈다 */
 export const BREAK_NO_FILE_S = 0.3;
+
+/* ── 거실 등장(하늘에서 떨어지기) ─────────────────────────────── */
+
+// 거실 등장(하늘에서 떨어지기) — 2026-11-26
+export const ENTRANCE = {
+  fallS: 0.7, //        떨어지는 시간(초)
+  ease: 2, //           가속 정도(1 = 등속, 클수록 끝에서 빠름)
+  overTop: 0.3, //      화면 위 가장자리보다 캐릭터 키의 몇 배 더 위에서 시작
+  dustScale: 1.6, //    착지 먼지 크기 — 캐릭터 크기 대비
+  readyAfterS: 1.1, //  먼지 터진 뒤 이만큼 지나면 움직이기 · 클릭 허용
+};
+
+/**
+ * 등장 시간표(떨어지기 시작 = 0초) — 먼지 터뜨림 · 착지 · 움직여도 됨.
+ * 먼지는 착지 순간에 가장 짙게(터지고 DUST.rise 초 뒤) — 낙하가 그보다 짧으면 떨어지기 시작과 동시에.
+ * 움직여도 됨은 착지보다 앞서지 않는다
+ */
+export function entranceTimeline(e: { fallS: number; readyAfterS: number } = ENTRANCE): { burst: number; land: number; ready: number } {
+  const land = Math.max(0, e.fallS);
+  const burst = Math.max(0, land - DUST.rise);
+  return { burst, land, ready: Math.max(land, burst + e.readyAfterS) };
+}
+
+/** 떨어지기 t초째 높이(칸) — top 에서 0 으로, (t/fallS)^ease 만큼 내려옴(ease > 1 이면 점점 빨라짐). 착지 뒤는 0 */
+export function entranceHeight(top: number, t: number, e: { fallS: number; ease: number } = ENTRANCE): number {
+  const u = e.fallS > 0 ? Math.min(1, Math.max(0, t / e.fallS)) : 1;
+  return top * (1 - u ** Math.max(1e-3, e.ease));
+}
 const FPS = 30;
 
 /** 들썩 t초째의 높이(칸) · 기울기(라디안) — 테스트 랩과 같은 모양 */

@@ -18,7 +18,7 @@ import { LivingRoomEngine, type EmotionFeed } from '../engine/Engine';
 import type { Emotion } from '../engine/type/type';
 import type { Pt } from './projection';
 import type { PlacementDto, RoomCharacterDto } from '../types';
-import { MOTION_SPOTS, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf, turnDir } from './motionFx';
+import { DUST, ENTRANCE, entranceHeight, entranceTimeline, MOTION_SPOTS, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf, turnDir } from './motionFx';
 
 // 거실 런타임 S4 — 감정 스트림 읽기(2-1 · 2-2)와 엔진 명령 단계 처리(1-1 · 1-2). 브라우저 없이 확인할 수 있는 것만
 
@@ -1148,5 +1148,171 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       }
       expect(t.inside('1', piano)).toBe(true);
     });
+  });
+});
+
+/* ── 거실 등장 — 하늘에서 떨어지기(2026-11-26) ─────────────────── */
+
+describe('거실 등장 (RoomRenderer.enter · ENTRANCE)', () => {
+  /**
+   * 등장을 하는 렌더러 흉내 — enter 를 받으면 끝 신호를 쥐어 두고, 테스트가 finish 로 끝낸다(먼지가 걷힘).
+   * pick 은 under 에 둔 캐릭터를 돌려준다(그 캐릭터가 클릭 지점에 있다고 보고)
+   */
+  function entranceSetup(chars: RoomCharacterDto[] = [ch(1), ch(2)], catalog: RoomCharacterDto[] = chars) {
+    const r = fakeRenderer();
+    const e = fakeEngine();
+    const ready = new Map<string, () => void>();
+    const entered: string[] = [];
+    const under: { id: string | null } = { id: null };
+    const renderer = new Proxy(r.renderer, {
+      get: (t, k) =>
+        k === 'enter'
+          ? (id: string, onReady: () => void) => {
+              entered.push(id);
+              ready.set(id, onReady);
+              return true;
+            }
+          : k === 'pick'
+            ? (_x: number, _y: number, except?: string) => (under.id === except ? null : under.id)
+            : t[k as keyof RoomRenderer],
+    }) as RoomRenderer;
+    const characters = new CharacterCatalog();
+    characters.load(catalog.map((c) => characterDef(c)));
+    const picked = vi.fn();
+    const empty = vi.fn();
+    const loop = new RoomLoop({
+      renderer,
+      createEngine: (onCommand) => {
+        e.bind(onCommand);
+        return e.engine;
+      },
+      characters,
+      furniture: new FurnitureCatalog(),
+      motions: ROOM_MOTIONS,
+      events: { onPicked: picked, onEmptyPick: empty, onLiftCharge: () => {}, onLiftChargeEnd: () => {}, onLifted: () => {} },
+    });
+    loop.load({ mode: 'OWNER', shareOption: true, characters: chars, placements: [], roomReactions: { counts: {}, mine: null } });
+    const finish = (id: string) => ready.get(id)!();
+    /** 그 캐릭터가 걸어 움직일 때까지(최대 n초) 돌린다 — 움직였으면 true */
+    const walks = (id: string, n = 20) => {
+      const from = { ...r.at.get(id)! };
+      for (let i = 0; i < n * 10; i++) {
+        loop.tick(0.1);
+        const now = r.at.get(id)!;
+        if (now.x !== from.x || now.y !== from.y) return true;
+      }
+      return false;
+    };
+    return { loop, ...r, ...e, ready, entered, under, picked, empty, finish, walks };
+  }
+
+  beforeEach(() => vi.stubGlobal('window', globalThis)); // 누름 판정(PressGesture)이 window.setTimeout 을 쓴다
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('처음 세운 캐릭터는 등장이 끝나기 전까지 돌아다니지 않고, charAt · 클릭이 그 캐릭터를 돌려주지 않는다', () => {
+    const t = entranceSetup();
+    expect(t.entered.sort()).toEqual(['1', '2']);
+    t.under.id = '1';
+    expect(t.walks('1')).toBe(false);
+    expect(t.walks('2')).toBe(false);
+    expect(t.loop.charAt(0, 0)).toBeNull();
+    t.loop.pointerDown(0, 0);
+    t.loop.pointerUp(0, 0);
+    expect(t.picked).not.toHaveBeenCalled();
+    expect(t.empty).toHaveBeenCalledTimes(1); // 빈 바닥 누름으로
+  });
+
+  it('등장 중엔 마주침도 엔진에 알리지 않는다 — 끝나면 알린다', () => {
+    const t = entranceSetup();
+    const encounter = vi.fn();
+    t.engine.encounter = encounter;
+    t.loop.onFieldEnter('1', '2');
+    expect(encounter).not.toHaveBeenCalled();
+    t.finish('1');
+    t.loop.onFieldEnter('1', '2'); // 하나라도 등장 중이면 없음
+    expect(encounter).not.toHaveBeenCalled();
+    t.finish('2');
+    t.loop.onFieldEnter('1', '2');
+    expect(encounter).toHaveBeenCalledWith('1', '2');
+  });
+
+  it('등장이 끝나면 평소처럼 돌아다니고 집을 수 있다', () => {
+    const t = entranceSetup();
+    t.finish('1');
+    expect(t.walks('1')).toBe(true);
+    t.under.id = '1';
+    expect(t.loop.charAt(0, 0)).toBe('1');
+    t.loop.pointerDown(0, 0);
+    t.loop.pointerUp(0, 0);
+    expect(t.picked).toHaveBeenCalledWith('1', expect.anything());
+  });
+
+  it('등장 중에 온 엔진 모션은 등장이 끝난 뒤에 재생된다 — 표정 · 기본 자세는 바로, 그사이 cancel 이 오면 버린다', () => {
+    const t = entranceSetup();
+    t.send({ type: 'emotion', characterId: '1', emotion: 'happy', idle: 'idle', walk: 'walk' });
+    expect(t.calls).toContain('face 1 happy');
+    t.send({ type: 'play', characterId: '1', steps: [{ name: 'surprise', kind: 'clip', loop: false }] });
+    t.send({ type: 'play', characterId: '2', steps: [{ name: 'surprise', kind: 'clip', loop: false }] });
+    t.send({ type: 'cancel', characterId: '2' });
+    expect(t.plays).toHaveLength(0);
+    t.finish('1');
+    expect(t.plays.map((p) => p.id)).toEqual(['1']);
+    t.finish('2');
+    expect(t.plays.map((p) => p.id)).toEqual(['1']); // 2 는 cancel 로 버렸다
+    t.plays[0].finish();
+    expect(t.finished).toEqual(['1:surprise']);
+  });
+
+  it('setRoster 로 새로 세운 캐릭터 · 배치 저장 뒤 다시 세우기(respawn)는 등장 없이 바로 평소 상태', () => {
+    const t = entranceSetup([ch(1), ch(2)], [ch(1), ch(2), ch(3)]);
+    t.loop.setRoster([ch(1), ch(2), ch(3)]);
+    expect(t.entered.sort()).toEqual(['1', '2']);
+    t.under.id = '3';
+    expect(t.loop.charAt(0, 0)).toBe('3');
+    expect(t.walks('3')).toBe(true);
+    t.finish('1');
+    t.finish('2');
+    t.loop.setInteractionMode('PLACEMENT');
+    t.loop.setPlacements([]); // 저장 — 배치가 바뀌었다
+    t.loop.setInteractionMode('NORMAL'); // → respawn
+    expect(t.entered).toHaveLength(2);
+    t.under.id = '1';
+    expect(t.loop.charAt(0, 0)).toBe('1');
+    expect(t.walks('1')).toBe(true);
+  });
+
+  it('캐릭터마다 따로 끝난다 — 하나가 늦어도 먼저 끝난 캐릭터는 움직인다', () => {
+    const t = entranceSetup();
+    t.finish('2');
+    expect(t.walks('2')).toBe(true);
+    expect(t.walks('1', 5)).toBe(false);
+    t.under.id = '1';
+    expect(t.loop.charAt(0, 0)).toBeNull();
+    t.under.id = '2';
+    expect(t.loop.charAt(0, 0)).toBe('2');
+  });
+
+  it('렌더러가 등장을 하지 않으면(평면 더미 · enter 없음) 처음부터 평소 상태', () => {
+    const t = setup();
+    t.send({ type: 'play', characterId: '1', steps: [{ name: 'surprise', kind: 'clip', loop: false }] });
+    expect(t.plays).toHaveLength(1);
+  });
+
+  it('시간표 — 먼지는 착지 DUST.rise 초 전(낙하가 더 짧으면 시작과 동시에), 움직여도 됨은 터진 뒤 readyAfterS · 착지보다 앞서지 않음', () => {
+    expect(ENTRANCE).toEqual({ fallS: 0.7, ease: 2, overTop: 0.3, dustScale: 1.6, readyAfterS: 1.1 });
+    const tl = entranceTimeline();
+    expect(tl.land).toBeCloseTo(0.7);
+    expect(tl.burst).toBeCloseTo(0.7 - DUST.rise);
+    expect(tl.ready).toBeCloseTo(0.7 - DUST.rise + 1.1);
+    expect(entranceTimeline({ fallS: 0.2, readyAfterS: 1.1 })).toEqual({ burst: 0, land: 0.2, ready: 1.1 });
+    expect(entranceTimeline({ fallS: 2, readyAfterS: 0.1 }).ready).toBe(2);
+  });
+
+  it('높이 — 시작 높이에서 0 으로, 점점 빨라진다(ease 2)', () => {
+    expect(entranceHeight(10, 0)).toBe(10);
+    expect(entranceHeight(10, 0.35)).toBeCloseTo(7.5); // 절반 시간에 1/4 만 내려옴
+    expect(entranceHeight(10, 0.7)).toBe(0);
+    expect(entranceHeight(10, 5)).toBe(0);
+    expect(entranceHeight(10, 0.35, { fallS: 0.7, ease: 1 })).toBeCloseTo(5);
   });
 });
