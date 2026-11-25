@@ -7,7 +7,7 @@ import type { MotionStep, RoomRenderer } from './RoomRenderer';
 import { characterDef } from '../catalog';
 import { FURNITURE_CATALOG } from '../furnitureCatalog';
 import type { RoomCharacterDto } from '../types';
-import { cheerLinesOn, cloudHeight, convexHull, EFFECT_ONLY_STEPS, EUPHORIA_SPARKLE, fxWantOf, HAPPY_SPARKLE, jitterOn, moodFxOf, MoodFxSlots, PANIC_AURA, RAIN_CLOUD, SAD_AURA, surfaceHeight, zzzOn, type AuraValues, type SparkleValues } from './motionFx';
+import { cheerLinesOn, cloudHeight, convexHull, EFFECT_ONLY_STEPS, EUPHORIA_SPARKLE, fxFollowLift, fxWantOf, HAPPY_SPARKLE, jitterOn, moodFxOf, MoodFxSlots, PANIC_AURA, RAIN_CLOUD, SAD_AURA, surfaceHeight, zzzOn, type AuraValues, type SparkleValues } from './motionFx';
 
 // 거실모션 H-6 — 먹구름 · 저릿저릿 · trembling. 그리기(three)는 화면에서 보고, 언제 켜는지 · 높이 계산만 여기서
 
@@ -161,6 +161,12 @@ describe('감정 이펙트 칸(FX-3)', () => {
     fx.clear();
     expect(fx.any).toBe(false);
     expect(log.filter((l) => l.startsWith('만듦')).length).toBe(log.filter((l) => l.startsWith('버림')).length);
+  });
+
+  it('기준점 높이 — 골반이 서 있을 때보다 올라간 만큼만(점프), 내려간 건(쪼그림 · 누움) 0', () => {
+    expect(fxFollowLift(2.2, 1.0)).toBeCloseTo(1.2, 6);
+    expect(fxFollowLift(0.6, 1.0)).toBe(0);
+    expect(fxFollowLift(1.0, 1.0)).toBe(0);
   });
 
   it('응원 선은 cheer_up 80프레임 전엔 없다(가짜 시계) — 80프레임부터 · 반복 중에도', () => {

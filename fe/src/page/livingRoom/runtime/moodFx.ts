@@ -748,7 +748,7 @@ interface Spark {
   t: number;
   born: boolean;
   x: number;
-  /** 발밑 위 높이(칸) */
+  /** 나타난 자리 높이(장면 좌표) — 나온 별은 그 자리에 남는다(기준점이 움직이면 꼬리처럼) */
   y: number;
   z: number;
   rot: number;
@@ -793,7 +793,7 @@ export class Sparkle {
     const r = A.radius * (0.45 + 0.55 * Math.sqrt(Math.random()));
     p.x = feet.x + Math.cos(a) * r;
     p.z = feet.z + Math.sin(a) * r * 0.8;
-    p.y = A.bottom + Math.random() * Math.max(0.05, A.top - A.bottom);
+    p.y = feet.y + (A.bottom + Math.random() * Math.max(0.05, A.top - A.bottom)) * this.hs;
     p.rot = Math.random() * Math.PI * 2;
     p.dl = 0.7 + Math.random() * 0.6;
     p.sz = 0.65 + Math.random() * 0.6;
@@ -816,7 +816,7 @@ export class Sparkle {
       }
       const tw = Math.pow(Math.sin(Math.PI * p.t), 1.6); // 커졌다 작아짐 = 반짝
       const sz = (p.star ? A.size : A.size * 0.28) * p.sz * tw;
-      p.s.position.set(p.x, feet.y + (p.y + A.rise * p.t) * this.hs, p.z);
+      p.s.position.set(p.x, p.y + A.rise * p.t * this.hs, p.z);
       p.g.position.copy(p.s.position);
       p.s.scale.set(sz, sz, 1);
       p.s.material.rotation = p.rot + A.spin * p.t;

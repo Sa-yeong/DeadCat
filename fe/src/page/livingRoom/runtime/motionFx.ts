@@ -260,6 +260,16 @@ export type AuraValues = typeof SAD_AURA;
 export type SparkleValues = typeof HAPPY_SPARKLE;
 /** 켜고 끌 때 서서히 바뀌는 시간(초) — 랩 lvl */
 export const FX_FADE = 0.4;
+/**
+ * 오오라 · 반짝이 기준점이 실제 몸(골반 뼈)을 늦게 따라가는 시간(초) — 먹구름 RAIN_CLOUD.lag 와 같은 값(도휘 11-26: 모션이 몸을 옮겨도 따라가게).
+ * 가로 = 골반 뼈, 높이 = 앵커(바닥 · 소파) + fxFollowLift
+ */
+export const FX_FOLLOW_LAG = 0.09;
+
+/** 기준점을 앵커 위로 올릴 높이(칸) — 골반이 서 있을 때(rest)보다 올라간 만큼만(박살 점프). 쪼그리거나 누워서 내려간 건 0 */
+export function fxFollowLift(hipsY: number, hipsRestY: number): number {
+  return Math.max(0, hipsY - hipsRestY);
+}
 
 export interface MoodFx {
   /** 우울 = 먹구름(늘, 비는 모션 중) */

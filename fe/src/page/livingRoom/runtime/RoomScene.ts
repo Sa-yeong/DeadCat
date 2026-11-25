@@ -22,7 +22,7 @@ import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '
 import { fetchFile, firstFile, isStored } from '../../../shared/three/fileStore';
 import { versioned } from '../../../shared/assetVersion';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
-import { BUMP, bumpAt, faceTargetOf, furnitureAxes, fxWantOf, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, MoodFxSlots, surfaceHeight, type MotionClock } from './motionFx';
+import { BUMP, bumpAt, faceTargetOf, furnitureAxes, FX_FOLLOW_LAG, fxFollowLift, fxWantOf, JITTER_FALLBACK_COLOR, jitterOn, LOOP_RANGE, loopRangeFix, moodFxOf, MoodFxSlots, surfaceHeight, type MotionClock } from './motionFx';
 import { Aura, CheerLines, hairColorOf, Jitter, MoodAssets, RainCloud, SleepyZzz, Sparkle, type FxBasis } from './moodFx';
 import { DustBursts } from './dustFx';
 
@@ -338,6 +338,9 @@ interface CharNode {
   jitter: Jitter | null;
   /** 슬픔 · 급락 광기 오오라 · 기쁨 · 유포리아 반짝이 · 응원 선 · zzz(감정 이펙트 FX-3) */
   fx: MoodFxSlots<Aura, Sparkle, CheerLines, SleepyZzz>;
+  /** 오오라 · 반짝이 기준점(장면 좌표, 늦게 따라감) · 서 있을 때 골반 높이(몸 자리 figure 기준 칸, 모델을 세울 때 잼) */
+  fxAt: THREE.Vector3 | null;
+  hipsRest: number | null;
   /** trembling 동안 감정과 상관없이 저릿저릿(setJitterForce) */
   jitterForce: boolean;
   /** 이펙트를 잰 모델 — 갈아 끼우면 머리 높이 · 머리색을 다시 잰다 */
@@ -1125,7 +1128,7 @@ export class RoomScene implements RoomRenderer {
       id: charId, whenReady, setReady, def, pos, look: DEFAULT_LOOK, modelUrl: null, swapNeeded: false, swapping: false, basePose: null, group, figure, body, head, shadow, ring, hull, materials: mats,
       holder, vrm: null, mixer: null, actions: {}, defaultActions: {}, poseActions: new Map(), poseToken: 0, pose: 'rest', movedAt: 0, engine: null, engineToken: 0, engineActions: new Map(), faceTarget: {}, faceLevels: new Map(), swing: new Swing(), rims: [], heading: FACE_CAMERA, yaw: FACE_CAMERA,
       selected: false, lifted: false, hidden: false, outlined: false, seatLift: 0, seatNow: 0, seatRate: 0, groundSamples: null, groundWant: 0, groundForce: false,
-      emotion: null, cloud: null, jitter: null, fx: new MoodFxSlots(this.fxMakers), jitterForce: false, fxVrm: null, headUp: 0, hair: null,
+      emotion: null, cloud: null, jitter: null, fx: new MoodFxSlots(this.fxMakers), fxAt: null, hipsRest: null, jitterForce: false, fxVrm: null, headUp: 0, hair: null,
     };
     this.chars.set(charId, c);
     this.drawChar(c);
@@ -1327,6 +1330,11 @@ export class RoomScene implements RoomRenderer {
     c.holder.position.y = -fit.footY * fit.scale;
     c.holder.add(vrm.scene);
     c.vrm = vrm;
+    // 서 있을 때 골반 높이 — 오오라 · 반짝이가 점프(박살)를 따라 올라갈 기준
+    const hips = vrm.humanoid.getRawBoneNode('hips');
+    c.holder.updateWorldMatrix(true, true);
+    c.hipsRest = hips ? c.figure.worldToLocal(hips.getWorldPosition(new THREE.Vector3())).y : null;
+    c.fxAt = null;
     c.groundSamples = null; // 모델이 바뀌었다 — 바닥 붙이기에 볼 꼭짓점을 다시 고른다
     c.body.visible = false;
     c.head.visible = false;
@@ -1572,6 +1580,7 @@ export class RoomScene implements RoomRenderer {
     c.cloud = null;
     c.jitter = null;
     c.fx.clear();
+    c.fxAt = null;
   }
 
   /** 이번 프레임에 원하는 오오라 · 반짝이 · 응원 선 · zzz — 응원 선 · zzz 는 지금 실제로 트는 엔진 모션(과 그 재생 시간)을 본다 */
@@ -1615,18 +1624,36 @@ export class RoomScene implements RoomRenderer {
    * 오오라 · 반짝이(발밑 기준, 감정 내내) · 응원 선(머리 뼈 바로 위) · zzz(머리가 향한 위쪽 정수리) — 감정 이펙트 FX-3.
    * 정수리 = 머리 뼈 + 머리 뼈 → 정수리(headUp) × 0.9(랩 headTop 과 같게). 숨겨진 캐릭터(배치 모드)는 그리지 않는다
    */
+  /**
+   * 오오라 · 반짝이 기준점(장면 좌표) — 가로는 골반 뼈(모션이 몸을 옮겨도 따라감), 높이는 앵커(바닥 · 소파 = figure) + 골반이 서 있을 때보다
+   * 올라간 만큼(박살 점프). 골반의 좌우 흔들림에 떨지 않게 먹구름처럼 FX_FOLLOW_LAG 초 늦게 따라간다(도휘 11-26)
+   */
+  private fxAnchor(c: CharNode, vrm: VRM, dt: number): THREE.Vector3 {
+    const want = c.figure.getWorldPosition(new THREE.Vector3());
+    const hips = vrm.humanoid.getRawBoneNode('hips');
+    if (hips && c.hipsRest !== null) {
+      const hw = hips.getWorldPosition(new THREE.Vector3());
+      const lift = fxFollowLift(c.figure.worldToLocal(hw.clone()).y, c.hipsRest);
+      want.set(hw.x, want.y + lift * H_STRETCH, hw.z);
+    }
+    if (!c.fxAt) c.fxAt = want;
+    else c.fxAt.lerp(want, 1 - Math.exp(-dt / Math.max(0.01, FX_FOLLOW_LAG)));
+    return c.fxAt.clone();
+  }
+
   private updateFx(c: CharNode, vrm: VRM, want: ReturnType<typeof fxWantOf>, dt: number): void {
     const fx = c.fx;
     fx.step(want);
     const parts = [fx.aura, fx.sparkle, fx.cheer, fx.zzz];
     if (c.hidden) {
       for (const p of parts) p?.setVisible(false);
+      c.fxAt = null;
       return;
     }
     for (const p of parts) p?.setVisible(true);
     const hs = H_STRETCH;
     const cam = this.fxBasis;
-    const feet = c.figure.getWorldPosition(new THREE.Vector3());
+    const feet = fx.aura || fx.sparkle ? this.fxAnchor(c, vrm, dt) : new THREE.Vector3();
     fx.aura?.update(dt, true, feet, cam);
     fx.sparkle?.update(dt, true, feet);
     if (!fx.cheer && !fx.zzz) return;
