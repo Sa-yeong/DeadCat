@@ -18,7 +18,7 @@ import { LivingRoomEngine, type EmotionFeed } from '../engine/Engine';
 import type { Emotion } from '../engine/type/type';
 import type { Pt } from './projection';
 import type { PlacementDto, RoomCharacterDto } from '../types';
-import { MOTION_SPOTS, PAIR_SPOTS, pairSpotOf, spotOf, turnDir } from './motionFx';
+import { MOTION_SPOTS, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf, turnDir } from './motionFx';
 
 // 거실 런타임 S4 — 감정 스트림 읽기(2-1 · 2-2)와 엔진 명령 단계 처리(1-1 · 1-2). 브라우저 없이 확인할 수 있는 것만
 
@@ -935,6 +935,18 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
       const base2 = { x: 11, y: 10 };
       near(t.at.get('1')!, pairSpotOf(base1, base2, PAIR_SPOTS.console)!.at);
       near(t.at.get('2')!, pairSpotOf(base2, base1, PAIR_SPOTS.crying)!.at);
+    });
+
+    it('광기 밀치기(P-2) — wake_up 쪽이 상대 앞 1.5칸으로 옮겨 서고, 넘어지는 쪽(fall_down)은 그대로 · 보정 없음', () => {
+      expect(PAIR_GAP.wake_up).toBe(1.5);
+      expect(PAIR_SPOTS.wake_up).toBeUndefined();
+      expect(PAIR_SPOTS.fall_down).toBeUndefined();
+      const t = room([], ['euphoria', 'sleepy']);
+      t.drop('1', { x: 10, y: 10 });
+      t.drop('2', { x: 11, y: 10 });
+      t.loop.labPlay('1', ['wake_up'], { id: '2', names: ['fall_down'] });
+      near(t.at.get('1')!, { x: 9.5, y: 10 }); // 2 에서 1.5칸, 1 이 있던 쪽
+      expect(t.at.get('2')).toEqual({ x: 11, y: 10 });
     });
 
     it('둘 다 PAIR_GAP 모션이면(불안 × 위로) 먼저 받은 쪽만 옮겨 선다', () => {

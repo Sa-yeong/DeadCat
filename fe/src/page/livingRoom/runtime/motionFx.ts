@@ -195,7 +195,8 @@ export function loopRangeFix(range: readonly [number, number], prevT: number | u
  * 둘 다 키가 있으면 먼저 받은 쪽만 옮겨 선다
  */
 // 랩은 모든 만남을 발 사이 1.5칸으로 두고 아래 보정으로 맞췄다(11-24) — 새로 만든 만남 모션은 1.5, 놀리기는 그대로
-export const PAIR_GAP: Record<string, number> = { tease_find: 2.5, console: 1.5, cheer_up: 1.5, anxious: 1.5 };
+// wake_up(광기 밀치기 P-2, 11-26) — 1.5 는 랩 처음 값, 도휘가 화면 보고 고칠 값. 밀친 뒤 pass_by 는 새 목적지로 걷는다(옮겨 서면 걷던 길을 지우므로 — 도휘 11-26 ① 확정)
+export const PAIR_GAP: Record<string, number> = { tease_find: 2.5, console: 1.5, cheer_up: 1.5, anxious: 1.5, wake_up: 1.5 };
 // along = 상대 쪽(바라보는 방향) + · side = 몸 기준 +X + · turn = 도 · lift = 위 + (칸). 없는 모션 = 0
 export const PAIR_SPOTS: Record<string, Spot> = {
   console: { along: 0.415, side: -1.135, lift: 0, turn: -5 },
