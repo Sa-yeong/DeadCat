@@ -24,9 +24,9 @@
   "desk_idle":            { "kind": "clip", "clip": "desk_idle", "loop": true },
   "desk_crying":          { "kind": "clip", "clip": "desk_crying", "loop": true },
 
-  "wake_up":              { "kind": "clip", "clip": null },
+  "wake_up":              { "kind": "clip", "clip": "wake_up" },
   "surprise":             { "kind": "clip", "clip": "surprise" },
-  "fall_down":            { "kind": "clip", "clip": null },
+  "fall_down":            { "kind": "clip", "clip": "fall_down", "holdEndMs": 1500 },
   "jumping":              { "kind": "clip", "clip": "jumping" },
   "breaking_desk":        { "kind": "clip", "clip": "breaking_desk" },
   "breaking_sofa":        { "kind": "clip", "clip": "breaking_sofa" },

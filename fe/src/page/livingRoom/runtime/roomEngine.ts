@@ -50,6 +50,12 @@ export class MotionTable {
     return d?.kind === 'behavior' ? d.behavior : null;
   }
 
+  /** 끝난 뒤 마지막 자세로 더 있는 시간(ms) — motions.json holdEndMs(fall_down 1.5초 멍). 없으면 0 */
+  holdEndMsOf(name: string): number {
+    const d = this.defs.get(name);
+    return d?.kind === 'clip' ? (d.holdEndMs ?? 0) : 0;
+  }
+
   /** 반복 모션인가 — 모션 실험(?lab)이 엔진 없이 단계를 만들 때 */
   loopOf(name: string): boolean {
     const d = this.defs.get(name);

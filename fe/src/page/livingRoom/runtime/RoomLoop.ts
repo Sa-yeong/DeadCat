@@ -15,7 +15,7 @@ import type { DropTarget, RoomRenderer } from './RoomRenderer';
 import { ROOM_RULES, type MotionTable } from './roomEngine';
 import { Perception, type Obstacle } from '../engine/perception';
 import type { RoomDemo } from './roomDemo';
-import { BREAK_FX, BreakRun, EFFECT_ONLY_STEPS, furnitureAxes, MOTION_SPOTS, NO_SPOT, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf } from './motionFx';
+import { BREAK_FX, BreakRun, EFFECT_ONLY_STEPS, EndHold, furnitureAxes, MOTION_SPOTS, NO_SPOT, PAIR_GAP, PAIR_SPOTS, pairSpotOf, spotOf } from './motionFx';
 
 /**
  * 슬롯머신 앞 자리(2026-11-14 도휘 — Cascadeur 에서 모션을 만들 때 둔 거리 0.41m 를 칸으로 옮긴 값).
@@ -193,6 +193,8 @@ export class RoomLoop {
   private readonly pairLifted = new Set<string>();
   /** 「이펙트만」 단계(trembling, H-6) — 캐릭터 → 그 명령 · 남은 초. 그동안 평소 대기 자세 + 저릿저릿 */
   private readonly effectSteps = new Map<string, { run: ActRun; left: number }>();
+  /** 끝난 뒤 마지막 자세로 더 있는 단계(motions.json holdEndMs — fall_down 1.5초 멍) — 캐릭터 → 그 명령 · 시계 */
+  private readonly endHolds = new Map<string, { run: ActRun; fx: EndHold }>();
   /** 끌어다 놓은 슬롯머신 앞에서 뜸을 들이는 캐릭터 */
   private readonly slotWaits = new Map<string, SlotWait>();
   /** 진행 중인 박살(G-2) — 터진 뒤엔 캐릭터가 다른 일을 해도 가구는 사라진다 */
@@ -443,6 +445,7 @@ export class RoomLoop {
     if (this.mode === 'PLACEMENT') return; // 숨어 있는 동안은 멈춰 있는다 — 걷지도, 마주치지도 않는다
     this.stepBreaks(dt);
     this.stepEffects(dt);
+    this.stepEndHolds(dt);
     for (const h of this.handles.values()) {
       if (h.held || h.lifted || h.charging || h.awaiting) continue;
       const sw = this.slotWaits.get(h.id);
@@ -710,8 +713,16 @@ export class RoomLoop {
       }
       // 박살 모션은 끝나도 마지막 자세로 멈춰 기다린다 — 먼지가 가장 짙을 때 stepBreaks 가 끝낸다. 그 전에 온 끝 신호 = 파일 없음
       const brk = this.startBreak(h, run, step.name, clip);
-      const finish = brk ? () => brk.missing() : () => this.nextStep(h, run);
-      this.renderer.play(h.id, [{ clip, loop, name: step.name, ...(brk ? { hold: true } : {}) }], finish);
+      // 끝난 뒤 마지막 자세로 더 있는 모션(fall_down 1.5초 멍)도 같은 자리(hold) — 시계가 끝에 닿고 holdEndMs 뒤 stepEndHolds 가 끝낸다. 그 전에 온 끝 신호 = 파일 없음 → 바로 다음
+      const holdS = !brk && !loop && clip !== null && this.renderer.motionClock ? this.motions.holdEndMsOf(step.name) / 1000 : 0;
+      if (holdS > 0) this.endHolds.set(h.id, { run, fx: new EndHold(holdS) });
+      const finish = brk
+        ? () => brk.missing()
+        : () => {
+            if (this.endHolds.get(h.id)?.run === run) this.endHolds.delete(h.id);
+            this.nextStep(h, run);
+          };
+      this.renderer.play(h.id, [{ clip, loop, name: step.name, ...(brk || holdS > 0 ? { hold: true } : {}) }], finish);
       return;
     }
     h.acting = false;
@@ -1183,6 +1194,24 @@ export class RoomLoop {
       if (e.left > 0) continue;
       this.effectSteps.delete(id);
       this.renderer.setJitterForce?.(id, false);
+      this.nextStep(h, e.run);
+    }
+  }
+
+  /**
+   * 끝난 뒤 멍(holdEndMs, fall_down) 시계 — 모션이 끝에 닿고 정해진 초가 지나면 붙잡던 마지막 자세를 내려놓고 다음 단계로.
+   * 그 전에 다른 명령 · 들기 · 감정 변화로 명령이 바뀌면 그냥 버린다(렌더러는 이미 새 명령 · cancel 을 받았다)
+   */
+  private stepEndHolds(dt: number): void {
+    for (const [id, e] of [...this.endHolds]) {
+      const h = this.handles.get(id);
+      if (!h || h.run !== e.run) {
+        this.endHolds.delete(id);
+        continue;
+      }
+      if (!e.fx.step(dt, this.renderer.motionClock?.(id) ?? null)) continue;
+      this.endHolds.delete(id);
+      this.renderer.cancel(id);
       this.nextStep(h, e.run);
     }
   }

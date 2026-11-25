@@ -13,4 +13,11 @@ describe('모션 파일 (H-1)', () => {
     expect(existsSync(DIR)).toBe(true);
     expect(clips.filter((c) => !have.has(c))).toEqual([]);
   });
+
+  it('광기 밀치기(P-1) — wake_up · fall_down 도 대조에 들어간다', () => {
+    const clips = Object.values(motions as Record<string, { clip?: string | null }>).map((m) => m.clip);
+    expect(clips).toEqual(expect.arrayContaining(['wake_up', 'fall_down']));
+    expect(existsSync(`${DIR}wake_up.vrma`)).toBe(true);
+    expect(existsSync(`${DIR}fall_down.vrma`)).toBe(true);
+  });
 });

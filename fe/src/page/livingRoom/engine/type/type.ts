@@ -28,7 +28,8 @@ export type FurnitureRule = {
 }
 
 export type Anchor = { id: string; offset: number[]; facing: number}
-export type MotionDef = { kind: 'clip'; clip: string |  null; loop?: boolean}
+// holdEndMs: 한 번 트는 모션이 끝난 뒤 마지막 자세로 이만큼(ms) 더 있다가 끝으로 친다 (fall_down 1.5초 멍 — 광기 밀치기 P-1)
+export type MotionDef = { kind: 'clip'; clip: string |  null; loop?: boolean; holdEndMs?: number}
     | {kind: 'behavior'; behavior: string}
 export type FurnitureDef = {category: string; interactionRadius: number; anchors: Anchor[]}
 export type EventDef = {reaction: string; emotionTo: Emotion}

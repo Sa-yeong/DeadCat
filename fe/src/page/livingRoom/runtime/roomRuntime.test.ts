@@ -244,13 +244,13 @@ describe('엔진 명령 처리 (RoomLoop.onCommand)', () => {
   it('clip · behavior(keep_walking) · clip 을 차례로 — 마지막 단계가 끝나면 그 이름으로 motionFinished', async () => {
     const t = setup();
     t.send({ type: 'play', characterId: '1', steps: [
-      { name: 'wake_up', kind: 'clip', loop: false },
+      { name: 'console_together', kind: 'clip', loop: false },
       { name: 'pass_by', kind: 'behavior', loop: false },
       { name: 'surprise', kind: 'clip', loop: false },
     ] });
     expect(t.plays).toHaveLength(1);
-    expect(t.plays[0].steps).toEqual([{ clip: null, loop: false, name: 'wake_up' }]); // motions.json 의 clip 이 비어 있음 → null · 이름은 모션별 연출용(G-2)
-    expect(t.loop.debugLabels().find((l) => l.id === '1')?.motion?.name).toBe('wake_up');
+    expect(t.plays[0].steps).toEqual([{ clip: null, loop: false, name: 'console_together' }]); // motions.json 의 clip 이 비어 있음 → null · 이름은 모션별 연출용(G-2)
+    expect(t.loop.debugLabels().find((l) => l.id === '1')?.motion?.name).toBe('console_together');
     t.plays[0].finish();
     expect(t.calls).toContain('cancel 1'); // behavior 단계 — 제자리 모션을 내려놓고 걷게
     await flush();

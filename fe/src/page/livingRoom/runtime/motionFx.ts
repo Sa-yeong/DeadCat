@@ -240,6 +240,31 @@ export const JITTER_FALLBACK_COLOR = '#9afe86';
  */
 export const EFFECT_ONLY_STEPS: Record<string, number> = { trembling: 2 };
 
+/**
+ * 끝난 뒤 마지막 자세로 더 있다가 끝으로 치는 모션(motions.json holdEndMs — fall_down 1.5초 멍, 광기 밀치기 P-1).
+ * 박살(G-2)과 같은 자리를 쓴다 — 렌더러는 hold 로 마지막 자세에 멈춰 있고, 모션 시계가 끝에 닿은 뒤 holdS 초가 지나면 끝(RoomLoop 이 cancel · 다음 단계).
+ * 파일을 받는 동안(시계 없음)은 세지 않는다
+ */
+export class EndHold {
+  private left: number;
+  private ended = false;
+
+  constructor(holdS: number) {
+    this.left = holdS;
+  }
+
+  /** dt 초 흘린다 — 다 기다렸으면 true */
+  step(dt: number, clock: MotionClock | null): boolean {
+    if (!this.ended) {
+      if (!clock || clock.time < clock.duration - 1e-3) return false;
+      this.ended = true; // 끝에 닿은 이 프레임부터 센다
+      return this.left <= 0;
+    }
+    this.left -= dt;
+    return this.left <= 1e-9;
+  }
+}
+
 /* ── 이펙트: 오오라 · 반짝이 · 응원 선 · zzz(감정 이펙트 FX-1) ──────────── */
 
 // 감정 이펙트 랩에서 고른 값 (2026-11-26 02:38, 도휘). 길이 단위 = 칸(캐릭터 키 2.5칸). 각도 = 도(°), 시간 = 초
