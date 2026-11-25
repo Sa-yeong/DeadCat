@@ -240,9 +240,62 @@ export const JITTER_FALLBACK_COLOR = '#9afe86';
  */
 export const EFFECT_ONLY_STEPS: Record<string, number> = { trembling: 2 };
 
-/** 감정별 이펙트 — 우울 = 먹구름(늘, 비는 모션 중) · 불안 = 저릿저릿(모션 중만). tired 등 그 밖은 없음 */
-export function moodFxOf(emotion: string | null | undefined): { cloud: boolean; jitter: boolean } {
-  return { cloud: emotion === 'depress', jitter: emotion === 'anxious' };
+/* ── 이펙트: 오오라 · 반짝이 · 응원 선 · zzz(감정 이펙트 FX-1) ──────────── */
+
+// 감정 이펙트 랩에서 고른 값 (2026-11-26 02:38, 도휘). 길이 단위 = 칸(캐릭터 키 2.5칸). 각도 = 도(°), 시간 = 초
+// SAD_AURA: sad 상태 내내 · 캐릭터 뒤(+ 앞에 얇게) 세운 판 + 올라가는 연기. 판 가운데 = 발밑 + 키 절반 + lift
+export const SAD_AURA = { core: '#140c26', edge: '#6a58a8', opacity: 0.71, width: 2.45, height: 3.1, lift: 0, noise: 0.35, speed: 0.6, soft: 0.45, front: 0.12, wisps: 10, wispSize: 0.58, wispSpeed: 0.55 };
+// HAPPY_SPARKLE: happy 상태 내내 · 캐릭터 둘레(radius) · 높이 bottom~top 에서 별이 커졌다 작아짐
+export const HAPPY_SPARKLE = { color: '#ffffff', glow: '#fff6c8', count: 4, size: 0.39, radius: 0.95, bottom: 0.4, top: 2.84, life: 1.1, rise: 0.28, spin: 0.6, glowAmt: 0.34, dots: 2 };
+// PANIC_AURA: panic(급락 광기) 상태 내내 · SAD_AURA 와 같은 모양, 값만 다름(가장자리 붉은 기)
+export const PANIC_AURA = { core: '#140c26', edge: '#a75868', opacity: 0.71, width: 2.45, height: 3.1, lift: 0, noise: 0.35, speed: 0.6, soft: 0.45, front: 0.12, wisps: 10, wispSize: 0.58, wispSpeed: 0.55 };
+// EUPHORIA_SPARKLE: euphoria 상태 내내 · HAPPY_SPARKLE 와 같은 모양, 값만 다름(금빛 · 더 크고 빠르게 반짝)
+export const EUPHORIA_SPARKLE = { color: '#ffd22e', glow: '#f3c9cf', count: 4, size: 0.65, radius: 0.95, bottom: 0.4, top: 2.84, life: 0.3, rise: 0.38, spin: 0.6, glowAmt: 0.32, dots: 2 };
+// CHEER_LINES: cheer_up 재생 뒤 startFrame 프레임(30fps)부터 모션 끝까지 · 응원하는 쪽 · 머리 위(정수리 + offX/offY, 화면 기준) 부채꼴 선. angle 90 = 화면 위
+export const CHEER_LINES = { color: '#ffe03a', outline: '#000000', outlineW: 0, count: 3, thick: 0.098, len: 0.34, dist: 0.41, angle: 46, spread: 58, offX: 0.12, offY: -0.18, beat: 1.5, pulse: 0.25, popIn: 0.6, startFrame: 80 };
+// SLEEPY_ZZZ: sleepy 상태 내내 + sleep 모션 중(감정 무관) · 정수리(+offX/offY)에서 every 초마다 하나씩 나와 화면 기준 위(rise) · 옆(drift)으로
+export const SLEEPY_ZZZ = { color: '#ffffff', outline: '#3a3f6e', outlineW: 0.18, letter: 'Z', size: 0.3, grow: 1.6, every: 0.9, life: 2.6, rise: 0.9, drift: 0.55, sway: 0.08, tilt: 12, offX: 0.18, offY: 0.05 };
+
+export type AuraValues = typeof SAD_AURA;
+export type SparkleValues = typeof HAPPY_SPARKLE;
+/** 켜고 끌 때 서서히 바뀌는 시간(초) — 랩 lvl */
+export const FX_FADE = 0.4;
+
+export interface MoodFx {
+  /** 우울 = 먹구름(늘, 비는 모션 중) */
+  cloud: boolean;
+  /** 불안 = 저릿저릿(모션 중만) */
+  jitter: boolean;
+  /** sad → SAD_AURA · panic → PANIC_AURA — 감정이 그 동안 내내 */
+  aura: AuraValues | null;
+  /** happy → HAPPY_SPARKLE · euphoria → EUPHORIA_SPARKLE — 감정이 그 동안 내내 */
+  sparkle: SparkleValues | null;
+  /** sleepy 내내(sleep 모션 쪽은 zzzOn) */
+  zzz: boolean;
+}
+
+/** 감정별 이펙트 — tired 등 그 밖은 없음 */
+export function moodFxOf(emotion: string | null | undefined): MoodFx {
+  return {
+    cloud: emotion === 'depress',
+    jitter: emotion === 'anxious',
+    aura: emotion === 'sad' ? SAD_AURA : emotion === 'panic' ? PANIC_AURA : null,
+    sparkle: emotion === 'happy' ? HAPPY_SPARKLE : emotion === 'euphoria' ? EUPHORIA_SPARKLE : null,
+    zzz: emotion === 'sleepy',
+  };
+}
+
+/**
+ * 응원 선을 그리나 — cheer_up 재생 뒤 startFrame(80) 프레임부터(그 전은 다가가는 준비 동작). motionTime = 지금 트는 엔진 모션의 재생 시간(motionClock.time).
+ * cheer_up 은 80~160 구간 반복이라 한 번 넘으면 다시 아래로 안 내려감 → 반복 중에도 켜짐. 감정과 상관없음
+ */
+export function cheerLinesOn(motionName: string | null | undefined, motionTime: number | null | undefined): boolean {
+  return motionName === 'cheer_up' && motionTime != null && motionTime >= (CHEER_LINES.startFrame - 1) / FPS;
+}
+
+/** zzz 를 그리나 — sleepy 내내 + sleep 모션 중(감정 무관). motionName = 지금 실제로 트는 엔진 모션(playingMotion) */
+export function zzzOn(emotion: string | null | undefined, motionName: string | null | undefined): boolean {
+  return emotion === 'sleepy' || motionName === 'sleep';
 }
 
 /** 지금 저릿저릿을 그리나 — 불안이고 엔진 모션 재생 중, 또는 trembling 같은 「이펙트만」 단계 중(감정 무관) */

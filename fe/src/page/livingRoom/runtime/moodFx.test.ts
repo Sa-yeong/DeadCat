@@ -7,15 +7,15 @@ import type { MotionStep, RoomRenderer } from './RoomRenderer';
 import { characterDef } from '../catalog';
 import { FURNITURE_CATALOG } from '../furnitureCatalog';
 import type { RoomCharacterDto } from '../types';
-import { cloudHeight, convexHull, EFFECT_ONLY_STEPS, jitterOn, moodFxOf, RAIN_CLOUD, surfaceHeight } from './motionFx';
+import { cheerLinesOn, cloudHeight, convexHull, EFFECT_ONLY_STEPS, EUPHORIA_SPARKLE, HAPPY_SPARKLE, jitterOn, moodFxOf, PANIC_AURA, RAIN_CLOUD, SAD_AURA, surfaceHeight, zzzOn } from './motionFx';
 
 // 거실모션 H-6 — 먹구름 · 저릿저릿 · trembling. 그리기(three)는 화면에서 보고, 언제 켜는지 · 높이 계산만 여기서
 
 describe('감정별 이펙트', () => {
   it('우울 = 먹구름 · 불안 = 저릿저릿 · 지침(tired) 등 그 밖은 없음', () => {
-    expect(moodFxOf('depress')).toEqual({ cloud: true, jitter: false });
-    expect(moodFxOf('anxious')).toEqual({ cloud: false, jitter: true });
-    for (const e of ['tired', 'happy', 'sad', 'sleepy', 'euphoria', 'panic', null]) expect(moodFxOf(e)).toEqual({ cloud: false, jitter: false });
+    expect(moodFxOf('depress')).toMatchObject({ cloud: true, jitter: false });
+    expect(moodFxOf('anxious')).toMatchObject({ cloud: false, jitter: true });
+    for (const e of ['tired', 'happy', 'sad', 'sleepy', 'euphoria', 'panic', null]) expect(moodFxOf(e)).toMatchObject({ cloud: false, jitter: false });
   });
 
   it('저릿저릿은 불안이고 엔진 모션 중일 때만 — trembling(강제)은 감정과 상관없이', () => {
@@ -49,6 +49,50 @@ describe('감정별 이펙트', () => {
   it('crying_together 는 crying 파일 — 둘 다 우울이라 둘 다 먹구름 · 비(결정 7)', () => {
     expect(ROOM_MOTIONS.clipOf('crying_together')).toBe('crying');
     expect(moodFxOf('depress').cloud).toBe(true);
+  });
+});
+
+/* ── 감정 이펙트 FX-1 — 오오라 · 반짝이 · zzz · 응원 선 켜짐 ─────────── */
+
+describe('감정 이펙트 켜짐(FX-1)', () => {
+  it('sad = 슬픔 오오라 · panic = 급락 광기 오오라(값이 다름)', () => {
+    expect(moodFxOf('sad').aura).toBe(SAD_AURA);
+    expect(moodFxOf('panic').aura).toBe(PANIC_AURA);
+    expect(SAD_AURA.edge).not.toBe(PANIC_AURA.edge);
+    expect(moodFxOf('sad')).toMatchObject({ sparkle: null, zzz: false, cloud: false, jitter: false });
+  });
+
+  it('happy = 흰 반짝이 · euphoria = 금빛 반짝이(값이 다름)', () => {
+    expect(moodFxOf('happy').sparkle).toBe(HAPPY_SPARKLE);
+    expect(moodFxOf('euphoria').sparkle).toBe(EUPHORIA_SPARKLE);
+    expect(HAPPY_SPARKLE.color).not.toBe(EUPHORIA_SPARKLE.color);
+    expect(moodFxOf('happy')).toMatchObject({ aura: null, zzz: false });
+  });
+
+  it('sleepy = zzz · 그 밖 감정은 새 이펙트 없음 · 우울 / 불안은 그대로', () => {
+    expect(moodFxOf('sleepy')).toEqual({ cloud: false, jitter: false, aura: null, sparkle: null, zzz: true });
+    for (const e of ['tired', 'depress', 'anxious', 'none', null, undefined]) expect(moodFxOf(e)).toMatchObject({ aura: null, sparkle: null, zzz: false });
+    expect(moodFxOf('depress')).toEqual({ cloud: true, jitter: false, aura: null, sparkle: null, zzz: false });
+    expect(moodFxOf('anxious')).toEqual({ cloud: false, jitter: true, aura: null, sparkle: null, zzz: false });
+  });
+
+  it('zzzOn — sleepy 아닌데 sleep 모션이면 켜짐 · sleepy 가 걸어도 켜짐 · 그 밖 꺼짐', () => {
+    expect(zzzOn('happy', 'sleep')).toBe(true);
+    expect(zzzOn(null, 'sleep')).toBe(true);
+    expect(zzzOn('sleepy', null)).toBe(true); // 걷기 · 대기 = 엔진 모션 없음
+    expect(zzzOn('sleepy', 'cheer_up')).toBe(true);
+    expect(zzzOn('happy', null)).toBe(false);
+    expect(zzzOn('tired', 'tired')).toBe(false);
+  });
+
+  it('cheerLinesOn — 79프레임 꺼짐 · 80프레임 켜짐 · 반복 구간 켜짐 · 다른 모션 꺼짐', () => {
+    expect(cheerLinesOn('cheer_up', 78 / 30)).toBe(false); // 79프레임
+    expect(cheerLinesOn('cheer_up', 79 / 30)).toBe(true); // 80프레임
+    expect(cheerLinesOn('cheer_up', 150 / 30)).toBe(true); // 80~160 반복 중
+    expect(cheerLinesOn('cheer_up', 0)).toBe(false);
+    expect(cheerLinesOn('cheer_up', null)).toBe(false); // 파일 받는 중
+    expect(cheerLinesOn('tired', 100 / 30)).toBe(false);
+    expect(cheerLinesOn(null, 100 / 30)).toBe(false);
   });
 });
 
