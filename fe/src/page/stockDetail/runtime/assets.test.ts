@@ -24,6 +24,7 @@ describe('characterOf — 종목 코드 → 캐릭터', () => {
     expect(c.motions.annoying).toEqual({
       ...MOTIONS.annoying,
       face: [{ expr: 'happy', value: 1 }],
+      end: 3.5, // 11.7초 데모용 V — V 완성 뒤 2초에서 끊는다
       url: `${BASE}characters/stocks/NVDA/motions/annoying.vrma`,
     });
     expect(c.motions.annoying?.loop).toBe(false); // 한 번 재생

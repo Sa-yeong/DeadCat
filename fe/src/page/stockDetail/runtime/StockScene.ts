@@ -472,6 +472,8 @@ export class StockScene {
         const anim = (g.userData.vrmAnimations as VRMAnimation[] | undefined)?.[0];
         if (!anim || !this.vrm) return null;
         const clip = createVRMAnimationClip(anim, this.vrm);
+        // end — 파일은 그대로 두고 그 시각에서 끝난 것으로(LoopOnce 가 clip.duration 에서 finished)
+        if (def.end !== undefined && def.end < clip.duration) clip.duration = def.end;
         this.clips.set(name, clip);
         return clip;
       })

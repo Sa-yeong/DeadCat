@@ -40,7 +40,8 @@ export const STOCK_CHARACTERS: Record<string, CharacterSpec> = {
     dir: 'characters/stocks/NVDA/',
     overrides: {
       // 연타 반응 = 한 손 V(pingerV.vrma, 도휘 제작) + happy(윙크가 든 표정) 1. 나머지 설정은 공용 annoying 그대로
-      annoying: { ...MOTIONS.annoying!, face: [{ expr: 'happy', value: 1 }] },
+      // 파일은 데모용으로 11.7초 — V 완성(약 1.5초) 뒤 2초인 3.5초에서 끊고 유지 모션으로(2026-11-26 도휘)
+      annoying: { ...MOTIONS.annoying!, face: [{ expr: 'happy', value: 1 }], end: 3.5 },
     },
   },
   // NAVER — 전용 모델(2026-11-15). 연타 반응(공용과 같은 3탭) = naver_annoying.vrma(도휘 제작, 30fps 0~109프레임) + 모자 떨어뜨리기(hatDrop.ts).
