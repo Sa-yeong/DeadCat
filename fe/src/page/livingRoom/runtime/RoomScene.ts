@@ -6,7 +6,7 @@ import { createVRMAnimationClip, VRMAnimationLoaderPlugin, VRMLookAtQuaternionPr
 import type { CharacterDef } from '../types';
 import { lookColor, modelUrlsOf } from '../catalog';
 import { DEFAULT_LOOK, type Look } from './outfitState';
-import { lowestY, pickGroundSamples, type GroundSample } from './grounding';
+import { groundShift, lowestY, pickGroundSamples, type GroundSample } from './grounding';
 import type { FurnitureCatalog } from './catalogs';
 import { AREA_COLOR, footprint, shapeOf, type Footprint, type Part } from './furnitureShape';
 import { Projection, ROOM, VIEW, type Pt } from './projection';
@@ -95,6 +95,13 @@ const SOFA_MOTION_CLIP = 'play_sofa';
  *   tired  엎드려 지친 자세
  */
 const GROUND_CLIPS: ReadonlySet<string> = new Set(['tired']);
+/**
+ * 바닥 아래로 들어갈 때만 올려 틀 모션 파일(광기 밀치기 P-2) — 누우면 몸이 바닥 아래로 0.1~0.45칸 들어간다
+ * (치비 모델 원점이 신발 바닥보다 아래라 골반이 낮은 자세일수록 내려감 — 모션 탓 아님). 매 프레임 가장 낮은 곳이 바닥 아래면 그만큼 올리고,
+ * 위면 그대로(넘어지는 중간의 공중 자세를 끌어내리지 않게). 끝난 뒤 마지막 자세로 멍하는 동안(holdEndMs)도 같은 모션이라 계속 올린다
+ *   fall_down  넘어짐
+ */
+const RAISE_ONLY_CLIPS: ReadonlySet<string> = new Set(['fall_down']);
 
 /** 엔진 요청 하나 — 몇 번째 단계를 틀고 있는지, 끝나면 부를 것 */
 interface EngineRun {
@@ -1858,7 +1865,8 @@ export class RoomScene implements RoomRenderer {
     // 동작이 섞이는 시간(POSE_FADE_S) 동안 따라간다
     const run = c.engine?.action ? c.engine : null;
     const clip = run ? run.steps[run.actionStep]?.clip : c.pose === 'idle' ? (c.basePose?.idle ?? null) : null;
-    const grounding = !c.lifted && ((!!clip && GROUND_CLIPS.has(clip)) || (c.groundForce && !!run));
+    const raiseOnly = !c.lifted && !!run && !!clip && RAISE_ONLY_CLIPS.has(clip);
+    const grounding = !c.lifted && ((!!clip && GROUND_CLIPS.has(clip)) || (c.groundForce && !!run) || raiseOnly);
     if (!grounding) c.groundWant = 0;
     if (c.lifted) c.seatNow = 0;
     else {
@@ -1879,7 +1887,7 @@ export class RoomScene implements RoomRenderer {
     if (grounding) {
       c.groundSamples ??= pickGroundSamples(c.vrm!.scene);
       const low = lowestY(c.groundSamples, c.figure);
-      if (low !== null) c.groundWant = -low;
+      if (low !== null) c.groundWant = groundShift(low, raiseOnly);
     }
     // 대롱대롱으로 더한 뼈 각을 원래대로 — 이번 프레임 모양은 이미 실제 뼈에 옮겨졌다(vrm.update).
     // 믹서는 값이 안 바뀌면(끝나서 멈춘 pickup) 뼈를 다시 쓰지 않아서, 안 되돌리면 더한 각이 프레임마다 쌓여 꺾인 채 남는다

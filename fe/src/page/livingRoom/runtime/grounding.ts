@@ -53,3 +53,12 @@ export function lowestY(samples: readonly GroundSample[], space: THREE.Object3D)
   }
   return min === Infinity ? null : min;
 }
+
+/**
+ * 가장 낮은 높이(low, 몸 자리 좌표) → 몸을 옮길 높이(칸, + 위 · − 아래).
+ *   맞추기(GROUND_CLIPS — tired)   위아래 둘 다 — 가장 낮은 곳이 바닥에 닿게
+ *   올리기만(RAISE_ONLY_CLIPS — fall_down) 바닥 아래로 들어간 만큼만 올린다. 바닥 위에 있으면 그대로(넘어지는 중간 공중 자세를 끌어내리지 않게)
+ */
+export function groundShift(low: number, raiseOnly: boolean): number {
+  return raiseOnly ? Math.max(0, -low) : -low;
+}

@@ -10,6 +10,7 @@ import { characterDef } from '../catalog';
 import { FURNITURE_CATALOG } from '../furnitureCatalog';
 import type { RoomCharacterDto } from '../types';
 import { EndHold, type MotionClock } from './motionFx';
+import { groundShift } from './grounding';
 
 // 광기 밀치기(P-1) — 광기 쪽 wake_up → pass_by, 상대 fall_down → 마지막 자세로 1.5초 멍 → 원래대로. 브라우저 없이
 
@@ -248,5 +249,22 @@ describe('엔진 — 광기가 만나면', () => {
     e.engine.motionFinished('1'); // 광기 쪽 끝(넘어진 2 는 아직)
     e.engine.encounter('1', '3');
     expect(e.plays().filter((p) => p.id === '3')).toEqual([{ id: '3', steps: ['fall_down:clip'] }]);
+  });
+});
+
+/* ── P-2 가라앉음 — fall_down 은 올리기만 ─────────────── */
+
+describe('바닥 붙이기 — 올리기만(fall_down) · 맞추기(tired)', () => {
+  it('올리기만 — 가장 낮은 곳이 바닥 아래(−0.3)면 0.3 올린다', () => {
+    expect(groundShift(-0.3, true)).toBeCloseTo(0.3, 9);
+  });
+
+  it('올리기만 — 바닥 위(+0.1, 넘어지는 중간 공중)면 내리지 않는다', () => {
+    expect(groundShift(0.1, true)).toBe(0);
+  });
+
+  it('맞추기(tired)는 그대로 — 위아래 둘 다', () => {
+    expect(groundShift(0.1, false)).toBeCloseTo(-0.1, 9);
+    expect(groundShift(-0.3, false)).toBeCloseTo(0.3, 9);
   });
 });
