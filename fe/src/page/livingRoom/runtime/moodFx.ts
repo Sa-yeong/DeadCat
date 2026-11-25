@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import { pickGroundSamples, type GroundSample } from './grounding';
-import { cloudHeight, convexHull, JITTER, RAIN_CLOUD } from './motionFx';
+import { CHEER_LINES, cloudHeight, convexHull, FX_FADE, JITTER, RAIN_CLOUD, SLEEPY_ZZZ, type AuraValues, type SparkleValues } from './motionFx';
 
 /**
  * 감정 이펙트(거실모션 H-6) — 테스트 랩 template.html 의 puffTexture · RainCloud · zigzagTexture · hairColorOf · Jitter 를 앱 구조에 맞춘 것.
+ * 오오라 · 반짝이 · 응원 선 · zzz(감정 이펙트 FX-2)는 맨 아래.
  * 값은 motionFx(RAIN_CLOUD · JITTER) 한 곳. 언제 켜고 끌지는 RoomScene(감정 · 엔진 모션)이 정한다.
  * 앱의 방 그룹(root)은 높이를 hs(H_STRETCH) 배 늘린다 — 먹구름은 장면에 바로 두고(스프라이트가 찌그러지지 않게) 방 높이(칸)만 hs 를 곱한다
  */
@@ -47,6 +48,46 @@ function puffTexture(seed: number): THREE.CanvasTexture {
   return t;
 }
 
+/** 부드러운 점 — 오오라 연기 · 반짝이 빛 번짐 · 작은 점(감정이펙트 랩 softDot) */
+function softDotTexture(): THREE.CanvasTexture {
+  const n = 64;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = n;
+  const g = cv.getContext('2d')!;
+  const gr = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.45, 'rgba(255,255,255,0.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, n, n);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** 네 갈래 별(감정이펙트 랩 starTex) */
+function starTexture(): THREE.CanvasTexture {
+  const n = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = n;
+  const g = cv.getContext('2d')!;
+  const c = n / 2;
+  const R = n * 0.48;
+  const r = n * 0.07;
+  g.fillStyle = '#fff';
+  g.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+    const rr = i % 2 ? r : R;
+    g.lineTo(c + Math.cos(a) * rr, c + Math.sin(a) * rr);
+  }
+  g.closePath();
+  g.fill();
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** 저릿저릿 자국 — 검은 테두리 + 안쪽 색 지그재그 */
 function zigzagTexture(peaks: number, color: string): THREE.CanvasTexture {
   const W = 40 + 40 * peaks;
@@ -84,6 +125,18 @@ function zigzagTexture(peaks: number, color: string): THREE.CanvasTexture {
 export class MoodAssets {
   private puffs: THREE.CanvasTexture[] | null = null;
   private readonly zig = new Map<string, [THREE.CanvasTexture, THREE.CanvasTexture]>();
+  private dot: THREE.CanvasTexture | null = null;
+  private star: THREE.CanvasTexture | null = null;
+
+  /** 부드러운 점(오오라 연기 · 반짝이) */
+  dotTex(): THREE.CanvasTexture {
+    return (this.dot ??= softDotTexture());
+  }
+
+  /** 네 갈래 별(반짝이) */
+  starTex(): THREE.CanvasTexture {
+    return (this.star ??= starTexture());
+  }
 
   puffTex(): THREE.CanvasTexture[] {
     return (this.puffs ??= [1, 2, 3, 4].map(puffTexture));
@@ -104,6 +157,9 @@ export class MoodAssets {
     this.puffs = null;
     for (const pair of this.zig.values()) for (const t of pair) t.dispose();
     this.zig.clear();
+    this.dot?.dispose();
+    this.star?.dispose();
+    this.dot = this.star = null;
   }
 }
 
@@ -550,5 +606,431 @@ export class Jitter {
       m.sp.removeFromParent();
       m.sp.material.dispose();
     }
+  }
+}
+
+/* ── 감정 이펙트(FX-2) — 오오라 · 반짝이 · 응원 선 · zzz ─────────────────
+ * 감정이펙트 랩 template.html 의 makeAura · makeSparkle · drawCheer/updateCheer · updateZzz 를 클래스로.
+ * 먹구름처럼 장면(scene)에 바로 두고, 방 높이(칸)에만 hs(H_STRETCH)를 곱한다 — 스프라이트 · 판은 늘리지 않는다.
+ * 위치 입력(발밑 · 정수리)은 장면 좌표. 켜고 끌 때는 FX_FADE 초에 걸쳐 서서히(랩 lvl) */
+
+/** 화면 축(월드) — 오른쪽 · 위 · 뒤(화면 밖 = 카메라 쪽) + 카메라 회전 */
+export interface FxBasis {
+  right: THREE.Vector3;
+  up: THREE.Vector3;
+  back: THREE.Vector3;
+  facing: THREE.Quaternion;
+}
+/** 캐릭터 키(칸) — 오오라 판 가운데 = 발밑 + 키 절반 */
+const FX_CHAR_H = 2.5;
+const fade = (lvl: number, on: boolean, dt: number) => THREE.MathUtils.clamp(lvl + ((on ? 1 : -1) * dt) / FX_FADE, 0, 1);
+
+const AURA_VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`;
+const AURA_FS = `
+uniform float uT, uOp, uNoise, uSoft; uniform vec3 uCore, uEdge; varying vec2 vUv;
+float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
+float fbm(vec2 p){ float s=0.0, a=0.5; for(int i=0;i<4;i++){ s+=a*n2(p); p*=2.03; a*=0.5; } return s; }
+void main(){
+  vec2 p = vUv*2.0-1.0;
+  float taper = 1.0 - 0.35*max(p.y,0.0);
+  float n = fbm(vec2(p.x*2.2, p.y*1.6 - uT*1.3)) - 0.5;
+  float d = length(vec2(p.x/taper, p.y)) + n*uNoise*(0.6+0.6*(p.y+1.0)*0.5);
+  float a = 1.0 - smoothstep(1.0-uSoft, 1.0, d);
+  a *= smoothstep(-1.0, -0.78, p.y);
+  vec3 col = mix(uCore, uEdge, smoothstep(0.25, 0.95, d));
+  gl_FragColor = vec4(col, a*uOp);
+}`;
+
+function auraMat(A: AuraValues): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: AURA_VS,
+    fragmentShader: AURA_FS,
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uT: { value: 0 }, uOp: { value: 1 }, uNoise: { value: A.noise }, uSoft: { value: A.soft }, uCore: { value: new THREE.Color(A.core) }, uEdge: { value: new THREE.Color(A.edge) } },
+  });
+}
+
+/**
+ * 오오라(슬픔 SAD_AURA · 급락 광기 PANIC_AURA) — 카메라를 보는 판 2장 + 올라가는 연기.
+ * 뒤 판은 화면 안쪽으로 1.2칸(깊이 검사 → 몸에 가려 둘레만), 앞 판은 카메라 쪽 1.2칸(맨 앞, opacity × front)
+ */
+export class Aura {
+  readonly values: AuraValues;
+  private readonly hs: number;
+  private readonly root = new THREE.Group();
+  private readonly back: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private readonly front: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private readonly wisps: { s: THREE.Sprite; t: number; a: number; r: number }[];
+  private level = 0;
+  private t = Math.random() * 10;
+
+  constructor(parent: THREE.Object3D, assets: MoodAssets, values: AuraValues, hs: number) {
+    this.values = values;
+    this.hs = hs;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    this.back = new THREE.Mesh(geo, auraMat(values));
+    this.back.renderOrder = -1;
+    this.front = new THREE.Mesh(geo, auraMat(values));
+    this.front.renderOrder = 30;
+    this.front.material.depthTest = false;
+    for (const m of [this.back, this.front]) {
+      m.scale.set(values.width, values.height, 1);
+      m.frustumCulled = false;
+      m.visible = false;
+    }
+    const wc = new THREE.Color(values.core).lerp(new THREE.Color(values.edge), 0.35);
+    this.wisps = Array.from({ length: values.wisps }, () => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: assets.dotTex(), color: wc, transparent: true, depthWrite: false }));
+      s.renderOrder = -1;
+      s.visible = false;
+      this.root.add(s);
+      return { s, t: Math.random(), a: Math.random() * Math.PI * 2, r: Math.random() };
+    });
+    this.root.add(this.back, this.front);
+    parent.add(this.root);
+  }
+
+  setVisible(on: boolean): void {
+    this.root.visible = on;
+  }
+
+  /** 매 프레임 — feet = 발밑(장면 좌표) */
+  update(dt: number, active: boolean, feet: THREE.Vector3, cam: FxBasis): void {
+    const A = this.values;
+    const hs = this.hs;
+    this.level = fade(this.level, active, dt);
+    const L = this.level;
+    this.t += dt;
+    const on = L > 0.001;
+    const cy = feet.y + (FX_CHAR_H * 0.5 + A.lift) * hs;
+    for (const [m, op, off] of [[this.back, 1, 1.2], [this.front, A.front, -1.2]] as const) {
+      m.visible = on;
+      if (!on) continue;
+      m.position.set(feet.x, cy, feet.z).addScaledVector(cam.back, -off);
+      m.quaternion.copy(cam.facing);
+      const u = m.material.uniforms;
+      u.uT.value = this.t * A.speed;
+      u.uOp.value = A.opacity * op * L;
+    }
+    this.wisps.forEach((w, i) => {
+      w.s.visible = on;
+      if (!on) return;
+      w.t += (dt * A.wispSpeed) / 1.6;
+      if (w.t > 1) {
+        w.t -= 1;
+        w.a = Math.random() * Math.PI * 2;
+        w.r = Math.random();
+      }
+      const rad = (0.25 + w.r * 0.45) * A.width * 0.5;
+      const y = feet.y + (0.1 + w.t * (A.height * 0.85 + A.lift)) * hs;
+      w.s.position.set(feet.x + Math.cos(w.a) * rad + Math.sin(this.t * 2 + i) * 0.04, y, feet.z + Math.sin(w.a) * rad).addScaledVector(cam.back, -0.4);
+      const k = A.wispSize * (0.6 + 0.8 * Math.sin(Math.PI * w.t));
+      w.s.scale.set(k, k * 1.3, 1);
+      w.s.material.opacity = 0.75 * Math.sin(Math.PI * w.t) * L * A.opacity;
+    });
+  }
+
+  dispose(): void {
+    this.root.removeFromParent();
+    this.back.geometry.dispose();
+    this.back.material.dispose();
+    this.front.material.dispose();
+    for (const w of this.wisps) w.s.material.dispose();
+  }
+}
+
+interface Spark {
+  s: THREE.Sprite;
+  g: THREE.Sprite;
+  star: boolean;
+  t: number;
+  born: boolean;
+  x: number;
+  /** 발밑 위 높이(칸) */
+  y: number;
+  z: number;
+  rot: number;
+  dl: number;
+  sz: number;
+}
+
+/**
+ * 반짝이(기쁨 HAPPY_SPARKLE · 유포리아 EUPHORIA_SPARKLE) — 네 갈래 별 count 개 + 작은 점 dots 개, 하나마다 빛 번짐.
+ * 더하기 섞기 · 깊이 검사(몸 뒤로 가면 가려짐). 발밑 둘레 아무 자리에서 커졌다 작아지며 떠오르고 돈다
+ */
+export class Sparkle {
+  readonly values: SparkleValues;
+  private readonly hs: number;
+  private readonly root = new THREE.Group();
+  private readonly spk: Spark[];
+  private level = 0;
+
+  constructor(parent: THREE.Object3D, assets: MoodAssets, values: SparkleValues, hs: number) {
+    this.values = values;
+    this.hs = hs;
+    const mat = (map: THREE.Texture, color: string) => new THREE.SpriteMaterial({ map, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.spk = Array.from({ length: values.count + values.dots }, (_, i) => {
+      const star = i < values.count;
+      const s = new THREE.Sprite(mat(star ? assets.starTex() : assets.dotTex(), values.color));
+      const g = new THREE.Sprite(mat(assets.dotTex(), values.glow));
+      s.renderOrder = g.renderOrder = 25;
+      s.visible = g.visible = false;
+      this.root.add(g, s);
+      return { s, g, star, t: Math.random(), born: false, x: 0, y: 0, z: 0, rot: 0, dl: 1, sz: 1 };
+    });
+    parent.add(this.root);
+  }
+
+  setVisible(on: boolean): void {
+    this.root.visible = on;
+  }
+
+  private respawn(p: Spark, feet: THREE.Vector3): void {
+    const A = this.values;
+    const a = Math.random() * Math.PI * 2;
+    const r = A.radius * (0.45 + 0.55 * Math.sqrt(Math.random()));
+    p.x = feet.x + Math.cos(a) * r;
+    p.z = feet.z + Math.sin(a) * r * 0.8;
+    p.y = A.bottom + Math.random() * Math.max(0.05, A.top - A.bottom);
+    p.rot = Math.random() * Math.PI * 2;
+    p.dl = 0.7 + Math.random() * 0.6;
+    p.sz = 0.65 + Math.random() * 0.6;
+    p.born = true;
+  }
+
+  /** 매 프레임 — feet = 발밑(장면 좌표) */
+  update(dt: number, active: boolean, feet: THREE.Vector3): void {
+    const A = this.values;
+    this.level = fade(this.level, active, dt);
+    const L = this.level;
+    const on = L > 0.001;
+    for (const p of this.spk) {
+      p.s.visible = p.g.visible = on;
+      if (!on) continue;
+      p.t += dt / (A.life * p.dl);
+      if (p.t >= 1 || !p.born) {
+        p.t %= 1;
+        this.respawn(p, feet);
+      }
+      const tw = Math.pow(Math.sin(Math.PI * p.t), 1.6); // 커졌다 작아짐 = 반짝
+      const sz = (p.star ? A.size : A.size * 0.28) * p.sz * tw;
+      p.s.position.set(p.x, feet.y + (p.y + A.rise * p.t) * this.hs, p.z);
+      p.g.position.copy(p.s.position);
+      p.s.scale.set(sz, sz, 1);
+      p.s.material.rotation = p.rot + A.spin * p.t;
+      p.s.material.opacity = L * (p.star ? 1 : 0.9);
+      const gs = sz * (p.star ? 1.3 : 2.2);
+      p.g.scale.set(gs, gs, 1);
+      p.g.material.opacity = A.glowAmt * L * tw;
+    }
+  }
+
+  dispose(): void {
+    this.root.removeFromParent();
+    for (const p of this.spk) {
+      p.s.material.dispose();
+      p.g.material.dispose();
+    }
+  }
+}
+
+/** 응원 선 캔버스 — 512px, 한 변 = 2.4칸 */
+const CHEER_PX = 512;
+const CHEER_W = 2.4;
+
+/**
+ * 응원 말하는 선(CHEER_LINES) — 머리 위 부채꼴 둥근 선, 캔버스에 그려 스프라이트로(맨 앞).
+ * 켜질 때 popIn 초에 걸쳐 튀며 길어지고, beat 번/초 박자마다 pulse 만큼 툭 튀어나왔다 돌아옴. 캔버스는 켜져 있을 때만 다시 그린다
+ */
+export class CheerLines {
+  private readonly cv = document.createElement('canvas');
+  private readonly g: CanvasRenderingContext2D;
+  private readonly tex: THREE.CanvasTexture;
+  private readonly sp: THREE.Sprite;
+  private level = 0;
+  private t = 0;
+
+  constructor(parent: THREE.Object3D) {
+    this.cv.width = this.cv.height = CHEER_PX;
+    this.g = this.cv.getContext('2d')!;
+    this.tex = new THREE.CanvasTexture(this.cv);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex, transparent: true, depthTest: false, depthWrite: false }));
+    this.sp.renderOrder = 40;
+    this.sp.visible = false;
+    this.sp.scale.set(CHEER_W, CHEER_W, 1);
+    parent.add(this.sp);
+  }
+
+  /** 다 꺼졌나 — 꺼진 뒤 버려도 되는지 */
+  get faded(): boolean {
+    return this.level <= 0;
+  }
+
+  setVisible(on: boolean): void {
+    if (!on) this.sp.visible = false;
+  }
+
+  private draw(beatK: number): void {
+    const A = CHEER_LINES;
+    const g = this.g;
+    const N = CHEER_PX;
+    const px = N / CHEER_W;
+    const c = N / 2;
+    g.clearRect(0, 0, N, N);
+    g.lineCap = 'round';
+    const pop = A.popIn > 0 ? Math.min(1, this.t / A.popIn) : 1;
+    const popE = 1 + 1.7 * Math.pow(pop - 1, 3) + 0.7 * Math.pow(pop - 1, 2); // 살짝 튀며 등장
+    const lines: [number, number, number, number][] = [];
+    for (let i = 0; i < A.count; i++) {
+      const deg = A.angle + (A.count === 1 ? 0 : A.spread * (0.5 - i / (A.count - 1)));
+      const ang = (deg * Math.PI) / 180;
+      const r0 = A.dist * px * (1 + beatK * 0.4);
+      const r1 = r0 + A.len * px * popE * (1 + beatK);
+      lines.push([c + Math.cos(ang) * r0, c - Math.sin(ang) * r0, c + Math.cos(ang) * r1, c - Math.sin(ang) * r1]);
+    }
+    const pass = (color: string, w: number) => {
+      g.strokeStyle = color;
+      g.lineWidth = w;
+      for (const [a, b, x, y] of lines) {
+        g.beginPath();
+        g.moveTo(a, b);
+        g.lineTo(x, y);
+        g.stroke();
+      }
+    };
+    if (A.outlineW > 0) pass(A.outline, (A.thick + A.outlineW * 2) * px);
+    pass(A.color, A.thick * px);
+    this.tex.needsUpdate = true;
+  }
+
+  /** 매 프레임 — headTop = 머리 뼈 바로 위 정수리(장면 좌표, 고개를 숙여도 기울이지 않음) */
+  update(dt: number, active: boolean, headTop: THREE.Vector3, cam: FxBasis): void {
+    const A = CHEER_LINES;
+    this.level = fade(this.level, active, dt);
+    const L = this.level;
+    this.sp.visible = L > 0.001;
+    if (!this.sp.visible) {
+      this.t = 0;
+      return;
+    }
+    this.t += dt;
+    const ph = (this.t * A.beat) % 1;
+    const beatK = A.beat > 0 ? A.pulse * Math.exp(-ph * 7) : 0; // 박자마다 툭 튀어나왔다 돌아옴
+    this.draw(beatK);
+    this.sp.position.copy(headTop).addScaledVector(cam.right, A.offX).addScaledVector(cam.up, A.offY);
+    this.sp.material.opacity = L;
+  }
+
+  dispose(): void {
+    this.sp.removeFromParent();
+    this.sp.material.dispose();
+    this.tex.dispose();
+  }
+}
+
+const ZZZ_MAX = 12;
+
+/** zzz 글자 한 장 — 굵은 글씨 + 테두리 */
+function zzzTexture(): THREE.CanvasTexture {
+  const A = SLEEPY_ZZZ;
+  const n = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = n;
+  const g = cv.getContext('2d')!;
+  g.font = `900 ${A.letter === 'Zz' ? 150 : 200}px "Arial Black", "Malgun Gothic", sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  if (A.outlineW > 0) {
+    g.strokeStyle = A.outline;
+    g.lineWidth = A.outlineW * 200;
+    g.strokeText(A.letter, n / 2, n / 2 + 8);
+  }
+  g.fillStyle = A.color;
+  g.fillText(A.letter, n / 2, n / 2 + 8);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/**
+ * 졸림 zzz(SLEEPY_ZZZ) — every 초마다 정수리에서 글자 하나가 나와 life 초 동안 화면 위(rise) · 옆(drift)으로, 커지며 사라짐(맨 앞).
+ * 정수리는 머리가 향한 위쪽(누우면 옆) — 나온 글자는 머리가 움직이면 따라간다. 스프라이트 12개를 돌려 씀
+ */
+export class SleepyZzz {
+  private readonly tex = zzzTexture();
+  private readonly zs: { s: THREE.Sprite; t: number; o: THREE.Vector3; seed: number }[];
+  private level = 0;
+  private clock = 0;
+  private next = 0;
+
+  constructor(parent: THREE.Object3D) {
+    this.zs = Array.from({ length: ZZZ_MAX }, () => {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex, transparent: true, depthTest: false, depthWrite: false }));
+      s.renderOrder = 41;
+      s.visible = false;
+      s.material.rotation = (-SLEEPY_ZZZ.tilt * Math.PI) / 180;
+      parent.add(s);
+      return { s, t: 1, o: new THREE.Vector3(), seed: 0 };
+    });
+  }
+
+  /** 다 꺼졌나(떠 있는 글자도 없음) — 꺼진 뒤 버려도 되는지 */
+  get faded(): boolean {
+    return this.level <= 0 && this.zs.every((z) => z.t >= 1);
+  }
+
+  setVisible(on: boolean): void {
+    if (on) return;
+    for (const z of this.zs) {
+      z.s.visible = false;
+      z.t = 1;
+    }
+  }
+
+  /** 매 프레임 — headTop = 머리가 향한 위쪽으로 잰 정수리(장면 좌표) */
+  update(dt: number, active: boolean, headTop: THREE.Vector3, cam: FxBasis): void {
+    const A = SLEEPY_ZZZ;
+    this.level = fade(this.level, active, dt);
+    const L = this.level;
+    if (L > 0.5) {
+      this.clock -= dt;
+      if (this.clock <= 0) {
+        this.clock = A.every;
+        const z = this.zs[this.next++ % this.zs.length];
+        z.t = 0;
+        z.seed = Math.random() * Math.PI * 2;
+        z.o.copy(headTop);
+      }
+    } else this.clock = 0;
+    for (const z of this.zs) {
+      if (z.t >= 1) {
+        z.s.visible = false;
+        continue;
+      }
+      z.t += dt / A.life;
+      if (z.t >= 1) {
+        z.s.visible = false;
+        continue;
+      }
+      z.o.lerp(headTop, Math.min(1, dt * 4)); // 머리가 움직이면 따라감(누운 채로도)
+      const e = 1 - Math.pow(1 - z.t, 2);
+      z.s.visible = true;
+      z.s.position.copy(z.o).addScaledVector(cam.right, A.offX + A.drift * e + Math.sin(z.t * 6 + z.seed) * A.sway).addScaledVector(cam.up, A.offY + A.rise * e);
+      const k = A.size * (1 + (A.grow - 1) * e);
+      z.s.scale.set(k, k, 1);
+      z.s.material.opacity = L * Math.min(1, z.t / 0.12) * (1 - Math.max(0, (z.t - 0.65) / 0.35));
+    }
+  }
+
+  dispose(): void {
+    for (const z of this.zs) {
+      z.s.removeFromParent();
+      z.s.material.dispose();
+    }
+    this.tex.dispose();
   }
 }
