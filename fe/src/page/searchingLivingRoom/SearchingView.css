@@ -74,14 +74,19 @@
     background: #141417 ;
     display: flex;
     flex-direction: column;
+    z-index: 999;
 }
 .rooms-container .rooms-header .left-side .result-stocks :where(.row, .last-row){
     padding: 3px 10px;
     font-size: 15px;
+    cursor: pointer;
 }
 .rooms-container .rooms-header .left-side .result-stocks .row{
     justify-self: center;
     border-bottom: 1px solid gray;
+}
+.rooms-container .rooms-header .left-side .result-stocks :where(.row, .last-row):hover{
+    background: #2a2a2e;
 }
     /* popover */
 .rooms-container .rooms-header .left-side button{

@@ -27,17 +27,6 @@ export class EmotionEngine {
                 this.createOutput('sleepy', 'sleep', 0.4, null, isHolding),
             );
         }
-        /*if (!isOperatingTime) {
-            marketEmotions.push(
-                this.createOutput('sleepy', 'sleep', 0.3, null, isHolding),
-            );
-
-            return this.applyInteraction(
-                marketEmotions,
-                interaction,
-                isHolding,
-            );
-        }*/
 
         // 장기 보유
         if (
@@ -50,18 +39,28 @@ export class EmotionEngine {
             );
         }
 
+        // 사용자 수익률을 단계로 나누기
+
         // 수익 중
-        if (userProfitRate !== null && userProfitRate > 0) {
+        // 0 이상 -> happy
+        if (userProfitRate !== null && userProfitRate >= 0) {
             marketEmotions.push(
-                this.createOutput('happy', 'idle', 0.7, null, true),
+                this.createOutput('happy', 'idle', 0.6, null, true),
             );
         }
 
         // 손실 중
+        // -10% 초과 -> depress
+        // -10% 이하 -> sad
         if (userProfitRate !== null && userProfitRate < 0) {
-            marketEmotions.push(
-                this.createOutput('sad', 'idle', 0.7, null, true),
-            );
+            if (userProfitRate >= -10)
+                marketEmotions.push(
+                    this.createOutput('sad', 'idle', 0.6, null, true),
+                );
+            else
+                marketEmotions.push(
+                    this.createOutput('depress', 'depression', 0.8, null, true),
+                );
         }
 
         // 변동성 높음
@@ -84,8 +83,8 @@ export class EmotionEngine {
             );
         }
 
-        // 등락률이 이 값(%) 이상이면 큰 변동
-        const threshold = 16;
+        // 등락률이 이 값(%) 이상이면 큰 변동 -> 대형주들이므로 7,8%로 변경
+        const threshold = 7.5;
 
         // 큰 변동
         if (Math.abs(fluctuationRate) >= threshold) {
@@ -101,8 +100,8 @@ export class EmotionEngine {
             );
         }
 
-        // 상승 모멘텀
-        if (usr_tendency.momentum >= 0.5 && usr_tendency.profit >= 0) {
+        // 상승 모멘텀 -> euphoria의 기준을 높이지 광기에 해당하는 감정
+        if (usr_tendency.momentum >= 0.8 && usr_tendency.profit >= 0) {
             marketEmotions.push(
                 this.createOutput('euphoria', 'idle', 0.8, null, isHolding),
             );
