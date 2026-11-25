@@ -52,6 +52,10 @@ export const STOCK_CHARACTERS: Record<string, CharacterSpec> = {
     },
     hatDrop: true,
   },
+  // 애플 · 코카콜라 · 삼성전자 — 전용 모델(2026-11-26). 전용 모션은 아직 없어 모션은 전부 공용
+  AAPL: { dir: 'characters/stocks/AAPL/' },
+  KO: { dir: 'characters/stocks/KO/' },
+  '005930': { dir: 'characters/stocks/005930/' },
 };
 
 const COMMON_KEY = 'common';
