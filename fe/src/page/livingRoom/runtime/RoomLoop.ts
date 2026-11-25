@@ -201,7 +201,7 @@ export class RoomLoop {
   private readonly broken = new Set<number>();
   /** 배치 해제 저장은 하나씩 차례로 — 동시에 보내면 앞 저장으로 빠진 가구를 뒤 저장이 다시 놓는다(목록 전체를 보내서) */
   private releaseChain: Promise<void> = Promise.resolve();
-  /** 내 방이면 배치 저장 — 없으면(남의 방) 박살 연출 없이 모션만 지금처럼 */
+  /** 내 방이면 배치 저장 — 없으면(남의 방) 박살은 화면에서만(가구를 이 화면의 배치에서만 빼고 서버는 안 건드림 — 새로고침하면 다시 있음) */
   private readonly saveLayout: SaveLayout | null;
   private stopped = false;
 
@@ -218,7 +218,7 @@ export class RoomLoop {
     demo?: () => RoomDemo | null;
     /**
      * 내 방 배치 저장(api.savePlacements) — 박살로 부서진 가구를 보관함으로 보낼 때(G-2). 남의 방은 넘기지 않는다:
-     * 남의 방에서 박살을 어떻게 보일지는 도휘 결정 전이라 그때는 지금처럼 모션만 튼다
+     * 그때 박살은 먼지 · 사라짐까지 화면에서만(2026-11-25 도휘) — 배치 · DB 는 그대로라 새로고침하면 가구가 다시 있다
      */
     saveLayout?: SaveLayout;
   }) {
@@ -1179,12 +1179,12 @@ export class RoomLoop {
   /* ── 가구 박살(G-2) ─────────────────────────────────────── */
 
   /**
-   * 박살 모션(BREAK_FX)이면 박살을 건다 — 내 방(saveLayout)에서 가구에 온 명령일 때만. 아니면 null(지금처럼 모션만).
+   * 박살 모션(BREAK_FX)이면 박살을 건다 — 가구에 온 명령일 때만(내 방 · 남의 방 모두. 남의 방은 해제 없이 화면에서만). 아니면 null.
    * 파일이 없는 모션(motions.json clip 이 비었음)은 시작 0.3초 뒤에 터진다
    */
   private startBreak(h: CharacterHandle, run: ActRun, motion: string, clip: string | null): BreakRun | null {
     const placementId = run.furnitureId;
-    if (!BREAK_FX[motion] || !this.saveLayout || placementId === undefined) return null;
+    if (!BREAK_FX[motion] || placementId === undefined) return null;
     if (!this.placements.some((p) => p.placementId === placementId) || this.broken.has(placementId)) return null;
     const fx = new BreakRun(motion, clip === null);
     this.breaks.add({ charId: h.id, fx, run, placementId });
@@ -1236,9 +1236,14 @@ export class RoomLoop {
 
   /**
    * 배치 해제 — 그 가구를 뺀 방 전체를 저장한다(배치 모드 「보관함으로 → 저장」과 같은 API · 같은 상태 갱신).
-   * 실패하면 가구를 다시 보이고 다시 시도하지 않는다
+   * 실패하면 가구를 다시 보이고 다시 시도하지 않는다.
+   * 남의 방(저장 없음)은 서버를 부르지 않고 이 화면의 배치에서만 뺀다 — 씬 · 엔진 · 걷는 칸은 저장했을 때와 같게 맞춘다(새로고침하면 다시 있음)
    */
   private releaseBroken(placementId: number): void {
+    if (!this.saveLayout) {
+      this.setPlacements(this.placements.filter((p) => p.placementId !== placementId));
+      return;
+    }
     this.broken.add(placementId);
     this.releaseChain = this.releaseChain.then(async () => {
       const save = this.saveLayout;

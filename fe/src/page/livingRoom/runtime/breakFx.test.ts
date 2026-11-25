@@ -213,14 +213,21 @@ describe('RoomLoop — 가구 박살 흐름 (G-2)', () => {
     expect(t.loop.currentPlacements.map((p) => p.placementId)).toContain(DESK.placementId);
   });
 
-  it('남의 방(저장 없음) — 지금처럼 모션만: 먼지 · 해제 없이 끝 신호대로 끝', () => {
+  it('남의 방(저장 없음) — 먼지 · 사라짐까지 화면에서만: 서버 저장 없이 이 화면의 배치 · 씬 · 엔진에서만 빠진다(2026-11-25 도휘)', async () => {
     const t = setup(undefined);
     t.breakDesk();
-    expect(t.plays[0].steps[0].hold).toBeUndefined();
-    t.plays[0].finish();
+    expect(t.plays[0].steps[0].hold).toBe(true);
+    t.plays[0].finish(); // 파일 없음 — 끝 알림은 가장 짙을 때
+    expect(t.finished).toEqual([]);
+    t.tick(0.7);
+    expect(t.calls).toContain('dust 50');
+    expect(t.calls).toContain('hide 50');
     expect(t.finished).toEqual(['1:breaking_desk']);
-    t.tick(2);
-    expect(t.calls.some((c) => c.startsWith('dust') || c.startsWith('hide'))).toBe(false);
+    await flush();
+    expect(t.calls).toContain('remove 50');
+    expect(t.deleted).toEqual([DESK.placementId]);
+    expect(t.loop.currentPlacements.map((p) => p.placementId)).toEqual([SOFA.placementId]);
+    expect(t.calls).not.toContain('show 50');
   });
 
   it('터지기 전에 들면 박살은 없던 일', () => {
