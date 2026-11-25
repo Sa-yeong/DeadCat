@@ -63,43 +63,17 @@ export class InteractionState {
 
     }
 
-    hasFreeAnchor(id: number): boolean{
+    getFreeAnchors(id: number): string[]{
         const anchors = this.furnitureAnchors.get(id);
 
-        if(!anchors) return false;
-        const used = this.anchorOccupants(id);
-        return anchors.some(a => !used.has(a));
-    }
-
-    getFreeAnchor(id: number): string | undefined{
-        const anchors = this.furnitureAnchors.get(id);
-
-        if(!anchors) return undefined;
+        if(!anchors) return [];
         const used = this.anchorOccupants(id);
 
-        return anchors.find(a => !used.has(a));
+        return anchors.filter(a => !used.has(a));
     }
 
-    occupy(furnitureId: number, charId: string, ruleId: string): string | null{
-        const anchors = this.furnitureAnchors.get(furnitureId);
-
-        if(!anchors) return null
-        const used = this.anchorOccupants(furnitureId);
-        const free = anchors.find(a => !used.has(a));
-
-        if(!free) return null
-        this.setState(charId, {kind: 'interactingFurniture', furnitureId, anchorId: free, ruleId})
-        return free;
-    }
-
-    // 자리(앵커)를 전부 차지한다 — 전부 비어 있을 때만(거실모션 H-3). 끝나면 상태가 wandering 으로 돌아가며 전부 빈다
-    occupyAll(furnitureId: number, charId: string, ruleId: string): string | null{
-        const anchors = this.furnitureAnchors.get(furnitureId);
-
-        if(!anchors || anchors.length === 0) return null
-        if(this.anchorOccupants(furnitureId).size > 0) return null
-        this.setState(charId, {kind: 'interactingFurniture', furnitureId, anchorId: anchors[0], ruleId, all: true})
-        return anchors[0];
+    occupy(furnitureId: number, charId: string, ruleId: string, targetAnchors: string[]): void{
+        this.setState(charId, {kind: 'interactingFurniture', furnitureId, anchorId: targetAnchors, ruleId});
     }
 
     // 새 상호작용을 시작할 수 있는 상태인가
@@ -153,8 +127,9 @@ export class InteractionState {
 
         for(const [charId, s] of this.states){
             if(s.kind === "interactingFurniture" && s.furnitureId === furnitureId){
-                if(s.all) for(const a of this.furnitureAnchors.get(furnitureId) ?? []) result.set(a, charId);    // 통째로 쓰는 중
-                else result.set(s.anchorId, charId);
+                for(const id of s.anchorId){
+                    result.set(id, charId);
+                }
             }
         }
         return result;

@@ -100,7 +100,12 @@ export function loadRules(raw: RawData): RuleSet {
                     error.push(`[${rule.id}] effect.weight: 0 초과 ${WEIGHT_MAX} 이하의 숫자여야 함 (현재 ${w})`);
                 }
 
-                normalizedEffects.push({weight: w, self: effSelf});
+                const placed = eff.placed ?? 1;
+                if (typeof placed !== 'number' || !Number.isInteger(placed) || placed < 1) {
+                    error.push(`[${rule.id}] effect.placed: 1 이상의 정수여야 함 (현재 ${placed})`);
+                }
+
+                normalizedEffects.push({weight: w, self: effSelf, placed: placed});
             }
         }
 
@@ -111,8 +116,6 @@ export function loadRules(raw: RawData): RuleSet {
         if(typeof rule.cooldownMs !== 'number' || rule.cooldownMs < 0) error.push(`[${rule.id}] cooldownMs: 음수 거나 숫자가 아님`);
         if (typeof rule.interruptible !== 'boolean') error.push(`[${rule.id}] interruptible: true/false여야 함`)
         if (typeof rule.occupy !== 'boolean') error.push(`[${rule.id}] occupy: true/false여야 함`)
-        if (rule.occupyAll !== undefined && typeof rule.occupyAll !== 'boolean') error.push(`[${rule.id}] occupyAll: true/false여야 함`)
-        if (rule.occupyAll && !rule.occupy) error.push(`[${rule.id}] occupyAll: occupy가 true일 때만`)
 
         normalizedFurRules.push({...rule, when: {self, furniture}, effect: normalizedEffects})
     }

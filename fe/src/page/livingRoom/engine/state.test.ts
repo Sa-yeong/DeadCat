@@ -130,75 +130,87 @@ describe('가구 점유', () => {
     beforeEach(() => {
         ['c1', 'c2', 'c3'].forEach(id => state.addCharacter(id));
         state.registerFurniture(SOFA, ['seat_l', 'seat_r'])
-        state.registerFurniture(DESK, ['chair'])   
+        state.registerFurniture(DESK, ['chair'])
     })
+    // 빈 앵커를 고르는 건 컨트롤러(getFreeAnchors → effect.placed 만큼) — state 는 받은 앵커를 그 캐릭터 것으로 적는다(5448b34)
+    const take = (id: number, c: string, n = 1) => {
+        const anchors = state.getFreeAnchors(id).slice(0, n)
+        state.occupy(id, c, 'r1', anchors)
+        return anchors
+    }
 
     it('등록된 가구는 빈 앵커가 있고, 등록되지 않은 가구는 없음', () => {
-        expect(state.hasFreeAnchor(SOFA)).toBe(true);
-        expect(state.hasFreeAnchor(UNKNOWN)).toBe(false);
+        expect(state.getFreeAnchors(SOFA)).toEqual(['seat_l', 'seat_r']);
+        expect(state.getFreeAnchors(UNKNOWN)).toEqual([]);
     })
 
-    it('occupy: 앵커 id를 반환 & 캐릭터 상태 변경', () => {
-        expect(state.occupy(SOFA, 'c1', 'r1')).toBe('seat_l')
+    it('occupy: 받은 앵커를 캐릭터 상태에 적는다', () => {
+        state.occupy(SOFA, 'c1', 'r1', ['seat_l'])
         expect(state.getState('c1')).toEqual({
-            kind: 'interactingFurniture', furnitureId: SOFA, anchorId: 'seat_l', ruleId: 'r1'
+            kind: 'interactingFurniture', furnitureId: SOFA, anchorId: ['seat_l'], ruleId: 'r1'
         })
+        expect(state.getFreeAnchors(SOFA)).toEqual(['seat_r'])
     })
 
-     it('두 캐릭터는 서로 다른 앵커를 받는다', () => {
-        const a = state.occupy(SOFA, 'c1', 'r1')
-        const b = state.occupy(SOFA, 'c2', 'r1')
-        expect(a).not.toBe(b)
+    it('두 캐릭터는 서로 다른 앵커를 받는다', () => {
+        const a = take(SOFA, 'c1')
+        const b = take(SOFA, 'c2')
+        expect(a).not.toEqual(b)
     })
 
-    it('정원이 차면 hasFreeAnchor가 false이고 occupy가 null이다', () => {
-        state.occupy(SOFA, 'c1', 'r1')
-        state.occupy(SOFA, 'c2', 'r1')
-        expect(state.hasFreeAnchor(SOFA)).toBe(false)
-        expect(state.occupy(SOFA, 'c3', 'r1')).toBeNull()
-        expect(state.getState('c3')).toEqual({ kind: 'wandering' })   // 실패한 캐릭터의 상태는 그대로
+    it('두 자리를 한 번에(placed 2) — 소파를 통째로 쓰면 빈 앵커가 없다(거실모션 H-3)', () => {
+        expect(take(SOFA, 'c1', 2)).toEqual(['seat_l', 'seat_r'])
+        expect(state.getFreeAnchors(SOFA)).toEqual([])
+        state.resetState('c1')
+        expect(state.getFreeAnchors(SOFA)).toEqual(['seat_l', 'seat_r'])   // 끝나면 두 자리 다 빈다
+    })
+
+    it('정원이 차면 빈 앵커가 없다', () => {
+        take(SOFA, 'c1')
+        take(SOFA, 'c2')
+        expect(state.getFreeAnchors(SOFA)).toEqual([])
     })
 
     it('다른 가구의 정원에는 영향이 없다', () => {
-        state.occupy(SOFA, 'c1', 'r1')
-        state.occupy(SOFA, 'c2', 'r1')
-        expect(state.hasFreeAnchor(DESK)).toBe(true)
+        take(SOFA, 'c1')
+        take(SOFA, 'c2')
+        expect(state.getFreeAnchors(DESK)).toEqual(['chair'])
     })
 
     it('resetState로 상태가 바뀌면 앵커가 자동으로 비워진다', () => {
-        state.occupy(DESK, 'c1', 'r1')
-        expect(state.hasFreeAnchor(DESK)).toBe(false)
+        take(DESK, 'c1')
+        expect(state.getFreeAnchors(DESK)).toEqual([])
         state.resetState('c1')
-        expect(state.hasFreeAnchor(DESK)).toBe(true)
+        expect(state.getFreeAnchors(DESK)).toEqual(['chair'])
     })
 
     it('드래그로 상태가 바뀌어도 앵커가 비워진다', () => {
-        state.occupy(DESK, 'c1', 'r1')
+        take(DESK, 'c1')
         state.setState('c1', { kind: 'dragging' })
-        expect(state.hasFreeAnchor(DESK)).toBe(true)
+        expect(state.getFreeAnchors(DESK)).toEqual(['chair'])
     })
 
     it('removeCharacter 후에도 앵커가 비워진다', () => {
-        state.occupy(DESK, 'c1', 'r1')
+        take(DESK, 'c1')
         state.removeCharacter('c1')
-        expect(state.hasFreeAnchor(DESK)).toBe(true)
+        expect(state.getFreeAnchors(DESK)).toEqual(['chair'])
     })
 
     it('비워진 앵커는 다음 캐릭터가 받을 수 있다', () => {
-        state.occupy(DESK, 'c1', 'r1')
+        take(DESK, 'c1')
         state.resetState('c1')
-        expect(state.occupy(DESK, 'c2', 'r1')).toBe('chair')
+        expect(take(DESK, 'c2')).toEqual(['chair'])
     })
 
     it('removeFurniture는 점유 중이던 캐릭터를 배회로 돌려보낸다', () => {
-        state.occupy(SOFA, 'c1', 'r1')
+        take(SOFA, 'c1')
         state.removeFurniture(SOFA)
         expect(state.getState('c1')).toEqual({ kind: 'wandering' })
         expect(state.canInteract('c1')).toBe(true)
-        expect(state.hasFreeAnchor(SOFA)).toBe(false)   // 가구 자체가 없어짐
+        expect(state.getFreeAnchors(SOFA)).toEqual([])   // 가구 자체가 없어짐
     })
 
     it('등록되지 않은 캐릭터가 occupy하면 에러다', () => {
-        expect(() => state.occupy(DESK, 'ghost', 'r1')).toThrow(/등록되지 않은/)
+        expect(() => state.occupy(DESK, 'ghost', 'r1', ['chair'])).toThrow(/등록되지 않은/)
     })
 })

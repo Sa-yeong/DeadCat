@@ -1023,7 +1023,7 @@ export class RoomLoop {
    * 소파 좌석 가운데에 세워 소파 정면을 보게 하고, 엉덩이가 좌석 윗면에 닿도록 몸 높이를 맞춘다.
    * 회전 0 = 모델 정면(+Z)이 방 앞쪽(+y). 앞뒤 자리는 엉덩이 뒷면이 등받이 앞면에 닿게
    */
-  private sitOnSofa(h: CharacterHandle, placementId: number, anchorId?: string): void {
+  private sitOnSofa(h: CharacterHandle, placementId: number, anchorId?: string[]): void {
     const p = this.placements.find((q) => q.placementId === placementId);
     const def = p && this.furniture.def(p.furnitureId);
     if (!p || !def) return;
@@ -1034,8 +1034,9 @@ export class RoomLoop {
     const side = {x: Math.cos(r), y: Math.sin(r)};
     const along = seat.back - SIT_POSE.buttBack + SOFA_BACK_GAP;
     const anchors = def.engine?.anchors;
-    const anchor = anchors?.find(a => a.id === anchorId);
-    const offsetX = anchor? anchor.offset[0] : 0;
+    const matched = anchors?.filter((a) => anchorId?.includes(a.id)) ?? [];
+    const offsetX = matched.length > 0 ?
+      matched.reduce((sum, a) => sum + a.offset[0], 0) / matched.length : 0;
     const spot = { x: ((f.x0 + f.x1) / 2 + front.x * along) + side.x*offsetX,
        y: ((f.y0 + f.y1) / 2 + front.y * along) + side.y*offsetX };
 

@@ -318,7 +318,7 @@ describe('특수 모션 가구 5종', () => {
         s.engine.visitFurniture('1', PIANO)
         // 슬롯머신은 한 번만(2026-11-14 play_slot.vrma) — 나머지는 반복
         // 가구 모션 명령엔 가구 · 잡은 자리가 실려 간다(89afa2a)
-        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: motion !== 'play_slot' }], furnitureId: PIANO, anchorId }])
+        expect(s.of('play')).toEqual([{ type: 'play', characterId: '1', steps: [{ name: motion, kind: 'clip', loop: motion !== 'play_slot' }], furnitureId: PIANO, anchorId: [anchorId] }])
     })
 
     it('반복 모션이라 30초에 끝나고, 쓰는 동안은 자리가 없고, 끝나면 20초 쿨다운', () => {

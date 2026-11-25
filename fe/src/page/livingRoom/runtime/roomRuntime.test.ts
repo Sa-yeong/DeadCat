@@ -1014,7 +1014,7 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
         t.drop('2', { x: 15.2, y: 15 });
         expect(t.playsOf('1')).toEqual([['sit_sofa']]);
         expect(t.playsOf('2')).toEqual([]);
-        expect(t.logs.at(-1)).toMatch(/통째로 써야 함/);
+        expect(t.logs.at(-1)).toMatch(/자리 없음\(tired_sofa — 자리 2개 필요, 빈 자리 1개\)/);
       });
 
       it('통째로 쓰던 캐릭터가 끝나면 두 자리가 다 빈다', () => {
@@ -1030,9 +1030,12 @@ describe('가구 ↔ 엔진 (지시서 「가구 · 반응 실제 연결」 3 ·
         expect(t.playsOf('3')).toEqual([['sit_sofa']]);
       });
 
-      it('통째 표시는 basic_sofa 말고 소파 규칙 전부', () => {
-        const all = [...ROOM_RULES.rulesById.values()].filter((r) => 'occupyAll' in r && r.occupyAll).map((r) => r.id).sort();
-        expect(all).toEqual(['anxious_sofa', 'depress_sofa', 'euphoria_sofa', 'panic_sofa', 'tired_sofa']);
+      it('통째(모든 효과 placed 2)는 basic_sofa 말고 소파 규칙 전부 — 책상은 앵커가 하나라 없음', () => {
+        const fur = [...ROOM_RULES.rulesById.values()].filter((r) => 'occupy' in r && r.when.self.length > 0 && !('other' in r.when));
+        const whole = fur.filter((r) => 'occupy' in r && r.effect.every((e) => 'placed' in e && e.placed === 2)).map((r) => r.id).sort();
+        expect(whole).toEqual(['anxious_sofa', 'depress_sofa', 'euphoria_sofa', 'panic_sofa', 'tired_sofa']);
+        const deskNeeds = fur.filter((r) => r.id.endsWith('_desk')).flatMap((r) => r.effect.map((e) => ('placed' in e ? (e.placed ?? 1) : 1)));
+        expect(Math.max(...deskNeeds)).toBe(1);
       });
     });
 

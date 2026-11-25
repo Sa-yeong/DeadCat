@@ -347,8 +347,8 @@ describe('캐릭터와 가구', () => {
         s.c.addFurniture(SOFA, SOFA_MODEL)
         s.add('c1', 'tired')
         s.c.visitFurniture('c1', SOFA)
-        // 가구 모션 명령엔 가구 · 잡은 자리가 실려 간다(89afa2a — 렌더러가 앵커 자리에 앉힌다)
-        expect(s.plays).toEqual([{ characterId: 'c1', motions: ['lie_down'], furnitureId: SOFA, anchorId: 'seat_l' }])
+        // 가구 모션 명령엔 가구 · 잡은 자리(앵커 목록)가 실려 간다 — 이 테스트의 규칙은 placed 없음 = 한 자리(5448b34)
+        expect(s.plays).toEqual([{ characterId: 'c1', motions: ['lie_down'], furnitureId: SOFA, anchorId: ['seat_l'] }])
         expect(s.c.state.getState('c1')).toMatchObject({ kind: 'interactingFurniture', furnitureId: SOFA, ruleId: 'tired_sofa' })
     })
 
@@ -361,7 +361,7 @@ describe('캐릭터와 가구', () => {
         t = 1000
         s.finish('c1')
         expect(kindOf(s.c, 'c1')).toBe('wandering')
-        expect(s.c.state.hasFreeAnchor(SOFA)).toBe(true)
+        expect(s.c.state.getFreeAnchors(SOFA)).toEqual(['seat_l', 'seat_r'])
         t = 1000 + 20000 - 1
         expect(s.c.state.isOnCooldown('tired_sofa', 'c1', SOFA_MODEL)).toBe(true)
         t = 1000 + 20000
@@ -374,7 +374,7 @@ describe('캐릭터와 가구', () => {
         s.add('c1', 'euphoria')
         s.c.visitFurniture('c1', DESK)
         expect(s.c.state.getState('c1')).toEqual({ kind: 'reacting', ruleId: 'euphoria_desk' })
-        expect(s.c.state.hasFreeAnchor(DESK)).toBe(true)
+        expect(s.c.state.getFreeAnchors(DESK).length).toBeGreaterThan(0)
     })
 
     it('정원이 차면 다음 캐릭터는 가구가 없는 것처럼 지나간다', () => {
@@ -388,7 +388,7 @@ describe('캐릭터와 가구', () => {
         const kinds = ids.map(id => kindOf(s.c, id))
         expect(kinds.filter(k => k === 'interactingFurniture')).toHaveLength(cap)
         expect(kinds.filter(k => k === 'wandering')).toHaveLength(1)
-        expect(s.c.state.hasFreeAnchor(SOFA)).toBe(false)
+        expect(s.c.state.getFreeAnchors(SOFA)).toEqual([])
     })
 
     it('쿨다운 중에는 같은 가구에 다시 들어가지 않는다', () => {
@@ -416,7 +416,7 @@ describe('캐릭터와 가구', () => {
         s.c.removeFurniture(SOFA)
         expect(s.cancels).toEqual(['c1'])
         expect(kindOf(s.c, 'c1')).toBe('wandering')
-        expect(s.c.state.hasFreeAnchor(SOFA)).toBe(false)     // 가구 자체가 없어짐
+        expect(s.c.state.getFreeAnchors(SOFA)).toEqual([])     // 가구 자체가 없어짐
     })
 
     it('감정이 바뀌면 점유가 풀리고 모션이 중단되며 쿨다운이 걸린다', () => {
@@ -428,7 +428,7 @@ describe('캐릭터와 가구', () => {
         s.c.setEmotion('c1', 'happy')
         expect(s.cancels).toEqual(['c1'])
         expect(kindOf(s.c, 'c1')).toBe('wandering')
-        expect(s.c.state.hasFreeAnchor(SOFA)).toBe(true)
+        expect(s.c.state.getFreeAnchors(SOFA)).toEqual(['seat_l', 'seat_r'])
         expect(s.c.state.isOnCooldown('tired_sofa', 'c1', SOFA_MODEL)).toBe(true)
     })
 })

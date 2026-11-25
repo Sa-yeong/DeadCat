@@ -144,7 +144,7 @@ function setup(save: SaveLayout | undefined, clock: { v: MotionClock | null } = 
   });
   loop.load({ mode: 'OWNER', shareOption: true, characters: [ch(1), ch(2)], placements: [DESK, SOFA], roomReactions: { counts: {}, mine: null } });
   const breakDesk = (who = '1') =>
-    f.send({ type: 'play', characterId: who, steps: [{ name: 'breaking_desk', kind: 'clip', loop: false }], furnitureId: DESK.placementId, anchorId: 'chair' });
+    f.send({ type: 'play', characterId: who, steps: [{ name: 'breaking_desk', kind: 'clip', loop: false }], furnitureId: DESK.placementId, anchorId: ['chair'] });
   const tick = (seconds: number, dt = 0.05) => {
     for (let i = 0; i < Math.round(seconds / dt); i++) loop.tick(dt);
   };
@@ -241,7 +241,7 @@ describe('RoomLoop — 가구 박살 흐름 (G-2)', () => {
 
   it('박살 때 같은 가구를 쓰던 다른 캐릭터(점유 없는 숨기)도 그 순간 끝난다 — 끝 알림 한 번(거실모션 H-3)', () => {
     const t = setup(async (p) => [...p]);
-    t.send({ type: 'play', characterId: '2', steps: [{ name: 'hiding', kind: 'clip', loop: true }], furnitureId: DESK.placementId, anchorId: 'chair' });
+    t.send({ type: 'play', characterId: '2', steps: [{ name: 'hiding', kind: 'clip', loop: true }], furnitureId: DESK.placementId, anchorId: ['chair'] });
     t.breakDesk('1');
     t.tick(0.5);
     expect(t.finished).toEqual([]);
@@ -257,7 +257,7 @@ describe('RoomLoop — 가구 박살 흐름 (G-2)', () => {
       return p.map((q) => ({ ...q }));
     });
     t.breakDesk('1');
-    t.send({ type: 'play', characterId: '2', steps: [{ name: 'breaking_sofa', kind: 'clip', loop: false }], furnitureId: SOFA.placementId, anchorId: 'seat_l' });
+    t.send({ type: 'play', characterId: '2', steps: [{ name: 'breaking_sofa', kind: 'clip', loop: false }], furnitureId: SOFA.placementId, anchorId: ['seat_l'] });
     t.tick(1);
     await flush();
     await flush();

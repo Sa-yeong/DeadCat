@@ -75,14 +75,22 @@ export function matchCharacter(a: CharView, b: CharView, ctx: MatchContext): Dec
     }
 }
 
-export function matchFurniture(char: CharView, furnitureId: string, category: string, ctx: MatchContext): Decision_F | null {
+export function matchFurniture(char: CharView, furnitureId: string, category: string, ctx: MatchContext, freeSlots = Infinity): Decision_F | null {
     const cand = firstAvailable(ctx.rules.furnitureIndex.get(`${char.emotion}|${category}`), char.id, furnitureId, ctx)
-    if (!cand) return null
+    if (!cand) return null;
+
+    const availableEffects = cand.rule.occupy ?
+        cand.rule.effect.filter((e) => (e.placed ?? 1) <= freeSlots) :
+        cand.rule.effect;
+
+    if (availableEffects.length === 0)
+        return null;
+
     return {
         rule: cand.rule,
         self: cand.self,
         furniture: cand.other,
-        effect: weightedPick(cand.rule.effect, ctx.random),
+        effect: weightedPick(availableEffects, ctx.random),
     }
 }
 

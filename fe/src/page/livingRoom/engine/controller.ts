@@ -216,18 +216,30 @@ export class LivingRoomController {
             this.log(`${pair}: 캐릭터가 상호작용 중`)
             return
         }
-        if (!this.state.hasFreeAnchor(furnitureId)) {
+
+        const freeAnchors = this.state.getFreeAnchors(furnitureId);
+        if (freeAnchors.length === 0) {
             this.log(`${pair}: 자리 없음`)    // 가구가 없는 것처럼 취급
             return
+        }        
+
+        const d = matchFurniture({ id: charId, emotion }, model, furniture.category, this.ctx, freeAnchors.length)
+        if (d){ 
+            const targetAnchors = d.rule.occupy ? freeAnchors.slice(0, d.effect.placed ?? 1) : [];
+            this.startFurniture(d, furnitureId, targetAnchors);
+        } else {
+            // 규칙은 있는데(쿨다운 아님) 효과마다 필요한 자리(placed)가 남은 자리보다 많으면 — 쿨다운으로 잘못 적히지 않게
+            const rules = this.rules.furnitureIndex.get(`${emotion}|${furniture.category}`)
+            const live = rules?.find((r) => !this.state.isOnCooldown(r.id, charId, model))
+            if (live?.occupy) {
+                const need = Math.min(...live.effect.map((e) => e.placed ?? 1))
+                if (need > freeAnchors.length) {
+                    this.log(`${pair}: 자리 없음(${live.id} — 자리 ${need}개 필요, 빈 자리 ${freeAnchors.length}개)`)
+                    return
+                }
+            }
+            this.log(`${pair}: ${this.whyNoMatch([[rules, charId, model]], `${emotion} × ${furniture.category}`)}`)
         }
-
-        const anchor = this.state.getFreeAnchor(furnitureId);
-
-        const d = matchFurniture({ id: charId, emotion }, model, furniture.category, this.ctx)
-        if (d) this.startFurniture(d, furnitureId, anchor)
-        else this.log(`${pair}: ${this.whyNoMatch([
-            [this.rules.furnitureIndex.get(`${emotion}|${furniture.category}`), charId, model],
-        ], `${emotion} × ${furniture.category}`)}`)
     }
 
     // ---------- 상호작용 시작 ----------
@@ -305,7 +317,7 @@ export class LivingRoomController {
         if (effect.other.length === 0) applyEmotion()    // 모션이 없으면 감정만 바로 바꾼다
     }
 
-    private startFurniture(d: Decision_F, placementId: number, anchor?: string): void {
+    private startFurniture(d: Decision_F, placementId: number, anchor?: string[]): void {
         const { rule, self: charId, effect } = d
         const pair = `${this.label(charId)} × ${this.furnitureLabel(placementId)} - ${anchor}`
         if (effect.self.length === 0) {
@@ -315,14 +327,9 @@ export class LivingRoomController {
         const model = this.models.get(placementId);
         if(!model) return;
 
-        if (rule.occupyAll) {
-            // 통째 점유 — 자리가 하나라도 차 있으면 시작하지 않는다(거실모션 H-3)
-            if (!this.state.occupyAll(placementId, charId, rule.id)) {
-                this.log(`${pair}: 자리 없음(통째로 써야 함 — ${rule.id})`)
-                return
-            }
-        }else if (rule.occupy) {
-            if (!this.state.occupy(placementId, charId, rule.id)) return
+        if (rule.occupy && anchor !== undefined) {
+            if(!anchor || anchor.length === 0) return;
+            this.state.occupy(placementId, charId, rule.id, anchor);
         }else{
             this.state.setState(charId, {kind: 'reacting', ruleId: rule.id})
         }
@@ -332,7 +339,7 @@ export class LivingRoomController {
         const endsWithLoop = lastDef?.kind === 'clip' && lastDef.loop === true
         const endAt = endsWithLoop ? this.now() + this.furnitureDurationMs : null
 
-        this.log(`${pair}: 시작 → ${rule.id} (${effect.self.join('>')})${rule.occupyAll ? ' 통째 점유' : rule.occupy ? ' 점유' : ''}${endsWithLoop ? ` ${this.furnitureDurationMs / 1000}초 제한` : ''}`)
+        this.log(`${pair}: 시작 → ${rule.id} (${effect.self.join('>')})${rule.occupy ? ` 점유(자리 ${anchor?.length ?? 0})` : ''}${endsWithLoop ? ` ${this.furnitureDurationMs / 1000}초 제한` : ''}`)
 
         const interactionId = this.begin(rule.id, rule.cooldownMs, charId, model, [charId], placementId, null, endAt);
         
@@ -425,7 +432,7 @@ export type PlayRequest = {
     characterId: string;
     motions: string[];
     furnitureId?: number;
-    anchorId?: string;
+    anchorId?: string[];
 }
 
 export type Dispatcher = {

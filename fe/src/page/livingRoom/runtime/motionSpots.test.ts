@@ -82,7 +82,7 @@ function setup(placement: PlacementDto, motion: string) {
     {
       // 가구에 오면 그 가구 모션을 바로 튼다(엔진 흉내)
       visitFurniture: (id: string, pid: number) =>
-        send({ type: 'play', characterId: id, steps: [{ name: motion, kind: 'clip', loop: true }], furnitureId: pid, anchorId: 'chair' }),
+        send({ type: 'play', characterId: id, steps: [{ name: motion, kind: 'clip', loop: true }], furnitureId: pid, anchorId: ['chair'] }),
       emotionOf: () => undefined,
       isWaitingEmotion: () => false,
     } as Record<string, unknown>,

@@ -7,7 +7,7 @@ export type Emotion = typeof EMOTIONS[number]
 export type MarketEventType = typeof MARKET_EVENTS[number]
 
 export type Effect = { weight: number; self: string[]; other: string[]; otherEmotionTo: Emotion[]}
-export type FurEffect = {weight: number; self: string[]}
+export type FurEffect = {weight: number; self: string[]; placed?: number;}
 export type CharacterRule = { 
     id: string
     when: {self: Emotion[], other: Emotion[]}
@@ -23,8 +23,6 @@ export type FurnitureRule = {
     priority: number
     effect: FurEffect[]
     occupy: boolean
-    // 가구의 자리(앵커)를 전부 차지한다 — 자리가 다 비어 있을 때만 시작(거실모션 H-3, 소파를 통째로 쓰는 모션)
-    occupyAll?: boolean
     cooldownMs: number
     interruptible: boolean
 }
@@ -40,7 +38,7 @@ export type PoseDef = {idle: string; walk: string}
 export type CharState =
     | {kind: 'wandering'}
     | {kind: 'reacting'; ruleId: string}
-    | {kind: 'interactingFurniture'; furnitureId: number; anchorId:string; ruleId: string; all?: boolean}
+    | {kind: 'interactingFurniture'; furnitureId: number; anchorId:string[]; ruleId: string}
     | {kind: 'interactingGroup'; groupId: number}
     | {kind: 'dragging'}
 
@@ -66,9 +64,8 @@ export type rawFurnitureRule = {
     id: string
     when: {self: string | string[]; furniture: string | string[]}
     priority: number
-    effect: {weight?: number; self: string | string[]}[]
+    effect: FurEffect[]
     occupy: boolean
-    occupyAll?: boolean
     cooldownMs: number
     interruptible: boolean
 }

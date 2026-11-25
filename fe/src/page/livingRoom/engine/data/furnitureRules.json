@@ -38,11 +38,10 @@
         "when": {"self":["tired"], "furniture": ["sofa"]},
         "priority": 80,
         "effect":[
-            {"weight": 6, "self": "lie_down"},
-            {"weight": 4, "self": "sleep"}
+            {"weight": 6, "self": "lie_down", "placed": 2},
+            {"weight": 4, "self": "sleep", "placed": 2}
         ],
         "occupy":true,
-        "occupyAll": true,
         "cooldownMs":20000,
         "interruptible":true
     },
@@ -63,10 +62,9 @@
         "when": {"self": ["depress"], "furniture": ["sofa"]},
         "priority":80,
         "effect":[
-            {"weight":1, "self": "crouch_crying"}
+            {"weight":1, "self": "crouch_crying", "placed": 2}
         ],
         "occupy":true,
-        "occupyAll": true,
         "cooldownMs":20000,
         "interruptible": true
     },
@@ -86,10 +84,9 @@
         "when":{"self": ["euphoria"], "furniture": ["sofa"]},
         "priority": 80,
         "effect": [
-            {"weight": 1, "self": "jumping"}
+            {"weight": 1, "self": "jumping", "placed": 2}
         ],
         "occupy": true,
-        "occupyAll": true,
         "cooldownMs":20000,
         "interruptible": false
     },
@@ -109,10 +106,9 @@
         "when": {"self": ["panic"], "furniture": ["sofa"]},
         "priority": 80,
         "effect":[
-            {"weight": 1, "self": "breaking_sofa"}
+            {"weight": 1, "self": "breaking_sofa", "placed": 2}
         ],
         "occupy": true,
-        "occupyAll": true,
         "cooldownMs":20000,
         "interruptible": false
     },
@@ -132,10 +128,9 @@
         "when": {"self": ["anxious"], "furniture": ["sofa"]},
         "priority": 80,
         "effect":[
-            {"weight":1, "self": "crouch"}
+            {"weight":1, "self": "crouch", "placed": 2}
         ],
         "occupy": true,
-        "occupyAll": true,
         "cooldownMs":20000,
         "interruptible": true
     },
