@@ -118,7 +118,7 @@
             {"weight": 1, "self": "pass_by", "other": "fall_down"}
         ],
         "group": false,
-        "cooldownMs": 5000,
+        "cooldownMs": 0,
         "interruptible": false
     },
     {
@@ -130,7 +130,7 @@
             {"weight": 3, "self": "pass_by", "other": "fall_down"}
         ],
         "group":false,
-        "cooldownMs": 15000,
+        "cooldownMs": 0,
         "interruptible": false
     },
     {
