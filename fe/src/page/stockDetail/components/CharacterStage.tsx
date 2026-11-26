@@ -4,6 +4,7 @@ import { StockScene, framingStep, type Framing } from '../runtime/StockScene';
 import { StockStageLoop } from '../runtime/StockStageLoop';
 import { characterOf, type CharacterInfo } from '../runtime/assets';
 import { notify } from '../../../common/notifications/store';
+import { chibiAnchors } from '../runtime/chibiFraming';
 
 export type StageStatus = 'loading' | 'ready' | 'failed';
 
@@ -37,6 +38,7 @@ export function framingFor(L: Layout): Framing {
     horizon: L.floor.horizon,
     vanishX: L.floor.vanishX,
     winMid: (L.win.top + L.win.bottom) / 2,
+    chibi: chibiAnchors(L.win),
   };
 }
 
@@ -156,7 +158,7 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
     if (step === 'home') {
       settle.current = window.setTimeout(() => {
         applied.current = f;
-        lp.moveHome(f.centerX);
+        lp.moveHome(f);
       }, HOME_SETTLE_MS);
       return;
     }

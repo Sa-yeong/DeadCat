@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { rayHitsBody, raySegmentDistance } from './bodyHit';
+import { CHIBI_HIT, FULL_HIT, rayHitsBody, raySegmentDistance } from './bodyHit';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
@@ -50,5 +50,37 @@ describe('rayHitsBody — 뼈 캡슐 판정', () => {
   it('뼈가 없는 모델이면 그 캡슐만 건너뛴다', () => {
     const none = () => null;
     expect(rayHitsBody(new THREE.Ray(v(0, 1, 5), v(0, 0, -1)), none, 1.5, 0.15)).toBe(false);
+  });
+});
+
+describe('rayHitsBody — 치비(CHIBI_HIT, 치비 지시서 CB-2)', () => {
+  // clothes/13 정지 자세 뼈 위치 그대로(키 0.696m, 머리 뼈 0.51 → 머리 꼭대기 0.696, 머리카락 반폭 약 0.128)
+  const bones: Record<string, THREE.Vector3> = {
+    hips: v(0, 0.265, 0), spine: v(0, 0.288, 0), chest: v(0, 0.329, 0), neck: v(0, 0.464, 0), head: v(0, 0.51, 0),
+    leftUpperArm: v(0.06, 0.441, 0), leftLowerArm: v(0.138, 0.441, 0), leftHand: v(0.192, 0.441, 0),
+    rightUpperArm: v(-0.06, 0.441, 0), rightLowerArm: v(-0.138, 0.441, 0), rightHand: v(-0.192, 0.441, 0),
+    leftUpperLeg: v(0.045, 0.243, 0), leftLowerLeg: v(0.045, 0.15, 0), leftFoot: v(0.045, 0.054, 0),
+    rightUpperLeg: v(-0.045, 0.243, 0), rightLowerLeg: v(-0.045, 0.15, 0), rightFoot: v(-0.045, 0.054, 0),
+  };
+  const bone = (n: string) => bones[n]?.clone() ?? null;
+  const ray = (x: number, y: number) => new THREE.Ray(v(x, y, 5), v(0, 0, -1));
+  const chibi = (x: number, y: number) => rayHitsBody(ray(x, y), bone, 0.696, 0.186, CHIBI_HIT);
+  const full = (x: number, y: number) => rayHitsBody(ray(x, y), bone, 0.696, 0.186, FULL_HIT);
+
+  it('머리 가운데 · 머리 옆(머리카락 안쪽) · 몸통 · 팔을 누르면 닿는다', () => {
+    expect(chibi(0, 0.59)).toBe(true); // 머리 가운데
+    expect(chibi(0.11, 0.6)).toBe(true); // 머리 옆 — 머리카락 반폭 0.128 안
+    expect(chibi(0, 0.33)).toBe(true); // 몸통
+    expect(chibi(0.17, 0.441)).toBe(true); // 팔
+  });
+
+  it('등신대 표로는 머리 옆이 빠진다 — 치비 표가 필요한 까닭', () => {
+    expect(full(0.11, 0.6)).toBe(false);
+  });
+
+  it('바깥 허공 · 머리 위는 닿지 않는다', () => {
+    expect(chibi(0.3, 0.33)).toBe(false); // 몸 옆 허공
+    expect(chibi(0, 0.8)).toBe(false); // 머리 위
+    expect(chibi(0.2, 0.62)).toBe(false); // 머리 옆 바깥
   });
 });

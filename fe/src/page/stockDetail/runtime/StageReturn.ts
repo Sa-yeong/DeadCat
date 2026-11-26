@@ -10,7 +10,7 @@ export const STAY_PX = 40;
 /** 걷기·달리기 화면 속도(px/초) — 걷기는 느긋하게(넓은 화면 끝에서 몇 초 걸려도 된다) */
 const WALK_PX_S = 220;
 const RUN_PX_S = 900;
-/** 캐릭터 몸 반폭(m) — 화면 밖으로 "완전히" 나갔는지 볼 때. 첫 등장의 출발 자리(왼쪽 밖)도 이 기준 */
+/** 등신대 몸 반폭(m) — 화면 밖으로 "완전히" 나갔는지 볼 때. 첫 등장의 출발 자리(왼쪽 밖)도 이 기준. 치비는 chibiFraming.CHIBI_BODY_HALF_W_M(씬 bodyHalfWidth 가 고른다) */
 export const BODY_HALF_W_M = 0.3;
 /** 밀기가 멈추고 이만큼 지나야 출발(초) — 끄는 중간에 잠깐 멈춘 것에 출발하지 않게 */
 const START_WAIT_S = 0.25;
@@ -92,7 +92,7 @@ export class StageReturn {
     if (!home || !ppm) return;
     this.mode = null;
     this.tripPxS = null;
-    this.x = offLeftX(home.centerX, this.pan, ppm, BODY_HALF_W_M);
+    this.x = offLeftX(home.centerX, this.pan, ppm, this.scene.bodyHalfWidth);
     this.yaw = TURN_YAW;
     this.scene.setRoot(this.x, this.yaw);
   }
@@ -196,7 +196,7 @@ export class StageReturn {
     if (!home) return false;
     const ppm = this.scene.pixelsPerMeter;
     const cx = home.centerX + (this.x - this.pan) * ppm;
-    const half = BODY_HALF_W_M * ppm;
+    const half = this.scene.bodyHalfWidth * ppm;
     return cx + half < 0 || cx - half > Math.min(home.width, this.visibleWidth);
   }
 

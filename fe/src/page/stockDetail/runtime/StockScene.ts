@@ -19,7 +19,9 @@ import {
 } from './motionTable';
 import { StageEnvironment } from './StageEnvironment';
 import { createHatDrop, type HatDrop } from './hatDrop';
-import { rayHitsBody } from './bodyHit';
+import { CHIBI_HIT, FULL_HIT, rayHitsBody } from './bodyHit';
+import { CHIBI_BODY_HALF_W_M, type ChibiAnchors } from './chibiFraming';
+import { BODY_HALF_W_M } from './StageReturn';
 import { PERF_ON, downloadNote, memoryNote, perfNow, perfRow, shortName } from '../../../shared/perf';
 import { fetchFile, isStored, parseFile } from '../../../shared/three/fileStore';
 import { prepareDraw } from '../../../shared/three/prepareDraw';
@@ -41,6 +43,8 @@ export interface Framing {
   vanishX: number;
   /** 창문 세로 가운데 — 드론 뷰(최대 각도)에서 캐릭터가 걸릴 높이 */
   winMid: number;
+  /** 치비 모드일 때 걸 위치(머리 꼭대기 · 발목 · 가운데 x) — 치비 지시서 CB-2, chibiFraming.ts */
+  chibi: ChibiAnchors;
 }
 
 /** 가로 위치(캐릭터 가운데 · 소실점)만 다른가 — 그렇다면 캔버스를 다시 맞출 필요 없이 옮기기만 한다 */
@@ -52,6 +56,9 @@ export function onlyCenterMoved(a: Framing, b: Framing): boolean {
     a.hips === b.hips &&
     a.horizon === b.horizon &&
     a.winMid === b.winMid &&
+    a.chibi.headTop === b.chibi.headTop &&
+    a.chibi.ankle === b.chibi.ankle &&
+    // 치비 가운데(창 폭 25%)는 창문 가운데와 다르게 옮겨 가지만 가로 위치일 뿐이라 보지 않는다 — 창 오른쪽 끝만 움직이므로 등신대 가운데가 그대로면 치비도 그대로
     a.centerX - a.vanishX === b.centerX - b.vanishX
   );
 }
@@ -102,15 +109,36 @@ export interface ModelSource {
   hatDrop?: boolean;
 }
 
-/** 몸 치수 — 불러올 때 한 번 잰다(골반 · 머리 꼭대기 높이, 머리 길이) */
+/** 몸 치수 — 불러올 때 한 번 잰다(골반 · 머리 꼭대기 · 발목 높이, 머리 길이) */
 interface BodySize {
   hips: number;
   headTop: number;
   headLen: number;
+  /** 발목 — leftFoot · rightFoot 뼈 높이의 평균. 치비 구도의 아래 기준(치비 원점은 신발 바닥보다 약 5cm 아래라 원점으로 재지 않는다) */
+  ankle: number;
 }
 
 /** 모델을 불러오기 전 몸 치수 — 대략 등신대 */
-const DEFAULT_BODY: BodySize = { hips: 0.9, headTop: 1.5, headLen: 0.2 };
+const DEFAULT_BODY: BodySize = { hips: 0.9, headTop: 1.5, headLen: 0.2, ankle: 0.1 };
+
+/**
+ * 정면 구도 풀이 — 위 기준(topM, m)이 화면 topPx, 아래 기준(lowM)이 lowPx 에 오도록 카메라 거리(d)와 눈높이(camY)를 푼다.
+ * 등신대는 머리 꼭대기 · 골반, 치비는 머리 꼭대기 · 발목. s = 거리 1m 에서 1m 가 몇 px.
+ * 화면 y = horizon − (높이 − camY) × s / d
+ */
+export function solveFront(
+  H: number,
+  topPx: number,
+  lowPx: number,
+  horizon: number,
+  topM: number,
+  lowM: number,
+): { s: number; d: number; camY: number } {
+  const s = H / 2 / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+  const d = ((topM - lowM) * s) / Math.max(lowPx - topPx, 1);
+  const camY = topM - ((horizon - topPx) * d) / s;
+  return { s, d, camY };
+}
 
 /**
  * 모델 한 벌 — 등신대 · 치비가 **따로** 갖는 것(VRM · 믹서 · 해석한 모션 · 몸 치수 · 모자).
@@ -177,6 +205,11 @@ export class StockScene {
   private readonly touched = new Set<string>();
 
   private framing: Framing | null = null;
+  /**
+   * 캐릭터가 돌아갈 자리의 기준 화면 — 창 크기가 바뀌면(setFraming) framing 과 같고, 사이드바를 여닫으면(setHomeFraming)
+   * 카메라(framing)는 그대로 두고 이것만 새 화면. 모델을 바꿔 낄 때 그 모델의 집(등신대 = 창 가운데, 치비 = 창 폭 25%)을 여기서 다시 잡는다
+   */
+  private homeF: Framing | null = null;
   /** 캐릭터 뒤 3D 공간(격자 바닥·지평선 안개) */
   private readonly env = new StageEnvironment();
   private disposed = false;
@@ -383,21 +416,37 @@ export class StockScene {
 
   setFraming(f: Framing) {
     this.framing = f;
+    this.homeF = f;
     this.charShift = 0;
     this.renderer.setSize(f.width, f.height, false);
     this.applyFraming();
   }
 
-  /** 지금 캐릭터를 걸어 둔 가로 위치(px, 창문 가운데) — 아직 안 정했으면 null */
+  /** 지금 캐릭터를 걸어 둔 가로 위치(px — 등신대는 창문 가운데, 치비는 창 폭 25%) — 아직 안 정했으면 null */
   get centerX(): number | null {
-    return this.framing ? this.framing.centerX + this.charShift : null;
+    return this.framing ? this.centerOf(this.framing) + this.charShift : null;
+  }
+
+  /** 화면 f 에서 지금 모델의 집(가운데 x, px) — 등신대 = 창문 가운데, 치비 = 창 폭 25%(치비 지시서 CB-2) */
+  centerOf(f: Framing): number {
+    return this.rig?.kind === 'chibi' ? f.chibi.centerX : f.centerX;
+  }
+
+  /** 사이드바를 여닫아 바뀐 화면 — 카메라는 그대로 두고 돌아갈 자리의 기준만(모델을 바꿔 끼면 그 모델의 집을 여기서) */
+  setHomeFraming(f: Framing) {
+    this.homeF = f;
   }
 
   /** 캐릭터를 걸 가로 위치만 x(px)로 옮긴다 — 카메라 · 바닥은 그대로 */
   setCharacterCenter(x: number) {
     if (!this.framing) return;
-    this.charShift = x - this.framing.centerX;
+    this.charShift = x - this.centerOf(this.framing);
     this.placeRoot();
+  }
+
+  /** 지금 모델의 몸 반폭(m) — 화면 밖 판정 · 첫 등장 출발 자리(StageReturn) */
+  get bodyHalfWidth(): number {
+    return this.rig?.kind === 'chibi' ? CHIBI_BODY_HALF_W_M : BODY_HALF_W_M;
   }
 
   /**
@@ -407,7 +456,7 @@ export class StockScene {
   shiftCenter(dx: number) {
     const f = this.framing;
     if (!f || !dx) return;
-    this.framing = { ...f, centerX: f.centerX + dx, vanishX: f.vanishX + dx };
+    this.framing = { ...f, centerX: f.centerX + dx, vanishX: f.vanishX + dx, chibi: { ...f.chibi, centerX: f.chibi.centerX + dx } };
     this.applyFraming();
   }
 
@@ -450,7 +499,8 @@ export class StockScene {
     const f = this.framing;
     if (!f) return null;
     // 드론 뷰에서는 캐릭터가 창문 가운데(소실점 자리)에 온다
-    return { centerX: f.centerX + this.charShift + (f.vanishX - f.centerX) * this.drone, width: f.width };
+    const c = this.centerOf(f);
+    return { centerX: c + this.charShift + (f.vanishX - c) * this.drone, width: f.width };
   }
 
   /** 화면 좌표(캔버스 기준 px)가 캐릭터 몸에 닿는가 */
@@ -468,6 +518,7 @@ export class StockScene {
       (name) => humanoid.getNormalizedBoneNode(name)?.getWorldPosition(new THREE.Vector3()) ?? null,
       rig.body.headTop * scale,
       rig.body.headLen * scale,
+      rig.kind === 'chibi' ? CHIBI_HIT : FULL_HIT,
     );
   }
 
@@ -595,8 +646,10 @@ export class StockScene {
     this.touched.clear();
     this.rig = next;
     next.vrm.scene.visible = true;
+    // 집 자리 — 새 모델의 집(등신대 창 가운데 / 치비 창 폭 25%)으로. 밀려나 있던 만큼(m)은 그대로 두고 그 집 기준으로 선다
+    if (this.framing && this.homeF) this.charShift = this.centerOf(this.homeF) - this.centerOf(this.framing);
     this.setRoot(this.rootX, this.rootYaw);
-    this.applyFraming(); // 몸 치수가 바뀌었다
+    this.applyFraming(); // 몸 치수 · 구도 기준이 바뀌었다
     if (!prev) return; // 첫 모델 — 모션은 루프가 튼다
 
     const def = name ? next.motions[name] : undefined;
@@ -675,6 +728,7 @@ export class StockScene {
 
   /**
    * 카메라를 옮겨 캐릭터가 정해진 화면 위치에 걸리게 한다.
+   * 등신대는 머리 꼭대기 · 골반 · 창문 가운데, 치비는 머리 꼭대기 · 발목 · 창 폭 25%(Framing.chibi) — 같은 풀이(solveFront).
    *
    * 카메라는 수평으로 정면을 본다(세로선이 기울지 않게). 대신 **렌즈를 옆으로 미는**
    * 방식(시점 이동, view offset)으로 지평선·소실점을 화면 가운데가 아닌 원하는 자리에 둔다
@@ -687,12 +741,12 @@ export class StockScene {
     const f = this.framing;
     if (!f) return;
     const { width: W, height: H } = f;
-    const s = H / 2 / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-    const spanPx = f.hips - f.headTop;
-    const spanM = this.body.headTop - this.body.hips;
-    const d = (spanM * s) / Math.max(spanPx, 1);
-    const camY = this.body.headTop - ((f.horizon - f.headTop) * d) / s;
-    const camX = -((f.centerX - f.vanishX) * d) / s + this.panX;
+    const chibi = this.rig?.kind === 'chibi';
+    const topPx = chibi ? f.chibi.headTop : f.headTop;
+    const lowPx = chibi ? f.chibi.ankle : f.hips;
+    const lowM = chibi ? this.body.ankle : this.body.hips;
+    const { s, d, camY } = solveFront(H, topPx, lowPx, f.horizon, this.body.headTop, lowM);
+    const camX = -((this.centerOf(f) - f.vanishX) * d) / s + this.panX;
     // 앞뒤로만 물러난다 — 눈높이(camY)가 그대로라 지평선 자리는 변하지 않는다
     const dist = d * this.zoom;
 
@@ -842,6 +896,12 @@ function measureBody(vrm: VRM): BodySize {
   // 머리 꼭대기 — 머리카락까지 포함한 전체 상자의 윗면. 머리 뼈보다 아래면 머리 뼈 기준으로
   const headY = head ? head.getWorldPosition(new THREE.Vector3()).y : box.max.y;
   const headTop = Math.max(box.max.y, headY);
+  // 발목 — 두 발 뼈 높이의 평균. 발 뼈가 없으면 상자 바닥
+  const feet = (['leftFoot', 'rightFoot'] as const)
+    .map((n) => vrm.humanoid.getNormalizedBoneNode(n))
+    .filter((n) => !!n)
+    .map((n) => n.getWorldPosition(new THREE.Vector3()).y);
+  const ankle = feet.length ? feet.reduce((a, b) => a + b, 0) / feet.length : box.min.y;
   // headLen — 머리 뼈에서 머리 꼭대기까지. 누르기 판정(bodyHit)의 머리 캡슐 크기
-  return { hips: hipsY, headTop, headLen: headTop - headY };
+  return { hips: hipsY, headTop, headLen: headTop - headY, ankle };
 }

@@ -343,10 +343,12 @@ export class StockStageLoop {
   }
 
   /**
-   * 창문 가운데만 x(px)로 옮겨 갔다(글로벌 사이드바 여닫기) — 캐릭터가 걸어/뛰어 온다(StageReturn).
-   * 아직 캐릭터가 안 떴으면 기다릴 것 없이 바로 옮긴다.
+   * 창문만 옮겨 갔다(글로벌 사이드바 여닫기, 새 화면 f) — 캐릭터가 지금 모델의 집(등신대 창문 가운데 / 치비 창 폭 25%)으로
+   * 걸어/뛰어 온다(StageReturn). 아직 캐릭터가 안 떴으면 기다릴 것 없이 바로 옮긴다.
    */
-  moveHome(x: number) {
+  moveHome(f: Framing) {
+    this.scene.setHomeFraming(f);
+    const x = this.scene.centerOf(f);
     const cur = this.scene.centerX;
     if (!this.ready) {
       if (cur !== null) this.scene.shiftCenter(x - cur);

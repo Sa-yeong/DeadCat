@@ -58,6 +58,7 @@ function fakeScene(centerX = 800, width = 1300) {
       return MOTION_SET;
     },
     model: 'full' as const,
+    bodyHalfWidth: BODY_HALF_W_M,
     async load() {},
     preload() {},
     async play(n: MotionName) {

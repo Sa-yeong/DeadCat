@@ -10,6 +10,7 @@ const f = (over: Partial<Framing> = {}): Framing => ({
   horizon: 200,
   vanishX: 821,
   winMid: 400,
+  chibi: { headTop: 300, ankle: 760, centerX: 600 },
   ...over,
 });
 /** 창문 가운데만 x 로 옮겨 간 화면 */

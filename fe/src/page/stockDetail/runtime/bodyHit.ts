@@ -11,7 +11,16 @@ import type { VRMHumanBoneName } from '@pixiv/three-vrm';
  */
 
 /** [시작 뼈, 끝 뼈, 반지름(키에 대한 비율)] — 끝 뼈가 없는 모델이면 그 캡슐은 건너뛴다 */
-const SEGMENTS: readonly [VRMHumanBoneName, VRMHumanBoneName, number][] = [
+type Segment = readonly [VRMHumanBoneName, VRMHumanBoneName, number];
+
+/** 몸 모양 하나 — 캡슐 표와 머리 캡슐 반지름(머리 길이 headLen 에 대한 비율) */
+export interface HitShape {
+  segments: readonly Segment[];
+  headR: number;
+}
+
+/** 등신대 — 키 약 1.6m 기준 */
+const SEGMENTS: readonly Segment[] = [
   ['hips', 'spine', 0.11],
   ['spine', 'chest', 0.11],
   ['chest', 'neck', 0.1],
@@ -24,6 +33,30 @@ const SEGMENTS: readonly [VRMHumanBoneName, VRMHumanBoneName, number][] = [
   ['rightUpperLeg', 'rightLowerLeg', 0.07],
   ['rightLowerLeg', 'rightFoot', 0.055],
 ];
+
+export const FULL_HIT: HitShape = { segments: SEGMENTS, headR: 0.5 };
+
+/**
+ * 치비(치비 지시서 CB-2) — 머리가 크고 몸 · 팔다리가 짧고 굵어 키 비율로는 등신대 표가 안 맞는다.
+ * 잰 방법: VRM 정지 자세의 뼈 위치(clothes/13 · 5 — 키 0.70m)를 등신대(NVDA — 키 1.60m)와 견주어,
+ * 몸통 · 팔 반지름은 어깨 관절 간격(0.56배), 다리 반지름은 다리 관절 간격(0.58배)만큼 줄인 길이를 치비 키 비율로 적었다.
+ * 머리는 머리카락 반폭(약 0.13m)에 맞게 headR 0.65(등신대 0.5 — 둘 다 머리카락 반폭의 약 95%)
+ */
+const CHIBI_SEGMENTS: readonly Segment[] = [
+  ['hips', 'spine', 0.14],
+  ['spine', 'chest', 0.14],
+  ['chest', 'neck', 0.13],
+  ['leftUpperArm', 'leftLowerArm', 0.06],
+  ['leftLowerArm', 'leftHand', 0.05],
+  ['rightUpperArm', 'rightLowerArm', 0.06],
+  ['rightLowerArm', 'rightHand', 0.05],
+  ['leftUpperLeg', 'leftLowerLeg', 0.09],
+  ['leftLowerLeg', 'leftFoot', 0.07],
+  ['rightUpperLeg', 'rightLowerLeg', 0.09],
+  ['rightLowerLeg', 'rightFoot', 0.07],
+];
+
+export const CHIBI_HIT: HitShape = { segments: CHIBI_SEGMENTS, headR: 0.65 };
 
 /** 광선(원점 o, 단위 방향 d — 앞쪽만)과 선분 ab 사이의 가장 가까운 거리 */
 export function raySegmentDistance(o: THREE.Vector3, d: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
@@ -49,12 +82,12 @@ export type BonePos = (name: VRMHumanBoneName) => THREE.Vector3 | null;
 
 /**
  * 광선이 몸에 닿는가.
- * height = 키(바닥에서 머리 꼭대기, m) — 반지름의 기준. headLen = 머리 뼈에서 머리 꼭대기까지(m)
+ * height = 키(바닥에서 머리 꼭대기, m) — 반지름의 기준. headLen = 머리 뼈에서 머리 꼭대기까지(m). shape = 등신대 / 치비
  */
-export function rayHitsBody(ray: THREE.Ray, bone: BonePos, height: number, headLen: number): boolean {
+export function rayHitsBody(ray: THREE.Ray, bone: BonePos, height: number, headLen: number, shape: HitShape = FULL_HIT): boolean {
   const o = ray.origin;
   const d = ray.direction.clone().normalize();
-  for (const [from, to, r] of SEGMENTS) {
+  for (const [from, to, r] of shape.segments) {
     const a = bone(from);
     const b = bone(to);
     if (a && b && raySegmentDistance(o, d, a, b) <= r * height) return true;
@@ -66,7 +99,7 @@ export function rayHitsBody(ray: THREE.Ray, bone: BonePos, height: number, headL
     const up = new THREE.Vector3().subVectors(head, neck);
     if (up.lengthSq() > 1e-12) {
       const top = head.clone().addScaledVector(up.normalize(), Math.max(0, headLen) * 0.6);
-      const r = Math.max(0.07 * height, 0.5 * headLen);
+      const r = Math.max(0.07 * height, shape.headR * headLen);
       if (raySegmentDistance(o, d, head, top) <= r) return true;
     }
   }

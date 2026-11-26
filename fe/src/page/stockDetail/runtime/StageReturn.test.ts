@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StageReturn, type ReturnMode } from './StageReturn';
+import { BODY_HALF_W_M, StageReturn, type ReturnMode } from './StageReturn';
 import type { StockScene } from './StockScene';
 
 /** StockScene 흉내 — 화면 가로 위치만 계산한다(1m = 100px). 캐릭터 자리 centerX 만 옮기고 바닥 · 카메라는 floorX 그대로 */
@@ -11,6 +11,7 @@ function fakeScene(centerX: number, width: number) {
     pan: 0,
     root: 0,
     pixelsPerMeter: 100,
+    bodyHalfWidth: BODY_HALF_W_M,
     get home() {
       return { centerX: s.centerX, width: s.width };
     },
