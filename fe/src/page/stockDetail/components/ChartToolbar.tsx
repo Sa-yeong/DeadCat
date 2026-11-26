@@ -147,10 +147,10 @@ export function ChartToolbar({
         </button>
       </Menu>
 
-      {/* 치비 모드 켜고 끄기 — 그리기 바로 오른쪽. 등신대일 때 「작아져라」, 치비일 때 「커져라」(치비 지시서 결정 10) */}
+      {/* 치비 모드 켜고 끄기 — 그리기 바로 오른쪽. 등신대일 때 「작은버전」, 치비일 때 「큰버전」(치비 지시서 결정 10, 글자는 도휘 11-26) */}
       {onChibi && (
         <div style={{ flexShrink: 0 }}>
-          <ToolButton label={chibi ? '커져라' : '작아져라'} active={chibi} busy={chibiBusy} onClick={onChibi}>
+          <ToolButton label={chibi ? '큰버전' : '작은버전'} active={chibi} busy={chibiBusy} onClick={onChibi}>
             <circle cx="12" cy="7.5" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
             <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
           </ToolButton>
