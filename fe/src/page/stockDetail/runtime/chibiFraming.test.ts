@@ -8,10 +8,10 @@ const screenY = (horizon: number, s: number, d: number, camY: number, y: number)
 describe('치비 구도(치비 지시서 CB-2)', () => {
   const win = { left: 420, top: 116, right: 1104, bottom: 864 }; // 시안 창문(폭 684 · 높이 748)
 
-  it('처음 값 — 가로 25% · 머리 54% · 발목은 창 아래 끝 + 높이 3%', () => {
-    expect(CHIBI_FRAMING).toEqual({ centerX: 0.25, headTop: 0.54, ankleBelow: 0.03 });
+  it('처음 값 — 가로 50%(창 가운데) · 머리 54% · 발목은 창 아래 끝 + 높이 3%', () => {
+    expect(CHIBI_FRAMING).toEqual({ centerX: 0.5, headTop: 0.54, ankleBelow: 0.03 });
     const a = chibiAnchors(win);
-    expect(a.centerX).toBeCloseTo(420 + 684 * 0.25);
+    expect(a.centerX).toBeCloseTo(420 + 684 * 0.5);
     expect(a.headTop).toBeCloseTo(116 + 748 * 0.54);
     expect(a.ankle).toBeCloseTo(864 + 748 * 0.03);
     expect(a.ankle).toBeGreaterThan(win.bottom); // 발이 창 밖으로
