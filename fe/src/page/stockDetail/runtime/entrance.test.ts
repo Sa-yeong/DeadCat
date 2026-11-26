@@ -53,6 +53,11 @@ function fakeScene(centerX = 800, width = 1300) {
     get home() {
       return { centerX: s.centerX, width: s.width };
     },
+    /** 루프는 모션 표를 씬(지금 보이는 모델)에서 본다 */
+    get motionSet() {
+      return MOTION_SET;
+    },
+    model: 'full' as const,
     async load() {},
     preload() {},
     async play(n: MotionName) {
@@ -109,7 +114,7 @@ async function setup(first: Emotion[] | 'none' | 'fail' = [hold('happy', 'idle')
   const loop = new StockStageLoop(scene as unknown as StockScene);
   if (Array.isArray(first)) loop.setEmotions(first);
   else if (first === 'fail') loop.emotionMissed();
-  const loaded = loop.load({ model: '/m.vrm', motions: MOTION_SET });
+  const loaded = loop.load({ key: 'm', model: '/m.vrm', motions: MOTION_SET, chibiModel: '/c.vrm', chibiMotions: MOTION_SET });
   if (first === 'none') {
     await flush();
     vi.advanceTimersByTime(EMOTION_WAIT_MS);

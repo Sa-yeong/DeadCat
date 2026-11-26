@@ -140,13 +140,16 @@ export const FACE_RISE_S = 0.3;
 /** 표정 이름 → 세기 */
 export type FaceLevels = Readonly<Record<string, number>>;
 
-/** 치비 모델에 없는 표정(개별종목 전용 눈 밑 그늘 · 얼굴 그늘) — 치비 표에서 뺀다 */
-const NOT_ON_CHIBI: ReadonlySet<string> = new Set(['darkcircle', 'shade']);
+/** 치비 모델에 없는 표정(개별종목 전용 눈 밑 그늘 · 얼굴 그늘) — 치비 표에서 뺀다. 개별종목 치비 모드도 이걸로 거른다 */
+export const NOT_ON_CHIBI: ReadonlySet<string> = new Set(['darkcircle', 'shade']);
+
+/** 이 표정을 지금 모델에 넣는가 — 치비면 NOT_ON_CHIBI 를 건너뛴다(개별종목 치비 모드, 치비 지시서 결정 5) */
+export const faceOnModel = (expr: string, chibi: boolean): boolean => !chibi || !NOT_ON_CHIBI.has(expr);
 
 const idleFace = (e: EmotionName): FaceLevels => ({ [IDLE_FACE[e]!]: 1 });
 
 const motionFace = (m: MotionName): FaceLevels =>
-  Object.fromEntries((MOTIONS[m]?.face ?? []).filter((t) => !NOT_ON_CHIBI.has(t.expr)).map((t) => [t.expr, t.value ?? 0]));
+  Object.fromEntries((MOTIONS[m]?.face ?? []).filter((t) => faceOnModel(t.expr, true)).map((t) => [t.expr, t.value ?? 0]));
 
 /**
  * 거실 치비의 감정 → 표정. 값을 따로 적지 않고 개별종목의 표(MOTIONS · IDLE_FACE)에서 끌어 온다 — 두 화면의 짝이 어긋나지 않게.

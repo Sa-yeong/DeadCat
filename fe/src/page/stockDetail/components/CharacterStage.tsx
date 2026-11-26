@@ -3,6 +3,7 @@ import { useLayout, useSliding, type Layout } from '../layout';
 import { StockScene, framingStep, type Framing } from '../runtime/StockScene';
 import { StockStageLoop } from '../runtime/StockStageLoop';
 import { characterOf, type CharacterInfo } from '../runtime/assets';
+import { notify } from '../../../common/notifications/store';
 
 export type StageStatus = 'loading' | 'ready' | 'failed';
 
@@ -14,6 +15,16 @@ const HIPS_ABOVE_WIN_BOTTOM = 0.02;
  * 여닫는 움직임이 끝나고 이만큼 지나서 간다. 그 사이에 또 여닫으면 다시 이만큼.
  */
 const HOME_SETTLE_MS = 1000;
+
+/** {개발용 — CB-3 에서 진짜 버튼으로 바꾸고 지움} 주소 끝 ?chibi=1 이면 치비 모드로 연다(치비 지시서 CB-1) */
+const DEV_CHIBI = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chibi') === '1';
+
+/** 치비 모드로 바꾼다 — 못 받으면 지금 모델 그대로 두고 공용 알림 한 줄 */
+function switchChibi(lp: StockStageLoop, on: boolean) {
+  void lp.setChibi(on).then((ok) => {
+    if (!ok) notify({ tone: 'FAIL', title: [], body: ['작은 캐릭터를 불러오지 못했어요'] });
+  });
+}
 
 /** 화면 좌표 → 캐릭터를 걸 위치. PNG 시절 캐릭터 사각형(layout.character)을 그대로 따른다 */
 export function framingFor(L: Layout): Framing {
@@ -102,6 +113,8 @@ function StageCanvas({ character, onLoop, onStatus }: StageProps & { character: 
         console.warn('[CharacterStage] 캐릭터 불러오기 실패 — 그림으로 대신한다', err);
         if (alive) cb.current.onStatus('failed');
       });
+    // 등신대가 선 뒤 치비를 받아 바꿔 낀다(setChibi 가 등신대를 기다림). 등신대를 못 띄웠으면 그대로 실패 그림
+    if (DEV_CHIBI) switchChibi(lp, true);
 
     return () => {
       alive = false;

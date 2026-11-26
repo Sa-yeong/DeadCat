@@ -1,5 +1,6 @@
 import { StockScene, type Framing } from './StockScene';
 import { CROSSFADE_S, IDLE_FACE, type Emotion, type EmotionName, type MotionName, type MotionSet } from './motionTable';
+import type { CharacterInfo } from './assets';
 import { SPAM_TAPS, TAP_WINDOW_MS, clickReaction, spamReaction } from './reactions';
 import { StageReturn, type ReturnMode } from './StageReturn';
 import { StageZoom } from './StageZoom';
@@ -100,8 +101,12 @@ export class StockStageLoop {
   private once = false;
   private readonly queue: Emotion[] = [];
   private faceTimer = 0;
-  /** 이 캐릭터의 모션 표(공용 + 덮어쓰기, assets.characterOf) — load 때 받는다 */
-  private motions: MotionSet = {};
+  /** 이 캐릭터(등신대 · 치비 모델과 모션 표, assets.characterOf) — load 때 받는다 */
+  private character: CharacterInfo | null = null;
+  /** 첫 모델(등신대)이 섰나 — 실패면 false. 치비 전환은 이걸 기다린다 */
+  private modelReady: Promise<boolean> = Promise.resolve(false);
+  /** 치비 모드를 골랐나(치비 지시서). 처음은 늘 등신대 */
+  private chibiWanted = false;
   /** 첫 등장 단계 — 처음엔 숨어서 기다림(그동안 차트를 끌어도 움직이지 않는다) */
   private phase: EntrancePhase = 'waiting';
   /** 이번 등장에서 감정 응답을 받았나(실패 응답도 받은 것으로 — 더 기다리지 않음) · 기다리는 쪽을 깨우기 */
@@ -132,12 +137,17 @@ export class StockStageLoop {
    * 캐릭터 하나(모델 + 그 캐릭터의 모션 표)를 띄운다 — assets.characterOf.
    * 끝나면(= 캔버스를 보여도 될 때) 이미 첫 자리 · 첫 모션으로 한 번 그려 둔 뒤다. 걸어 들어오기는 그때 시작
    */
-  async load(character: { model: string; motions: MotionSet; spamTaps?: number; hatDrop?: boolean }): Promise<void> {
-    this.motions = character.motions;
+  async load(character: CharacterInfo): Promise<void> {
+    this.character = character;
     this.spamTaps = character.spamTaps ?? SPAM_TAPS;
     const seq = ++this.entrySeq;
-    const also = FIRST_MOTIONS.filter((m) => this.motions[m]);
-    await this.scene.load(character.model, character.motions, 'idle', also, { hatDrop: character.hatDrop });
+    const also = FIRST_MOTIONS.filter((m) => character.motions[m]);
+    const model = this.scene.load(character.model, character.motions, 'idle', also, { hatDrop: character.hatDrop });
+    this.modelReady = model.then(
+      () => true,
+      () => false,
+    );
+    await model;
     await this.waitEmotion();
     if (this.disposed || seq !== this.entrySeq) return;
     const walk = await this.begin(seq);
@@ -179,6 +189,35 @@ export class StockStageLoop {
       if (this.disposed || seq !== this.entrySeq) return;
       if (walk) this.back.walkIn(ENTER_PX_S);
     })();
+  }
+
+  /**
+   * 치비 모드 켜기/끄기(치비 지시서) — 등신대 ↔ 치비 모델을 바꿔 낀다. 하던 것(감정 · 등장 · 걷기 · 잠)은 그대로 이어 간다.
+   * 치비는 처음 켤 때 받는다(그동안은 지금 모델 그대로). 한 번 받으면 둘 다 들고 있어 다음 전환은 바로.
+   * 받다 실패하면 false — 지금 모델 그대로(알림은 부르는 쪽이). 첫 모델이 아직이면 선 뒤에 바꾼다.
+   * 첫 모델(등신대)부터 못 띄웠으면 아무것도 안 하고 true — 그건 페이지가 실패 그림으로 보인다
+   */
+  async setChibi(on: boolean): Promise<boolean> {
+    this.chibiWanted = on;
+    if (!(await this.modelReady)) return true;
+    const c = this.character;
+    if (this.disposed || !c || this.chibiWanted !== on) return true;
+    try {
+      if (on) await this.scene.useModel('chibi', { url: c.chibiModel, motions: c.chibiMotions });
+      else await this.scene.useModel('full', { url: c.model, motions: c.motions, hatDrop: c.hatDrop });
+    } catch (err) {
+      console.warn('[StockStageLoop] 치비 모델 불러오기 실패 — 지금 모델 그대로', err);
+      if (this.chibiWanted === on) this.chibiWanted = this.scene.model === 'chibi';
+      return false;
+    }
+    const chibi = this.scene.model === 'chibi';
+    this.spamTaps = (chibi ? c.chibiSpamTaps : c.spamTaps) ?? SPAM_TAPS;
+    return true;
+  }
+
+  /** 지금 치비 모델이 보이나 */
+  get chibi(): boolean {
+    return this.scene.model === 'chibi';
   }
 
   /** 첫 감정 요청이 실패했다 — 더 기다리지 않고 장외가 아닌 것으로 본다 */
@@ -330,6 +369,11 @@ export class StockStageLoop {
   }
 
   /* ── 내부 ─────────────────────────────────────── */
+
+  /** 지금 보이는 모델의 모션 표(공용 + 덮어쓰기 — 치비면 치비 표) */
+  private get motions(): MotionSet {
+    return this.scene.motionSet;
+  }
 
   /** 자고 있는가 — 장외(sleepy)이고 아직 안 깨웠다 */
   private get asleep(): boolean {

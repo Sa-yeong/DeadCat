@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EMOTIONS } from '../../livingRoom/engine/type/type';
-import { CHIBI_FACE, CROSSFADE_S, FACE_RISE_S, stepFaceLevels } from './motionTable';
+import { CHIBI_FACE, CROSSFADE_S, FACE_RISE_S, MOTIONS, NOT_ON_CHIBI, faceOnModel, stepFaceLevels } from './motionTable';
 
 describe('CHIBI_FACE — 거실 치비 감정 → 표정', () => {
   it('마무리 E 지시서의 짝 표와 같다', () => {
@@ -56,5 +56,20 @@ describe('stepFaceLevels — 표정 전환', () => {
     const levels = new Map([['sad', 1]]);
     stepFaceLevels(levels, CHIBI_FACE.depress, 1 / 60);
     expect(levels.get('sad')).toBe(1);
+  });
+});
+
+describe('faceOnModel — 개별종목 치비 모드의 표정 거르기(치비 지시서 결정 5)', () => {
+  it('치비면 그늘 두 개(darkcircle · shade)만 빠지고 나머지는 그대로', () => {
+    expect([...NOT_ON_CHIBI].sort()).toEqual(['darkcircle', 'shade']);
+    const keep = (m: 'tired' | 'depression') => MOTIONS[m]!.face.filter((t) => faceOnModel(t.expr, true)).map((t) => t.expr);
+    expect(keep('tired')).toEqual(['sad']);
+    expect(keep('depression')).toEqual(['sad']);
+    for (const e of ['happy', 'sad', 'angry', 'surprised', 'relaxed', 'blink', 'ou']) expect(faceOnModel(e, true)).toBe(true);
+  });
+
+  it('등신대는 아무것도 거르지 않는다', () => {
+    expect(faceOnModel('darkcircle', false)).toBe(true);
+    expect(faceOnModel('shade', false)).toBe(true);
   });
 });
