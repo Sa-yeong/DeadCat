@@ -52,6 +52,9 @@ export function WindowHud({
   onPan,
   onViewSpan,
   onWheelIn,
+  chibi,
+  chibiBusy,
+  onChibi,
 }: {
   tab: WindowTab;
   onSwitch: (t: WindowTab) => void;
@@ -71,6 +74,10 @@ export function WindowHud({
   onViewSpan?: (days: number) => void;
   /** 휠을 확대 쪽으로 굴렸다 */
   onWheelIn?: () => void;
+  /** 치비 모드 버튼(차트 툴바) — 지금 치비인가 · 처음 받는 중 · 누름. onChibi 가 없으면 버튼을 안 보인다 */
+  chibi?: boolean;
+  chibiBusy?: boolean;
+  onChibi?: () => void;
 }) {
   const L = useLayout();
   const { requireLogin } = useLoginGate();
@@ -145,6 +152,9 @@ export function WindowHud({
             tool={tool}
             onTool={setTool}
             onClearDrawings={clearDrawings}
+            chibi={chibi}
+            chibiBusy={chibiBusy}
+            onChibi={onChibi}
           />
         </div>
       )}

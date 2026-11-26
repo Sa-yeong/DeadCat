@@ -19,6 +19,7 @@ import { Block } from './components/Block';
 import { EmotionTestPanel } from './components/EmotionTestPanel';
 import { useEmotionFeed } from './useEmotionFeed';
 import { subscribeOrderChanges } from '../../common/orders/orderChanges';
+import { notify } from '../../common/notifications/store';
 
 /** 감정 테스트 패널을 띄우는가 — 개발 서버와 미리보기에서만(미리보기 표시는 렌더 직전에 붙으므로 그때 본다) */
 const emotionTestOn = () =>
@@ -79,11 +80,31 @@ export function StockDetailPage() {
   const [emotionTesting, setEmotionTesting] = useState(false);
   const emotionFeed = useEmotionFeed(stockCode, stageLoop, stage === 'ready', emotionTesting);
   const getStageLoop = useCallback(() => stageLoop.current, []);
+  /**
+   * 치비 모드(치비 지시서 결정 10 · 11) — 지금 치비가 보이는 종목 · 치비를 처음 받는 중인 종목.
+   * 종목 코드를 같이 들고 있어 다른 종목으로 가면 저절로 등신대(꺼짐)로 읽힌다. 기억하지 않는다(새로고침 → 등신대)
+   */
+  const [chibiOn, setChibiOn] = useState<string | null>(null);
+  const [chibiBusy, setChibiBusy] = useState<string | null>(null);
+  const toggleChibi = useCallback(() => {
+    const lp = stageLoop.current;
+    if (!lp) return;
+    const code = stockCode;
+    setChibiBusy(code);
+    void lp.setChibi(!lp.chibi).then((ok) => {
+      setChibiBusy((b) => (b === code ? null : b));
+      if (stageLoop.current !== lp) return; // 그사이 캐릭터가 바뀌었다(다른 캐릭터 종목으로 이동)
+      setChibiOn(lp.chibi ? code : null);
+      if (!ok) notify({ tone: 'FAIL', title: [], body: ['작은 캐릭터를 불러오지 못했어요'] });
+    });
+  }, [stockCode]);
 
   // 다른 종목으로 들어오면 새로 들어온 것으로 보고 다시 등장한다(마무리 L-4) — 같은 캐릭터라 캔버스가 그대로일 때.
   // 장외면 등장 없이 처음부터 자고 있다. 캐릭터가 바뀌면 캔버스째 새로 떠서 그쪽이 등장한다(여기선 아무 일 없음)
+  // 치비 모드는 종목이 바뀌면 등신대로(치비 지시서 결정 11) — 화면 상태(chibiOn)는 종목 코드로 저절로 꺼진다
   useEffect(() => {
     stageLoop.current?.reenter();
+    void stageLoop.current?.setChibi(false);
   }, [stockCode]);
   // 장외 잠 — 탭을 가렸다(안 보고 있다) 돌아오면 다시 잔다
   useEffect(() => {
@@ -297,6 +318,9 @@ export function StockDetailPage() {
           onPan={panStage}
           onViewSpan={spanStage}
           onWheelIn={pushStage}
+          chibi={chibiOn === stockCode}
+          chibiBusy={chibiBusy === stockCode}
+          onChibi={stage === 'failed' ? undefined : toggleChibi}
         />
 
         {tick ? (

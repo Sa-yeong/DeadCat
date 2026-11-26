@@ -40,6 +40,9 @@ export function ChartToolbar({
   tool,
   onTool,
   onClearDrawings,
+  chibi = false,
+  chibiBusy = false,
+  onChibi,
 }: {
   timeframe: Timeframe;
   onSelect: (tf: Timeframe) => void;
@@ -48,6 +51,10 @@ export function ChartToolbar({
   tool: Tool;
   onTool: (t: Tool) => void;
   onClearDrawings: () => void;
+  /** 치비 모드(치비 지시서) — 지금 치비가 보이나 · 처음 받는 중 · 누름. onChibi 가 없으면(캐릭터를 못 띄움) 버튼을 안 보인다 */
+  chibi?: boolean;
+  chibiBusy?: boolean;
+  onChibi?: () => void;
 }) {
   const [open, setOpen] = useState<'IND' | 'DRAW' | null>(null);
   const toggle = (k: IndicatorKey) => onIndicators({ ...indicators, [k]: !indicators[k] });
@@ -139,6 +146,16 @@ export function ChartToolbar({
           <span>전체 지우기</span>
         </button>
       </Menu>
+
+      {/* 치비 모드 켜고 끄기 — 그리기 바로 오른쪽. 등신대일 때 「작아져라」, 치비일 때 「커져라」(치비 지시서 결정 10) */}
+      {onChibi && (
+        <div style={{ flexShrink: 0 }}>
+          <ToolButton label={chibi ? '커져라' : '작아져라'} active={chibi} busy={chibiBusy} onClick={onChibi}>
+            <circle cx="12" cy="7.5" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          </ToolButton>
+        </div>
+      )}
 
       {tool !== 'none' && (
         <span style={{ marginLeft: 6, color: MUTED, fontSize: 11.5, whiteSpace: 'nowrap', flexShrink: 0 }}>Esc 로 그만두기</span>
@@ -274,12 +291,31 @@ const rowStyle = (active: boolean) =>
     cursor: 'pointer',
   }) as const;
 
-function ToolButton({ label, active, children }: { label: string; active: boolean; children: ReactNode }) {
+/**
+ * 툴바 버튼(글자 + 작은 아이콘). onClick 이 없으면 감싼 쪽(Menu)이 누름을 받는다.
+ * busy — 아이콘 자리에 도는 고리, 그동안 못 누름(치비를 처음 받는 동안)
+ */
+function ToolButton({
+  label,
+  active,
+  busy = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  busy?: boolean;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
   return (
     <button
       type="button"
       className="inline-flex items-center"
       aria-pressed={active}
+      aria-busy={busy || undefined}
+      disabled={busy}
+      onClick={onClick}
       style={{
         gap: 5,
         height: 24,
@@ -290,11 +326,15 @@ function ToolButton({ label, active, children }: { label: string; active: boolea
         color: active ? TEXT : MUTED,
         fontSize: 12.5,
         whiteSpace: 'nowrap',
-        cursor: 'pointer',
+        cursor: busy ? 'progress' : 'pointer',
       }}
     >
-      <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        {children}
+      <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true" focusable="false" className={busy ? 'animate-spin' : undefined}>
+        {busy ? (
+          <path d="M12 4a8 8 0 1 1-8 8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        ) : (
+          children
+        )}
       </svg>
       {label}
     </button>
