@@ -87,7 +87,9 @@ export class HomeStocksRepository {
             stock_id: stock.id,
             stock_code: stock.code,
             stock_name: stock.name,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             en_name: stock.en_name,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             kr_name: stock.kr_name,
         }));
     }

@@ -294,9 +294,42 @@ export class HomeRoomsService {
                 selectedTags.every((st) => r.tags.includes(st)),
             );
         }
+        // 2. 검색어 필터링 (닉네임 또는 실제 보유 주식)
+        if (keyword?.trim()) {
+            // 검색어 공백 제거 및 소문자 변환
+            const lowerKeyword = keyword.trim().toLowerCase();
 
-        // 2. 검색어 필터링 (유저 닉네임 또는 보유 종목명/코드)
-        if (keyword) {
+            roomCards = roomCards.filter((r: any) => {
+                // 닉네임 검색
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+                const matchesNickname = r.nickname
+                    ?.toLowerCase()
+                    .includes(lowerKeyword);
+
+                // 실제 보유 주식 검색
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                const matchesStock = r.holdings?.some((h: any) => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    const stock = h.stocks;
+
+                    // 종목명, 한글명, 영문명, 종목 코드 검색
+                    const searchFields = [
+                        stock?.name,
+                        stock?.kr_name,
+                        stock?.en_name,
+                        stock?.code,
+                    ];
+
+                    return searchFields.some(
+                        (value: string | null | undefined) =>
+                            value?.toLowerCase().includes(lowerKeyword),
+                    );
+                });
+
+                return matchesNickname || matchesStock;
+            });
+        }
+        /*if (keyword) {
             const lowerKeyword = keyword.toLowerCase();
             roomCards = roomCards.filter((r: any) => {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
@@ -314,7 +347,7 @@ export class HomeRoomsService {
                 );
                 return matchesNickname || matchesStock;
             });
-        }
+        }*/
 
         // 3. 정렬 처리
         if (sort === 'PROFIT_HIGH') {

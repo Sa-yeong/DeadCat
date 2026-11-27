@@ -45,10 +45,15 @@ export class HomeRoomsRepository {
                     select: {
                         quantity: true,
                         mean_price_krw: true,
+                        created_at: true, // 최초 매수일 (투자 기간 계산용)
                         stocks: {
                             select: {
+                                id: true,
                                 code: true,
                                 name: true,
+                                kr_name: true,
+                                en_name: true,
+                                category_id: true, // 투자 카테고리 분석용
                             },
                         },
                     },
